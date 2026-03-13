@@ -1,0 +1,766 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <title>Dashboard</title>
+  <style>
+    :root {
+      --bg: #f5f5f7;
+      --bg-card: #ffffff;
+      --text: #1d1d1f;
+      --text-secondary: #6e6e73;
+      --border: #d2d2d7;
+      --accent: #0071e3;
+      --positive: #34c759;
+      --negative: #ff3b30;
+      --shadow: 0 1px 3px rgba(0,0,0,0.08);
+      --radius: 16px;
+    }
+
+    [data-theme="dark"] {
+      --bg: #0a0a0a;
+      --bg-card: #1c1c1e;
+      --text: #f5f5f7;
+      --text-secondary: #8e8e93;
+      --border: #2c2c2e;
+      --shadow: 0 1px 3px rgba(0,0,0,0.3);
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      transition: background 0.3s, color 0.3s;
+    }
+
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 24px 16px;
+    }
+
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 24px;
+    }
+
+    header h1 {
+      font-size: 1.5rem;
+      font-weight: 600;
+      letter-spacing: -0.02em;
+    }
+
+    .theme-toggle {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 8px 16px;
+      border-radius: 20px;
+      cursor: pointer;
+      font-size: 0.85rem;
+      font-weight: 500;
+      transition: all 0.2s;
+    }
+
+    .theme-toggle:hover {
+      border-color: var(--accent);
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+      gap: 16px;
+    }
+
+    .card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 20px;
+      box-shadow: var(--shadow);
+      transition: background 0.3s, border-color 0.3s;
+    }
+
+    .card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 16px;
+    }
+
+    .card-title {
+      font-size: 0.8rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--text-secondary);
+    }
+
+    .card-status {
+      font-size: 0.7rem;
+      color: var(--text-secondary);
+    }
+
+    /* Clock */
+    .clock-time {
+      font-size: 3.5rem;
+      font-weight: 300;
+      letter-spacing: -0.02em;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .clock-date {
+      font-size: 1rem;
+      color: var(--text-secondary);
+      margin-top: 4px;
+    }
+
+    /* Weather */
+    .weather-main {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      margin-bottom: 12px;
+    }
+
+    .weather-icon {
+      font-size: 2.5rem;
+      line-height: 1;
+    }
+
+    .weather-temp {
+      font-size: 2.8rem;
+      font-weight: 300;
+      letter-spacing: -0.02em;
+    }
+
+    .weather-desc {
+      font-size: 1rem;
+      color: var(--text-secondary);
+      margin-bottom: 12px;
+    }
+
+    .weather-details {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+    }
+
+    .weather-detail {
+      text-align: center;
+    }
+
+    .weather-detail-label {
+      font-size: 0.7rem;
+      color: var(--text-secondary);
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    .weather-detail-value {
+      font-size: 1rem;
+      font-weight: 500;
+      margin-top: 2px;
+    }
+
+    /* Stocks */
+    .stock-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 12px 0;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .stock-item:last-child {
+      border-bottom: none;
+      padding-bottom: 0;
+    }
+
+    .stock-item:first-child {
+      padding-top: 0;
+    }
+
+    .stock-name {
+      font-weight: 600;
+      font-size: 0.95rem;
+    }
+
+    .stock-label {
+      font-size: 0.75rem;
+      color: var(--text-secondary);
+    }
+
+    .stock-right {
+      text-align: right;
+    }
+
+    .stock-price {
+      font-size: 1.1rem;
+      font-weight: 500;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .stock-change {
+      font-size: 0.85rem;
+      font-weight: 500;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .stock-change.positive { color: var(--positive); }
+    .stock-change.negative { color: var(--negative); }
+
+    /* Transit */
+    .departure-item {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 10px 0;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .departure-item:last-child {
+      border-bottom: none;
+      padding-bottom: 0;
+    }
+
+    .departure-item:first-child {
+      padding-top: 0;
+    }
+
+    .departure-line {
+      min-width: 40px;
+      height: 28px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 6px;
+      font-weight: 700;
+      font-size: 0.85rem;
+      color: #fff;
+      background: var(--accent);
+    }
+
+    .departure-dest {
+      flex: 1;
+      font-size: 0.9rem;
+      font-weight: 500;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .departure-time {
+      font-size: 1rem;
+      font-weight: 600;
+      font-variant-numeric: tabular-nums;
+      white-space: nowrap;
+    }
+
+    .departure-time.soon {
+      color: var(--negative);
+    }
+
+    .stop-name {
+      font-size: 0.95rem;
+      font-weight: 600;
+      margin-bottom: 12px;
+      padding-bottom: 8px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .stops-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 20px;
+    }
+
+    @media (max-width: 600px) {
+      .stops-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .stop-section {
+      margin-bottom: 0;
+    }
+
+    /* Settings panel */
+    .settings-btn {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 8px 16px;
+      border-radius: 20px;
+      cursor: pointer;
+      font-size: 0.85rem;
+      font-weight: 500;
+      transition: all 0.2s;
+      margin-right: 8px;
+    }
+
+    .settings-btn:hover {
+      border-color: var(--accent);
+    }
+
+    .settings-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.5);
+      z-index: 100;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .settings-overlay.open {
+      display: flex;
+    }
+
+    .settings-panel {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 24px;
+      width: 90%;
+      max-width: 500px;
+      max-height: 80vh;
+      overflow-y: auto;
+    }
+
+    .settings-panel h2 {
+      font-size: 1.2rem;
+      margin-bottom: 16px;
+    }
+
+    .settings-panel label {
+      display: block;
+      font-size: 0.85rem;
+      font-weight: 500;
+      margin-bottom: 4px;
+      color: var(--text-secondary);
+    }
+
+    .settings-panel input {
+      width: 100%;
+      padding: 10px 12px;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: var(--bg);
+      color: var(--text);
+      font-size: 0.9rem;
+      margin-bottom: 12px;
+    }
+
+    .settings-panel input:focus {
+      outline: none;
+      border-color: var(--accent);
+    }
+
+    .settings-panel .hint {
+      font-size: 0.75rem;
+      color: var(--text-secondary);
+      margin-top: -8px;
+      margin-bottom: 12px;
+    }
+
+    .settings-actions {
+      display: flex;
+      gap: 8px;
+      justify-content: flex-end;
+      margin-top: 8px;
+    }
+
+    .btn {
+      padding: 10px 20px;
+      border-radius: 10px;
+      font-size: 0.85rem;
+      font-weight: 600;
+      cursor: pointer;
+      border: 1px solid var(--border);
+      background: var(--bg);
+      color: var(--text);
+      transition: all 0.2s;
+    }
+
+    .btn-primary {
+      background: var(--accent);
+      color: #fff;
+      border-color: var(--accent);
+    }
+
+    .loading {
+      color: var(--text-secondary);
+      font-size: 0.9rem;
+      padding: 20px 0;
+      text-align: center;
+    }
+
+    .error {
+      color: var(--negative);
+      font-size: 0.85rem;
+    }
+
+    @media (max-width: 400px) {
+      .container { padding: 16px 12px; }
+      .clock-time { font-size: 2.5rem; }
+      .weather-temp { font-size: 2rem; }
+      .grid { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>Dashboard</h1>
+      <div>
+        <button class="settings-btn" onclick="openSettings()">Settings</button>
+        <button class="theme-toggle" onclick="toggleTheme()">Light</button>
+      </div>
+    </header>
+
+    <div class="grid">
+      <!-- Clock -->
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">Clock</span>
+        </div>
+        <div class="clock-time" id="clock-time">--:--:--</div>
+        <div class="clock-date" id="clock-date"></div>
+      </div>
+
+      <!-- Weather -->
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">Weather &mdash; Oslo</span>
+          <span class="card-status" id="weather-status"></span>
+        </div>
+        <div id="weather-content">
+          <div class="loading">Loading weather...</div>
+        </div>
+      </div>
+
+      <!-- Stocks -->
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">Markets</span>
+          <span class="card-status" id="stocks-status"></span>
+        </div>
+        <div id="stocks-content">
+          <div class="loading">Loading markets...</div>
+        </div>
+      </div>
+
+      <!-- Transit -->
+      <div class="card" style="grid-column: 1 / -1;">
+        <div class="card-header">
+          <span class="card-title">Departures</span>
+          <span class="card-status" id="transit-status"></span>
+        </div>
+        <div id="transit-content">
+          <div class="loading">Loading departures...</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Settings overlay -->
+  <div class="settings-overlay" id="settings-overlay" onclick="closeSettings(event)">
+    <div class="settings-panel" onclick="event.stopPropagation()">
+      <h2>Settings</h2>
+      <label for="setting-stops">Ruter stop IDs (comma-separated)</label>
+      <input id="setting-stops" placeholder="e.g. NSR:StopPlace:58366, NSR:StopPlace:6075" />
+      <p class="hint">Find IDs at <a href="https://stoppested.entur.org" target="_blank" style="color:var(--accent)">stoppested.entur.org</a></p>
+
+      <label for="setting-stocks">Stock symbols (comma-separated)</label>
+      <input id="setting-stocks" placeholder="e.g. ^GSPC, OSEBX.OL" />
+      <p class="hint">Yahoo Finance symbols. Use .OL suffix for Oslo stocks.</p>
+
+      <div class="settings-actions">
+        <button class="btn" onclick="closeSettings()">Cancel</button>
+        <button class="btn btn-primary" onclick="saveSettings()">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // ── Config with defaults ──
+    const DEFAULTS = {
+      stops: ['NSR:StopPlace:6460', 'NSR:StopPlace:6463'],
+      stocks: [
+        { symbol: '^GSPC', label: 'S&P 500' },
+        { symbol: 'OSEBX.OL', label: 'OSEBX' }
+      ]
+    };
+
+    function loadConfig() {
+      const saved = localStorage.getItem('dashboard-config');
+      if (saved) return JSON.parse(saved);
+      return null;
+    }
+
+    function getStops() {
+      const cfg = loadConfig();
+      return cfg?.stops ?? DEFAULTS.stops;
+    }
+
+    function getStocks() {
+      const cfg = loadConfig();
+      return cfg?.stocks ?? DEFAULTS.stocks;
+    }
+
+    // ── Theme ──
+    function toggleTheme() {
+      const html = document.documentElement;
+      const btn = document.querySelector('.theme-toggle');
+      if (html.getAttribute('data-theme') === 'dark') {
+        html.setAttribute('data-theme', 'light');
+        btn.textContent = 'Dark';
+        localStorage.setItem('dashboard-theme', 'light');
+      } else {
+        html.setAttribute('data-theme', 'dark');
+        btn.textContent = 'Light';
+        localStorage.setItem('dashboard-theme', 'dark');
+      }
+    }
+
+    (function initTheme() {
+      const saved = localStorage.getItem('dashboard-theme') || 'dark';
+      document.documentElement.setAttribute('data-theme', saved);
+      document.querySelector('.theme-toggle').textContent = saved === 'dark' ? 'Light' : 'Dark';
+    })();
+
+    // ── Settings ──
+    function openSettings() {
+      document.getElementById('setting-stops').value = getStops().join(', ');
+      document.getElementById('setting-stocks').value = getStocks().map(s => s.symbol).join(', ');
+      document.getElementById('settings-overlay').classList.add('open');
+    }
+
+    function closeSettings(e) {
+      if (e && e.target !== document.getElementById('settings-overlay')) return;
+      document.getElementById('settings-overlay').classList.remove('open');
+    }
+
+    function saveSettings() {
+      const stopsRaw = document.getElementById('setting-stops').value;
+      const stocksRaw = document.getElementById('setting-stocks').value;
+
+      const stops = stopsRaw.split(',').map(s => s.trim()).filter(Boolean);
+      const stocks = stocksRaw.split(',').map(s => {
+        const sym = s.trim();
+        const knownLabels = {
+          '^GSPC': 'S&P 500', 'OSEBX.OL': 'OSEBX', '^DJI': 'Dow Jones',
+          '^IXIC': 'NASDAQ', '^FTSE': 'FTSE 100', 'EURUSD=X': 'EUR/USD',
+          'USDNOK=X': 'USD/NOK', 'BTC-USD': 'Bitcoin'
+        };
+        return { symbol: sym, label: knownLabels[sym] || sym };
+      }).filter(s => s.symbol);
+
+      localStorage.setItem('dashboard-config', JSON.stringify({ stops, stocks }));
+      document.getElementById('settings-overlay').classList.remove('open');
+      fetchStocks();
+      fetchTransit();
+    }
+
+    // ── Clock ──
+    function updateClock() {
+      const now = new Date();
+      const time = now.toLocaleTimeString('nb-NO', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+      const date = now.toLocaleDateString('nb-NO', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+      document.getElementById('clock-time').textContent = time;
+      document.getElementById('clock-date').textContent = date.charAt(0).toUpperCase() + date.slice(1);
+    }
+    updateClock();
+    setInterval(updateClock, 1000);
+
+    // ── Weather ──
+    const WMO_CODES = {
+      0: ['Clear sky', '☀️'], 1: ['Mostly clear', '🌤'], 2: ['Partly cloudy', '⛅'],
+      3: ['Overcast', '☁️'], 45: ['Foggy', '🌫'], 48: ['Rime fog', '🌫'],
+      51: ['Light drizzle', '🌦'], 53: ['Drizzle', '🌦'], 55: ['Heavy drizzle', '🌧'],
+      61: ['Light rain', '🌦'], 63: ['Rain', '🌧'], 65: ['Heavy rain', '🌧'],
+      66: ['Freezing rain', '🌨'], 67: ['Heavy freezing rain', '🌨'],
+      71: ['Light snow', '🌨'], 73: ['Snow', '❄️'], 75: ['Heavy snow', '❄️'],
+      77: ['Snow grains', '❄️'], 80: ['Light showers', '🌦'], 81: ['Showers', '🌧'],
+      82: ['Heavy showers', '🌧'], 85: ['Light snow showers', '🌨'],
+      86: ['Heavy snow showers', '❄️'], 95: ['Thunderstorm', '⛈'],
+      96: ['Thunderstorm w/ hail', '⛈'], 99: ['Thunderstorm w/ heavy hail', '⛈']
+    };
+
+    async function fetchWeather() {
+      try {
+        const url = 'https://api.open-meteo.com/v1/forecast?latitude=59.91&longitude=10.75&current=temperature_2m,apparent_temperature,weather_code,wind_speed_10m,precipitation,relative_humidity_2m&timezone=auto';
+        const res = await fetch(url);
+        const data = await res.json();
+        const c = data.current;
+        const [desc, icon] = WMO_CODES[c.weather_code] || ['Unknown', '🌡'];
+
+        document.getElementById('weather-content').innerHTML = `
+          <div class="weather-main">
+            <span class="weather-icon">${icon}</span>
+            <span class="weather-temp">${Math.round(c.temperature_2m)}°</span>
+          </div>
+          <div class="weather-desc">${desc} · Feels like ${Math.round(c.apparent_temperature)}°</div>
+          <div class="weather-details">
+            <div class="weather-detail">
+              <div class="weather-detail-label">Wind</div>
+              <div class="weather-detail-value">${Math.round(c.wind_speed_10m)} km/h</div>
+            </div>
+            <div class="weather-detail">
+              <div class="weather-detail-label">Humidity</div>
+              <div class="weather-detail-value">${c.relative_humidity_2m}%</div>
+            </div>
+            <div class="weather-detail">
+              <div class="weather-detail-label">Precip</div>
+              <div class="weather-detail-value">${c.precipitation} mm</div>
+            </div>
+          </div>`;
+        document.getElementById('weather-status').textContent = 'Updated ' + new Date().toLocaleTimeString('nb-NO', { hour: '2-digit', minute: '2-digit' });
+      } catch (e) {
+        document.getElementById('weather-content').innerHTML = `<div class="error">Could not load weather</div>`;
+      }
+    }
+    fetchWeather();
+    setInterval(fetchWeather, 10 * 60 * 1000);
+
+    // ── Stocks ──
+    async function fetchStocks() {
+      const stocks = getStocks();
+      try {
+        const results = await Promise.all(stocks.map(async (s) => {
+          const encoded = encodeURIComponent(`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(s.symbol)}?interval=1d&range=1d`);
+          const res = await fetch(`https://api.allorigins.win/raw?url=${encoded}`);
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+          const data = await res.json();
+          const meta = data.chart.result[0].meta;
+          const price = meta.regularMarketPrice;
+          const prev = meta.chartPreviousClose || meta.previousClose;
+          const change = price - prev;
+          const changePct = (change / prev) * 100;
+          return { ...s, price, change, changePct, currency: meta.currency };
+        }));
+
+        document.getElementById('stocks-content').innerHTML = results.map(s => {
+          const sign = s.change >= 0 ? '+' : '';
+          const cls = s.change >= 0 ? 'positive' : 'negative';
+          const priceStr = s.price.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+          return `
+            <div class="stock-item">
+              <div>
+                <div class="stock-name">${s.label}</div>
+                <div class="stock-label">${s.symbol}</div>
+              </div>
+              <div class="stock-right">
+                <div class="stock-price">${priceStr}</div>
+                <div class="stock-change ${cls}">${sign}${s.change.toFixed(2)} (${sign}${s.changePct.toFixed(2)}%)</div>
+              </div>
+            </div>`;
+        }).join('');
+        document.getElementById('stocks-status').textContent = 'Updated ' + new Date().toLocaleTimeString('nb-NO', { hour: '2-digit', minute: '2-digit' });
+      } catch (e) {
+        document.getElementById('stocks-content').innerHTML = `<div class="error">Could not load market data. The CORS proxy may be temporarily unavailable.</div>`;
+      }
+    }
+    fetchStocks();
+    setInterval(fetchStocks, 5 * 60 * 1000);
+
+    // ── Transit (Entur) ──
+    const ENTUR_QUERY = `
+      query ($id: String!, $n: Int!) {
+        stopPlace(id: $id) {
+          name
+          estimatedCalls(numberOfDepartures: $n) {
+            expectedDepartureTime
+            destinationDisplay { frontText }
+            serviceJourney {
+              line {
+                publicCode
+                transportMode
+              }
+            }
+          }
+        }
+      }`;
+
+    const LINE_COLORS = {
+      '1': '#e60000', '2': '#f5a623', '3': '#0071b5', '4': '#1b5a8a',
+      '5': '#00a857', '6': '#8b6914', '11': '#0071b5', '12': '#006644',
+      '13': '#5e2ca5', '17': '#b8860b', '18': '#006644', '19': '#ff6600',
+      '30': '#e60000', '31': '#0071b5', '32': '#f5a623', '33': '#00a857',
+      '34': '#5e2ca5', '54': '#006644'
+    };
+
+    function getLineColor(code, mode) {
+      if (LINE_COLORS[code]) return LINE_COLORS[code];
+      if (mode === 'metro') return '#e60000';
+      if (mode === 'tram') return '#0071b5';
+      if (mode === 'bus') return '#e60000';
+      if (mode === 'rail') return '#333';
+      return 'var(--accent)';
+    }
+
+    function formatMinutes(isoTime) {
+      const diff = Math.round((new Date(isoTime) - new Date()) / 60000);
+      if (diff <= 0) return { text: 'Now', soon: true };
+      if (diff === 1) return { text: '1 min', soon: true };
+      if (diff < 10) return { text: `${diff} min`, soon: true };
+      if (diff < 60) return { text: `${diff} min`, soon: false };
+      return {
+        text: new Date(isoTime).toLocaleTimeString('nb-NO', { hour: '2-digit', minute: '2-digit' }),
+        soon: false
+      };
+    }
+
+    async function fetchTransit() {
+      const stops = getStops();
+      try {
+        const results = await Promise.all(stops.map(async (stopId) => {
+          const res = await fetch('https://api.entur.io/journey-planner/v3/graphql', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'ET-Client-Name': 'crild-dashboard'
+            },
+            body: JSON.stringify({ query: ENTUR_QUERY, variables: { id: stopId, n: 6 } })
+          });
+          const data = await res.json();
+          return data.data.stopPlace;
+        }));
+
+        document.getElementById('transit-content').innerHTML = '<div class="stops-grid">' + results.filter(Boolean).map(stop => {
+          const departures = stop.estimatedCalls.map(call => {
+            const line = call.serviceJourney.line;
+            const time = formatMinutes(call.expectedDepartureTime);
+            const color = getLineColor(line.publicCode, line.transportMode);
+            return `
+              <div class="departure-item">
+                <span class="departure-line" style="background:${color}">${line.publicCode}</span>
+                <span class="departure-dest">${call.destinationDisplay.frontText}</span>
+                <span class="departure-time ${time.soon ? 'soon' : ''}">${time.text}</span>
+              </div>`;
+          }).join('');
+          return `
+            <div class="stop-section">
+              <div class="stop-name">${stop.name}</div>
+              ${departures}
+            </div>`;
+        }).join('') + '</div>';
+        document.getElementById('transit-status').textContent = 'Updated ' + new Date().toLocaleTimeString('nb-NO', { hour: '2-digit', minute: '2-digit' });
+      } catch (e) {
+        document.getElementById('transit-content').innerHTML = `<div class="error">Could not load departures</div>`;
+      }
+    }
+    fetchTransit();
+    setInterval(fetchTransit, 30 * 1000);
+  </script>
+</body>
+</html>

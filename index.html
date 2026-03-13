@@ -171,22 +171,74 @@
       margin-top: 2px;
     }
 
+    .weather-hourly {
+      display: flex;
+      gap: 0;
+      overflow-x: auto;
+      margin-top: 14px;
+      padding-top: 12px;
+      border-top: 1px solid var(--border);
+      scrollbar-width: thin;
+    }
+
+    .weather-hourly::-webkit-scrollbar {
+      height: 4px;
+    }
+
+    .weather-hourly::-webkit-scrollbar-thumb {
+      background: var(--border);
+      border-radius: 2px;
+    }
+
+    .weather-hour {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      min-width: 52px;
+      padding: 4px 6px;
+      gap: 4px;
+    }
+
+    .weather-hour-time {
+      font-size: 0.7rem;
+      color: var(--text-secondary);
+      font-weight: 500;
+    }
+
+    .weather-hour-icon {
+      font-size: 1.2rem;
+      line-height: 1;
+    }
+
+    .weather-hour-temp {
+      font-size: 0.85rem;
+      font-weight: 600;
+    }
+
+    .weather-hour-precip {
+      font-size: 0.65rem;
+      color: var(--accent);
+      min-height: 0.85em;
+    }
+
     /* Stocks */
-    .stock-item {
+    .stocks-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 12px;
+    }
+
+    .stock-card {
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 14px;
+    }
+
+    .stock-header {
       display: flex;
       justify-content: space-between;
-      align-items: center;
-      padding: 12px 0;
-      border-bottom: 1px solid var(--border);
-    }
-
-    .stock-item:last-child {
-      border-bottom: none;
-      padding-bottom: 0;
-    }
-
-    .stock-item:first-child {
-      padding-top: 0;
+      align-items: flex-start;
+      margin-bottom: 12px;
     }
 
     .stock-name {
@@ -217,6 +269,67 @@
 
     .stock-change.positive { color: var(--positive); }
     .stock-change.negative { color: var(--negative); }
+
+    .stock-chart {
+      width: 100%;
+      height: 120px;
+      display: block;
+      cursor: crosshair;
+    }
+
+    .chart-tooltip {
+      position: absolute;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 6px 10px;
+      font-size: 0.8rem;
+      pointer-events: none;
+      z-index: 50;
+      box-shadow: var(--shadow);
+      white-space: nowrap;
+    }
+
+    .chart-tooltip-value {
+      font-weight: 600;
+    }
+
+    .chart-tooltip-time {
+      color: var(--text-secondary);
+      font-size: 0.75rem;
+    }
+
+    /* Power prices */
+    .power-current {
+      display: flex;
+      align-items: baseline;
+      gap: 8px;
+      margin-bottom: 4px;
+    }
+
+    .power-price {
+      font-size: 2.2rem;
+      font-weight: 300;
+      letter-spacing: -0.02em;
+    }
+
+    .power-unit {
+      font-size: 0.85rem;
+      color: var(--text-secondary);
+    }
+
+    .power-label {
+      font-size: 0.85rem;
+      color: var(--text-secondary);
+      margin-bottom: 12px;
+    }
+
+    .power-chart {
+      width: 100%;
+      height: 160px;
+      display: block;
+      cursor: crosshair;
+    }
 
     /* Transit */
     .departure-item {
@@ -440,7 +553,7 @@
       <!-- Weather -->
       <div class="card">
         <div class="card-header">
-          <span class="card-title">Weather &mdash; Oslo</span>
+          <span class="card-title">Weather</span>
           <span class="card-status" id="weather-status"></span>
         </div>
         <div id="weather-content">
@@ -449,13 +562,24 @@
       </div>
 
       <!-- Stocks -->
-      <div class="card">
+      <div class="card" style="grid-column: 1 / -1;">
         <div class="card-header">
           <span class="card-title">Markets</span>
           <span class="card-status" id="stocks-status"></span>
         </div>
         <div id="stocks-content">
           <div class="loading">Loading markets...</div>
+        </div>
+      </div>
+
+      <!-- Power prices -->
+      <div class="card" style="grid-column: 1 / -1;">
+        <div class="card-header">
+          <span class="card-title" id="power-title">Power price &mdash; Oslo</span>
+          <span class="card-status" id="power-status"></span>
+        </div>
+        <div id="power-content">
+          <div class="loading">Loading power prices...</div>
         </div>
       </div>
 
@@ -476,6 +600,10 @@
   <div class="settings-overlay" id="settings-overlay" onclick="closeSettings(event)">
     <div class="settings-panel" onclick="event.stopPropagation()">
       <h2>Settings</h2>
+      <label for="setting-weather">Weather location</label>
+      <input id="setting-weather" placeholder="e.g. Bestum, Oslo" />
+      <p class="hint">Place name — coordinates are looked up automatically.</p>
+
       <label for="setting-stops">Ruter stop IDs (comma-separated)</label>
       <input id="setting-stops" placeholder="e.g. NSR:StopPlace:58366, NSR:StopPlace:6075" />
       <p class="hint">Find IDs at <a href="https://stoppested.entur.org" target="_blank" style="color:var(--accent)">stoppested.entur.org</a></p>
@@ -498,7 +626,8 @@
       stocks: [
         { symbol: '^GSPC', label: 'S&P 500' },
         { symbol: 'OSEBX.OL', label: 'OSEBX' }
-      ]
+      ],
+      weather: { name: 'Bestum', lat: 59.9205, lon: 10.6646 }
     };
 
     function loadConfig() {
@@ -515,6 +644,11 @@
     function getStocks() {
       const cfg = loadConfig();
       return cfg?.stocks ?? DEFAULTS.stocks;
+    }
+
+    function getWeather() {
+      const cfg = loadConfig();
+      return cfg?.weather ?? DEFAULTS.weather;
     }
 
     // ── Theme ──
@@ -540,6 +674,7 @@
 
     // ── Settings ──
     function openSettings() {
+      document.getElementById('setting-weather').value = getWeather().name;
       document.getElementById('setting-stops').value = getStops().join(', ');
       document.getElementById('setting-stocks').value = getStocks().map(s => s.symbol).join(', ');
       document.getElementById('settings-overlay').classList.add('open');
@@ -550,7 +685,8 @@
       document.getElementById('settings-overlay').classList.remove('open');
     }
 
-    function saveSettings() {
+    async function saveSettings() {
+      const weatherName = document.getElementById('setting-weather').value.trim();
       const stopsRaw = document.getElementById('setting-stops').value;
       const stocksRaw = document.getElementById('setting-stocks').value;
 
@@ -565,8 +701,22 @@
         return { symbol: sym, label: knownLabels[sym] || sym };
       }).filter(s => s.symbol);
 
-      localStorage.setItem('dashboard-config', JSON.stringify({ stops, stocks }));
+      // Geocode weather location
+      let weather = getWeather();
+      if (weatherName && weatherName !== weather.name) {
+        try {
+          const geoRes = await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(weatherName)}&count=1&language=en&format=json`);
+          const geoData = await geoRes.json();
+          if (geoData.results && geoData.results.length > 0) {
+            const r = geoData.results[0];
+            weather = { name: r.name, lat: r.latitude, lon: r.longitude };
+          }
+        } catch (e) { /* keep existing coords */ }
+      }
+
+      localStorage.setItem('dashboard-config', JSON.stringify({ stops, stocks, weather }));
       document.getElementById('settings-overlay').classList.remove('open');
+      fetchWeather();
       fetchStocks();
       fetchTransit();
     }
@@ -598,32 +748,63 @@
 
     async function fetchWeather() {
       try {
-        const url = 'https://api.open-meteo.com/v1/forecast?latitude=59.91&longitude=10.75&current=temperature_2m,apparent_temperature,weather_code,wind_speed_10m,precipitation,relative_humidity_2m&timezone=auto';
+        const loc = getWeather();
+        document.querySelector('#weather-status').closest('.card').querySelector('.card-title').textContent = `Weather — ${loc.name}`;
+        const url = `https://api.open-meteo.com/v1/forecast?latitude=${loc.lat}&longitude=${loc.lon}&current=temperature_2m,apparent_temperature,weather_code,wind_speed_10m,precipitation,relative_humidity_2m&hourly=temperature_2m,weather_code,precipitation_probability&timezone=auto&forecast_hours=13`;
         const res = await fetch(url);
         const data = await res.json();
         const c = data.current;
         const [desc, icon] = WMO_CODES[c.weather_code] || ['Unknown', '🌡'];
 
+        // Build hourly forecast (next 24 hours starting from current hour)
+        const now = new Date();
+        const currentIso = now.toISOString().slice(0, 13);
+        let startIdx = data.hourly.time.findIndex(t => t.startsWith(currentIso));
+        if (startIdx < 0) startIdx = 0;
+        const hours = data.hourly.time.slice(startIdx, startIdx + 13);
+        const hourlyHtml = hours.map((t, i) => {
+          const idx = startIdx + i;
+          const temp = Math.round(data.hourly.temperature_2m[idx]);
+          const code = data.hourly.weather_code[idx];
+          const precip = data.hourly.precipitation_probability[idx];
+          const [, hIcon] = WMO_CODES[code] || ['', '🌡'];
+          const h = new Date(t).getHours();
+          const timeLabel = i === 0 ? 'Now' : `${String(h).padStart(2, '0')}`;
+          const precipLabel = precip > 0 ? `${precip}%` : '';
+          return `
+            <div class="weather-hour">
+              <span class="weather-hour-time">${timeLabel}</span>
+              <span class="weather-hour-icon">${hIcon}</span>
+              <span class="weather-hour-temp">${temp}°</span>
+              <span class="weather-hour-precip">${precipLabel}</span>
+            </div>`;
+        }).join('');
+
         document.getElementById('weather-content').innerHTML = `
-          <div class="weather-main">
-            <span class="weather-icon">${icon}</span>
-            <span class="weather-temp">${Math.round(c.temperature_2m)}°</span>
+          <div style="display:flex;gap:24px;align-items:flex-start;flex-wrap:wrap;">
+            <div style="min-width:180px;">
+              <div class="weather-main">
+                <span class="weather-icon">${icon}</span>
+                <span class="weather-temp">${Math.round(c.temperature_2m)}°</span>
+              </div>
+              <div class="weather-desc">${desc} · Feels like ${Math.round(c.apparent_temperature)}°</div>
+              <div class="weather-details">
+                <div class="weather-detail">
+                  <div class="weather-detail-label">Wind</div>
+                  <div class="weather-detail-value">${Math.round(c.wind_speed_10m)} km/h</div>
+                </div>
+                <div class="weather-detail">
+                  <div class="weather-detail-label">Humidity</div>
+                  <div class="weather-detail-value">${c.relative_humidity_2m}%</div>
+                </div>
+                <div class="weather-detail">
+                  <div class="weather-detail-label">Precip</div>
+                  <div class="weather-detail-value">${c.precipitation} mm</div>
+                </div>
+              </div>
+            </div>
           </div>
-          <div class="weather-desc">${desc} · Feels like ${Math.round(c.apparent_temperature)}°</div>
-          <div class="weather-details">
-            <div class="weather-detail">
-              <div class="weather-detail-label">Wind</div>
-              <div class="weather-detail-value">${Math.round(c.wind_speed_10m)} km/h</div>
-            </div>
-            <div class="weather-detail">
-              <div class="weather-detail-label">Humidity</div>
-              <div class="weather-detail-value">${c.relative_humidity_2m}%</div>
-            </div>
-            <div class="weather-detail">
-              <div class="weather-detail-label">Precip</div>
-              <div class="weather-detail-value">${c.precipitation} mm</div>
-            </div>
-          </div>`;
+          <div class="weather-hourly">${hourlyHtml}</div>`;
         document.getElementById('weather-status').textContent = 'Updated ' + new Date().toLocaleTimeString('nb-NO', { hour: '2-digit', minute: '2-digit' });
       } catch (e) {
         document.getElementById('weather-content').innerHTML = `<div class="error">Could not load weather</div>`;
@@ -632,39 +813,163 @@
     fetchWeather();
     setInterval(fetchWeather, 10 * 60 * 1000);
 
+    // ── Tooltip helper ──
+    let activeTooltip = null;
+
+    function showTooltip(canvas, x, y, lines) {
+      hideTooltip();
+      const tip = document.createElement('div');
+      tip.className = 'chart-tooltip';
+      tip.innerHTML = lines.join('<br>');
+      document.body.appendChild(tip);
+      activeTooltip = tip;
+
+      const rect = canvas.getBoundingClientRect();
+      let left = rect.left + x + 12;
+      let top = rect.top + y - 10 + window.scrollY;
+
+      // Keep tooltip on screen
+      if (left + 150 > window.innerWidth) left = rect.left + x - 150;
+      tip.style.left = left + 'px';
+      tip.style.top = top + 'px';
+    }
+
+    function hideTooltip() {
+      if (activeTooltip) {
+        activeTooltip.remove();
+        activeTooltip = null;
+      }
+    }
+
     // ── Stocks ──
+    // Store chart data for tooltips
+    const stockChartData = {};
+
+    function drawChart(canvas, prices, isPositive) {
+      const dpr = window.devicePixelRatio || 1;
+      const rect = canvas.getBoundingClientRect();
+      canvas.width = rect.width * dpr;
+      canvas.height = rect.height * dpr;
+      const ctx = canvas.getContext('2d');
+      ctx.scale(dpr, dpr);
+      const w = rect.width;
+      const h = rect.height;
+
+      if (!prices || prices.length < 2) return;
+
+      const min = Math.min(...prices);
+      const max = Math.max(...prices);
+      const range = max - min || 1;
+      const pad = 4;
+      const chartH = h - pad * 2;
+      const stepX = w / (prices.length - 1);
+
+      const color = isPositive
+        ? getComputedStyle(document.documentElement).getPropertyValue('--positive').trim()
+        : getComputedStyle(document.documentElement).getPropertyValue('--negative').trim();
+
+      // Gradient fill
+      const grad = ctx.createLinearGradient(0, 0, 0, h);
+      grad.addColorStop(0, color + '30');
+      grad.addColorStop(1, color + '05');
+
+      ctx.beginPath();
+      ctx.moveTo(0, h);
+      prices.forEach((p, i) => {
+        const x = i * stepX;
+        const y = pad + chartH - ((p - min) / range) * chartH;
+        if (i === 0) ctx.lineTo(x, y);
+        else ctx.lineTo(x, y);
+      });
+      ctx.lineTo(w, h);
+      ctx.closePath();
+      ctx.fillStyle = grad;
+      ctx.fill();
+
+      // Line
+      ctx.beginPath();
+      prices.forEach((p, i) => {
+        const x = i * stepX;
+        const y = pad + chartH - ((p - min) / range) * chartH;
+        if (i === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      });
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 1.5;
+      ctx.lineJoin = 'round';
+      ctx.stroke();
+    }
+
     async function fetchStocks() {
       const stocks = getStocks();
       try {
         const results = await Promise.all(stocks.map(async (s) => {
-          const encoded = encodeURIComponent(`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(s.symbol)}?interval=1d&range=1d`);
-          const res = await fetch(`https://api.allorigins.win/raw?url=${encoded}`);
+          const yahooUrl = `https://query2.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(s.symbol)}?interval=15m&range=3d`;
+          const res = await fetch(`https://yahoopull.charles-rutherford93.workers.dev/?url=${encodeURIComponent(yahooUrl)}`);
           if (!res.ok) throw new Error(`HTTP ${res.status}`);
           const data = await res.json();
-          const meta = data.chart.result[0].meta;
+          const result = data.chart.result[0];
+          const meta = result.meta;
           const price = meta.regularMarketPrice;
           const prev = meta.chartPreviousClose || meta.previousClose;
           const change = price - prev;
           const changePct = (change / prev) * 100;
-          return { ...s, price, change, changePct, currency: meta.currency };
+          const rawCloses = result.indicators.quote[0].close;
+          const timestamps = result.timestamp;
+          const points = [];
+          rawCloses.forEach((c, i) => {
+            if (c != null) points.push({ value: c, time: timestamps[i] * 1000 });
+          });
+          return { ...s, price, change, changePct, currency: meta.currency, closes: points.map(p => p.value), points };
         }));
 
-        document.getElementById('stocks-content').innerHTML = results.map(s => {
+        document.getElementById('stocks-content').innerHTML = '<div class="stocks-grid">' + results.map((s, i) => {
           const sign = s.change >= 0 ? '+' : '';
           const cls = s.change >= 0 ? 'positive' : 'negative';
           const priceStr = s.price.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
           return `
-            <div class="stock-item">
-              <div>
-                <div class="stock-name">${s.label}</div>
-                <div class="stock-label">${s.symbol}</div>
+            <div class="stock-card">
+              <div class="stock-header">
+                <div>
+                  <div class="stock-name">${s.label}</div>
+                  <div class="stock-label">${s.symbol}</div>
+                </div>
+                <div class="stock-right">
+                  <div class="stock-price">${priceStr}</div>
+                  <div class="stock-change ${cls}">${sign}${s.change.toFixed(2)} (${sign}${s.changePct.toFixed(2)}%)</div>
+                </div>
               </div>
-              <div class="stock-right">
-                <div class="stock-price">${priceStr}</div>
-                <div class="stock-change ${cls}">${sign}${s.change.toFixed(2)} (${sign}${s.changePct.toFixed(2)}%)</div>
-              </div>
+              <canvas class="stock-chart" id="chart-${i}"></canvas>
             </div>`;
-        }).join('');
+        }).join('') + '</div>';
+
+        // Draw charts and attach tooltips after DOM update
+        requestAnimationFrame(() => {
+          results.forEach((s, i) => {
+            const canvas = document.getElementById(`chart-${i}`);
+            if (!canvas) return;
+            drawChart(canvas, s.closes, s.change >= 0);
+            stockChartData[i] = s.points;
+
+            canvas.onmousemove = (e) => {
+              const rect = canvas.getBoundingClientRect();
+              const x = e.clientX - rect.left;
+              const idx = Math.round((x / rect.width) * (s.points.length - 1));
+              const pt = s.points[Math.max(0, Math.min(idx, s.points.length - 1))];
+              if (!pt) return;
+              const timeStr = new Date(pt.time).toLocaleString('nb-NO', {
+                day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit'
+              });
+              const priceStr = pt.value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+              showTooltip(canvas, x, e.clientY - rect.top, [
+                `<span class="chart-tooltip-value">${priceStr}</span>`,
+                `<span class="chart-tooltip-time">${timeStr}</span>`
+              ]);
+            };
+            canvas.onmouseleave = hideTooltip;
+          });
+        });
+
         document.getElementById('stocks-status').textContent = 'Updated ' + new Date().toLocaleTimeString('nb-NO', { hour: '2-digit', minute: '2-digit' });
       } catch (e) {
         document.getElementById('stocks-content').innerHTML = `<div class="error">Could not load market data. The CORS proxy may be temporarily unavailable.</div>`;
@@ -672,6 +977,152 @@
     }
     fetchStocks();
     setInterval(fetchStocks, 5 * 60 * 1000);
+
+    // Redraw charts on theme change so colors update
+    const origToggle = toggleTheme;
+    toggleTheme = function() {
+      origToggle();
+      fetchStocks();
+      fetchPower();
+    };
+
+    // ── Power prices ──
+    function drawPowerChart(canvas, prices, currentHour) {
+      const dpr = window.devicePixelRatio || 1;
+      const rect = canvas.getBoundingClientRect();
+      canvas.width = rect.width * dpr;
+      canvas.height = rect.height * dpr;
+      const ctx = canvas.getContext('2d');
+      ctx.scale(dpr, dpr);
+      const w = rect.width;
+      const h = rect.height;
+
+      if (!prices || prices.length < 2) return;
+
+      const styles = getComputedStyle(document.documentElement);
+      const accentColor = styles.getPropertyValue('--accent').trim();
+      const textSecondary = styles.getPropertyValue('--text-secondary').trim();
+
+      const labelH = 20;
+      const chartH = h - labelH - 4;
+      const values = prices.map(p => p.value);
+      const min = Math.min(...values);
+      const max = Math.max(...values);
+      const range = max - min || 1;
+      const barW = w / prices.length;
+      const hasTomorrow = prices.some(p => !p.isToday);
+
+      // Draw bars
+      prices.forEach((p, i) => {
+        const barH = ((p.value - min) / range) * chartH * 0.9 + chartH * 0.1;
+        const x = i * barW;
+        const y = 4 + chartH - barH;
+        const isNow = p.hour === currentHour && p.isToday;
+
+        ctx.fillStyle = isNow ? accentColor : (p.isToday ? accentColor + '40' : accentColor + '20');
+        ctx.beginPath();
+        ctx.roundRect(x + 1, y, barW - 2, barH, [2, 2, 0, 0]);
+        ctx.fill();
+      });
+
+      // Draw x-axis labels
+      ctx.fillStyle = textSecondary;
+      ctx.font = `${Math.min(11, barW * 1.2)}px -apple-system, sans-serif`;
+      ctx.textAlign = 'center';
+      const labelY = h - 4;
+
+      // Determine label interval based on available space
+      const labelEvery = prices.length > 30 ? 6 : (prices.length > 16 ? 3 : 2);
+
+      prices.forEach((p, i) => {
+        if (p.hour % labelEvery === 0) {
+          const x = i * barW + barW / 2;
+          let label = `${String(p.hour).padStart(2, '0')}`;
+          // Mark day boundary
+          if (hasTomorrow && !p.isToday && p.hour === 0) {
+            label = 'tmrw';
+          }
+          ctx.fillText(label, x, labelY);
+        }
+      });
+    }
+
+    async function fetchPower() {
+      try {
+        const now = new Date();
+        const fmt = (d) => `${d.getFullYear()}/${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+        const todayUrl = `https://www.hvakosterstrommen.no/api/v1/prices/${fmt(now)}_NO1.json`;
+
+        const tomorrow = new Date(now);
+        tomorrow.setDate(tomorrow.getDate() + 1);
+        const tomorrowUrl = `https://www.hvakosterstrommen.no/api/v1/prices/${fmt(tomorrow)}_NO1.json`;
+
+        const [todayRes, tomorrowRes] = await Promise.all([
+          fetch(todayUrl),
+          fetch(tomorrowUrl).catch(() => null)
+        ]);
+
+        const todayData = await todayRes.json();
+        const currentHour = now.getHours();
+
+        let allPrices = todayData.map(p => ({
+          value: p.NOK_per_kWh * 100,
+          hour: new Date(p.time_start).getHours(),
+          isToday: true
+        }));
+
+        let tomorrowLabel = '';
+        if (tomorrowRes && tomorrowRes.ok) {
+          const tomorrowData = await tomorrowRes.json();
+          allPrices = allPrices.concat(tomorrowData.map(p => ({
+            value: p.NOK_per_kWh * 100,
+            hour: new Date(p.time_start).getHours(),
+            isToday: false
+          })));
+          tomorrowLabel = ' + tomorrow';
+        }
+
+        const currentPrice = todayData[currentHour];
+        const avgPrice = todayData.reduce((s, p) => s + p.NOK_per_kWh, 0) / todayData.length;
+        const minPrice = Math.min(...todayData.map(p => p.NOK_per_kWh));
+        const maxPrice = Math.max(...todayData.map(p => p.NOK_per_kWh));
+
+        document.getElementById('power-content').innerHTML = `
+          <div class="power-current">
+            <span class="power-price">${(currentPrice.NOK_per_kWh * 100).toFixed(1)}</span>
+            <span class="power-unit">ore/kWh now</span>
+          </div>
+          <div class="power-label">Avg ${(avgPrice * 100).toFixed(1)} · Low ${(minPrice * 100).toFixed(1)} · High ${(maxPrice * 100).toFixed(1)} ore/kWh today</div>
+          <canvas class="power-chart" id="power-chart"></canvas>`;
+
+        requestAnimationFrame(() => {
+          const canvas = document.getElementById('power-chart');
+          if (!canvas) return;
+          drawPowerChart(canvas, allPrices, currentHour);
+
+          canvas.onmousemove = (e) => {
+            const rect = canvas.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            const idx = Math.floor((x / rect.width) * allPrices.length);
+            const pt = allPrices[Math.max(0, Math.min(idx, allPrices.length - 1))];
+            if (!pt) return;
+            const dayLabel = pt.isToday ? 'Today' : 'Tomorrow';
+            const timeStr = `${dayLabel} ${String(pt.hour).padStart(2, '0')}:00–${String(pt.hour + 1).padStart(2, '0')}:00`;
+            showTooltip(canvas, x, e.clientY - rect.top, [
+              `<span class="chart-tooltip-value">${pt.value.toFixed(1)} ore/kWh</span>`,
+              `<span class="chart-tooltip-time">${timeStr}</span>`
+            ]);
+          };
+          canvas.onmouseleave = hideTooltip;
+        });
+
+        document.getElementById('power-status').textContent = 'Updated ' + now.toLocaleTimeString('nb-NO', { hour: '2-digit', minute: '2-digit' });
+      } catch (e) {
+        document.getElementById('power-content').innerHTML = `<div class="error">Could not load power prices</div>`;
+      }
+    }
+    fetchPower();
+    setInterval(fetchPower, 15 * 60 * 1000);
 
     // ── Transit (Entur) ──
     const ENTUR_QUERY = `

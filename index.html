@@ -85,13 +85,17 @@
     /* Adaptive layout spans assigned by JS */
     .card.span-full { grid-column: 1 / -1; }
     .card.span-half { grid-column: span 1; }
+    .card.span-2 { grid-column: span 2; }
+    .card.span-3 { grid-column: span 3; }
 
     @media (max-width: 700px) {
       .grid {
         grid-template-columns: 1fr;
       }
       .card.span-full,
-      .card.span-half {
+      .card.span-half,
+      .card.span-2,
+      .card.span-3 {
         grid-column: 1 / -1;
       }
     }
@@ -166,7 +170,7 @@
     }
 
     .weather-temp {
-      font-size: 2.8rem;
+      font-size: clamp(1.8rem, 4vw, 2.8rem);
       font-weight: 300;
       letter-spacing: -0.02em;
     }
@@ -179,8 +183,8 @@
 
     .weather-details {
       display: grid;
-      grid-template-columns: repeat(3, 1fr);
-      gap: 8px;
+      grid-template-columns: repeat(auto-fit, minmax(60px, 1fr));
+      gap: 6px;
     }
 
     .weather-detail {
@@ -223,9 +227,9 @@
       display: flex;
       flex-direction: column;
       align-items: center;
-      min-width: 52px;
-      padding: 4px 6px;
-      gap: 4px;
+      min-width: 44px;
+      padding: 4px 4px;
+      gap: 3px;
     }
 
     .weather-hour-time {
@@ -253,7 +257,7 @@
     /* Stocks */
     .stocks-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
       gap: 10px;
     }
 
@@ -272,11 +276,14 @@
 
     .stock-name {
       font-weight: 600;
-      font-size: 0.95rem;
+      font-size: 0.85rem;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
 
     .stock-label {
-      font-size: 0.75rem;
+      font-size: 0.7rem;
       color: var(--text-secondary);
     }
 
@@ -285,13 +292,13 @@
     }
 
     .stock-price {
-      font-size: 1.1rem;
+      font-size: 1rem;
       font-weight: 500;
       font-variant-numeric: tabular-nums;
     }
 
     .stock-change {
-      font-size: 0.85rem;
+      font-size: 0.75rem;
       font-weight: 500;
       font-variant-numeric: tabular-nums;
     }
@@ -3252,42 +3259,44 @@
       const grid = document.querySelector('.grid');
       if (!grid) return;
       const cards = Array.from(grid.querySelectorAll('.card[data-widget]'));
-      const narrowWidgets = new Set(['clock', 'weather', 'sensors', 'hue', 'power']);
+      const smallWidgets = new Set(['clock', 'weather', 'sensors', 'hue', 'power']);
+      const mediumWidgets = new Set(['stocks', 'news', 'transit']);
       const layoutCfg = getLayoutConfig();
       const cols = layoutCfg.columns;
 
       // Clear previous layout spans
       cards.forEach(c => {
-        c.classList.remove('span-full', 'span-half');
-        c.style.gridColumn = '';
+        c.classList.remove('span-full', 'span-half', 'span-2', 'span-3');
       });
 
-      if (cols >= 3) {
-        // With 3+ columns, narrow widgets each take 1 column, wide take full width
+      if (cols === 4) {
+        // 4 columns: small = 1 col, medium = 2 cols
         cards.forEach(c => {
-          const isNarrow = narrowWidgets.has(c.dataset.widget);
-          if (!isNarrow) {
-            c.classList.add('span-full');
+          if (mediumWidgets.has(c.dataset.widget)) {
+            c.classList.add('span-2');
           }
-          // Narrow cards just flow naturally into available columns
+        });
+      } else if (cols === 3) {
+        // 3 columns: small = 1 col, medium = 2 cols
+        cards.forEach(c => {
+          if (mediumWidgets.has(c.dataset.widget)) {
+            c.classList.add('span-2');
+          }
         });
       } else {
-        // 2-column layout: original pairing logic
+        // 2 columns: pair small widgets, medium/wide take full
         let i = 0;
         while (i < cards.length) {
           const card = cards[i];
-          const isNarrow = narrowWidgets.has(card.dataset.widget);
+          const isSmall = smallWidgets.has(card.dataset.widget);
           const next = cards[i + 1];
-          const nextIsNarrow = next ? narrowWidgets.has(next.dataset.widget) : false;
+          const nextIsSmall = next ? smallWidgets.has(next.dataset.widget) : false;
 
-          if (isNarrow && next && nextIsNarrow) {
+          if (isSmall && next && nextIsSmall) {
             card.classList.add('span-half');
             next.classList.add('span-half');
             i += 2;
-          } else if (isNarrow && next && !nextIsNarrow) {
-            card.classList.add('span-full');
-            i += 1;
-          } else if (!isNarrow) {
+          } else if (!isSmall) {
             card.classList.add('span-full');
             i += 1;
           } else {

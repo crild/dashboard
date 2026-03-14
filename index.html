@@ -2066,18 +2066,20 @@
         const c = data.current;
         const [desc, icon] = WMO_CODES[c.weather_code] || ['Unknown', '🌡'];
 
-        // Build hourly forecast data for full day (midnight to midnight)
+        // Build hourly forecast data for 48 hours (today + tomorrow)
         const now = new Date();
         const currentHour = now.getHours();
 
         const forecastData = [];
-        for (let i = 0; i < data.hourly.time.length && i < 24; i++) {
+        for (let i = 0; i < data.hourly.time.length && i < 48; i++) {
           forecastData.push({
             hour: new Date(data.hourly.time[i]).getHours(),
             temp: data.hourly.temperature_2m[i],
             precip: data.hourly.precipitation_probability[i] || 0,
             isNow: i === currentHour,
-            isPast: i <= currentHour
+            isPast: i < currentHour,
+            day: i < 24 ? 'today' : 'tomorrow',
+            index: i
           });
         }
 
@@ -2121,10 +2123,10 @@
             </div>
           </div>
           <div class="weather-forecast">
-            <div class="weather-forecast-label">Temperature today</div>
+            <div class="weather-forecast-label">Temperature · 48h forecast</div>
             <canvas id="weather-temp-chart"></canvas>
             <div class="weather-precip-section">
-              <div class="weather-forecast-label">Precipitation chance · peak ${Math.max(...forecastData.filter(d => !d.isPast || d.isNow).map(d => d.precip))}% remaining</div>
+              <div class="weather-forecast-label">Precipitation chance · peak ${Math.max(...forecastData.filter(d => !d.isPast || d.isNow).map(d => d.precip))}% ahead</div>
               <canvas id="weather-precip-chart"></canvas>
             </div>
           </div>`;
@@ -2204,6 +2206,24 @@
         ctx.setLineDash([]);
       }
 
+      // Midnight separator
+      if (data.length > 24) {
+        const sepX = Math.round(getX(24)) + 0.5;
+        const borderColor = styles.getPropertyValue('--border').trim();
+        ctx.strokeStyle = borderColor;
+        ctx.lineWidth = 1;
+        ctx.setLineDash([3, 3]);
+        ctx.beginPath();
+        ctx.moveTo(sepX, padTop);
+        ctx.lineTo(sepX, padTop + chartH);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.font = '8px -apple-system, sans-serif';
+        ctx.fillStyle = textSec;
+        ctx.textAlign = 'left';
+        ctx.fillText('tomorrow', sepX + 4, padTop + 8);
+      }
+
       // Dots and temp labels
       ctx.font = '10px -apple-system, sans-serif';
       ctx.textAlign = 'center';
@@ -2216,9 +2236,10 @@
         ctx.fill();
       });
 
-      // Temp labels (sparse)
+      // Temp labels (sparse — every 6h for 48h view)
+      const labelStep = data.length > 24 ? 6 : 4;
       data.forEach((d, i) => {
-        if (i % 4 === 0 || i === data.length - 1 || d.isNow) {
+        if (i % labelStep === 0 || i === data.length - 1 || d.isNow) {
           const x = getX(i), y = getY(d.temp);
           ctx.fillStyle = d.isPast ? textColor : textSec;
           ctx.fillText(Math.round(d.temp) + '°', x, y - 6);
@@ -2228,7 +2249,7 @@
       // Hour labels at bottom
       ctx.font = '9px -apple-system, sans-serif';
       data.forEach((d, i) => {
-        if (i % 4 === 0 || i === data.length - 1) {
+        if (i % labelStep === 0 || i === data.length - 1) {
           ctx.fillStyle = d.isPast ? textSec : textSec + '60';
           ctx.fillText(String(d.hour).padStart(2, '0'), getX(i), h - 2);
         }
@@ -2240,7 +2261,8 @@
         const mx = e.clientX - r.left;
         const idx = Math.round((mx / r.width) * (data.length - 1));
         const d = data[Math.max(0, Math.min(idx, data.length - 1))];
-        const label = d.isNow ? 'Now' : String(d.hour).padStart(2, '0') + ':00';
+        const dayLabel = d.day === 'tomorrow' ? 'Tomorrow ' : '';
+        const label = d.isNow ? 'Now' : dayLabel + String(d.hour).padStart(2, '0') + ':00';
         showTooltip(canvas, mx, e.clientY - r.top, [
           `<span class="chart-tooltip-value">${d.temp.toFixed(1)}°C</span>`,
           `<span class="chart-tooltip-time">${label}</span>`
@@ -2318,6 +2340,20 @@
         ctx.setLineDash([]);
       }
 
+      // Midnight separator
+      if (data.length > 24) {
+        const sepX = Math.round(getXp(24)) + 0.5;
+        const borderColor = styles.getPropertyValue('--border').trim();
+        ctx.strokeStyle = borderColor;
+        ctx.lineWidth = 1;
+        ctx.setLineDash([3, 3]);
+        ctx.beginPath();
+        ctx.moveTo(sepX, pad);
+        ctx.lineTo(sepX, pad + chartH);
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
+
       // Label current value with dot
       if (nowIdx >= 0) {
         const nx = getXp(nowIdx);
@@ -2373,9 +2409,10 @@
       }
 
       // Hour labels
+      const precipLabelStep = data.length > 24 ? 6 : 4;
       ctx.font = '9px -apple-system, sans-serif';
       ctx.textAlign = 'center';
-      for (let i = 0; i < data.length; i += 4) {
+      for (let i = 0; i < data.length; i += precipLabelStep) {
         ctx.fillStyle = data[i].isPast ? textSec : textSec + '60';
         ctx.fillText(String(data[i].hour).padStart(2, '0'), getXp(i), h - 1);
       }
@@ -2386,7 +2423,8 @@
         const mx = e.clientX - r.left;
         const idx = Math.round((mx / r.width) * (data.length - 1));
         const d = data[Math.max(0, Math.min(idx, data.length - 1))];
-        const label = d.isNow ? 'Now' : String(d.hour).padStart(2, '0') + ':00';
+        const dayLabel = d.day === 'tomorrow' ? 'Tomorrow ' : '';
+        const label = d.isNow ? 'Now' : dayLabel + String(d.hour).padStart(2, '0') + ':00';
         showTooltip(canvas, mx, e.clientY - r.top, [
           `<span class="chart-tooltip-value">${d.precip}% chance</span>`,
           `<span class="chart-tooltip-time">${label}</span>`

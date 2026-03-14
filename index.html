@@ -204,54 +204,35 @@
       margin-top: 2px;
     }
 
-    .weather-hourly {
-      display: flex;
-      gap: 0;
-      overflow-x: auto;
-      margin-top: 14px;
-      padding-top: 12px;
+    .weather-forecast {
+      margin-top: 10px;
+      padding-top: 10px;
       border-top: 1px solid var(--border);
-      scrollbar-width: thin;
     }
 
-    .weather-hourly::-webkit-scrollbar {
-      height: 4px;
-    }
-
-    .weather-hourly::-webkit-scrollbar-thumb {
-      background: var(--border);
-      border-radius: 2px;
-    }
-
-    .weather-hour {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      min-width: 44px;
-      padding: 4px 4px;
-      gap: 3px;
-    }
-
-    .weather-hour-time {
+    .weather-forecast-label {
       font-size: 0.7rem;
       color: var(--text-secondary);
       font-weight: 500;
+      margin-bottom: 4px;
     }
 
-    .weather-hour-icon {
-      font-size: 1.2rem;
-      line-height: 1;
+    .weather-forecast canvas {
+      width: 100%;
+      height: 50px;
+      display: block;
+      cursor: crosshair;
     }
 
-    .weather-hour-temp {
-      font-size: 0.85rem;
-      font-weight: 600;
+    .weather-precip-section {
+      margin-top: 6px;
     }
 
-    .weather-hour-precip {
-      font-size: 0.65rem;
-      color: var(--accent);
-      min-height: 0.85em;
+    .weather-precip-section canvas {
+      width: 100%;
+      height: 30px;
+      display: block;
+      cursor: crosshair;
     }
 
     /* Stocks */
@@ -1392,55 +1373,57 @@
         const c = data.current;
         const [desc, icon] = WMO_CODES[c.weather_code] || ['Unknown', '🌡'];
 
-        // Build hourly forecast (next 24 hours starting from current hour)
+        // Build hourly forecast data
         const now = new Date();
         const currentIso = now.toISOString().slice(0, 13);
         let startIdx = data.hourly.time.findIndex(t => t.startsWith(currentIso));
         if (startIdx < 0) startIdx = 0;
-        const hours = data.hourly.time.slice(startIdx, startIdx + 13);
-        const hourlyHtml = hours.map((t, i) => {
+
+        const forecastData = [];
+        for (let i = 0; i < 13; i++) {
           const idx = startIdx + i;
-          const temp = Math.round(data.hourly.temperature_2m[idx]);
-          const code = data.hourly.weather_code[idx];
-          const precip = data.hourly.precipitation_probability[idx];
-          const [, hIcon] = WMO_CODES[code] || ['', '🌡'];
-          const h = new Date(t).getHours();
-          const timeLabel = i === 0 ? 'Now' : `${String(h).padStart(2, '0')}`;
-          const precipLabel = precip > 0 ? `${precip}%` : '';
-          return `
-            <div class="weather-hour">
-              <span class="weather-hour-time">${timeLabel}</span>
-              <span class="weather-hour-icon">${hIcon}</span>
-              <span class="weather-hour-temp">${temp}°</span>
-              <span class="weather-hour-precip">${precipLabel}</span>
-            </div>`;
-        }).join('');
+          if (idx >= data.hourly.time.length) break;
+          forecastData.push({
+            hour: new Date(data.hourly.time[idx]).getHours(),
+            temp: data.hourly.temperature_2m[idx],
+            precip: data.hourly.precipitation_probability[idx] || 0,
+            isNow: i === 0
+          });
+        }
 
         document.getElementById('weather-content').innerHTML = `
-          <div style="display:flex;gap:24px;align-items:flex-start;flex-wrap:wrap;">
-            <div style="min-width:180px;">
-              <div class="weather-main">
-                <span class="weather-icon">${icon}</span>
-                <span class="weather-temp">${Math.round(c.temperature_2m)}°</span>
-              </div>
-              <div class="weather-desc">${desc} · Feels like ${Math.round(c.apparent_temperature)}°</div>
-              <div class="weather-details">
-                <div class="weather-detail">
-                  <div class="weather-detail-label">Wind</div>
-                  <div class="weather-detail-value">${Math.round(c.wind_speed_10m)} km/h</div>
-                </div>
-                <div class="weather-detail">
-                  <div class="weather-detail-label">Humidity</div>
-                  <div class="weather-detail-value">${c.relative_humidity_2m}%</div>
-                </div>
-                <div class="weather-detail">
-                  <div class="weather-detail-label">Precip</div>
-                  <div class="weather-detail-value">${c.precipitation} mm</div>
-                </div>
-              </div>
+          <div class="weather-main">
+            <span class="weather-icon">${icon}</span>
+            <span class="weather-temp">${Math.round(c.temperature_2m)}°</span>
+          </div>
+          <div class="weather-desc">${desc} · Feels like ${Math.round(c.apparent_temperature)}°</div>
+          <div class="weather-details">
+            <div class="weather-detail">
+              <div class="weather-detail-label">Wind</div>
+              <div class="weather-detail-value">${Math.round(c.wind_speed_10m)} km/h</div>
+            </div>
+            <div class="weather-detail">
+              <div class="weather-detail-label">Humidity</div>
+              <div class="weather-detail-value">${c.relative_humidity_2m}%</div>
+            </div>
+            <div class="weather-detail">
+              <div class="weather-detail-label">Precip</div>
+              <div class="weather-detail-value">${c.precipitation} mm</div>
             </div>
           </div>
-          <div class="weather-hourly">${hourlyHtml}</div>`;
+          <div class="weather-forecast">
+            <div class="weather-forecast-label">Temperature next 12h</div>
+            <canvas id="weather-temp-chart"></canvas>
+            <div class="weather-precip-section">
+              <div class="weather-forecast-label">Precipitation chance</div>
+              <canvas id="weather-precip-chart"></canvas>
+            </div>
+          </div>`;
+
+        requestAnimationFrame(() => {
+          drawWeatherTempChart(document.getElementById('weather-temp-chart'), forecastData);
+          drawWeatherPrecipChart(document.getElementById('weather-precip-chart'), forecastData);
+        });
         document.getElementById('weather-status').textContent = 'Updated ' + new Date().toLocaleTimeString('nb-NO', { hour: '2-digit', minute: '2-digit' });
       } catch (e) {
         document.getElementById('weather-content').innerHTML = `<div class="error">Could not load weather</div>`;
@@ -1448,6 +1431,159 @@
     }
     fetchWeather();
     setInterval(fetchWeather, 10 * 60 * 1000);
+
+    function drawWeatherTempChart(canvas, data) {
+      if (!canvas || data.length < 2) return;
+      const dpr = window.devicePixelRatio || 1;
+      const rect = canvas.getBoundingClientRect();
+      canvas.width = rect.width * dpr;
+      canvas.height = rect.height * dpr;
+      const ctx = canvas.getContext('2d');
+      ctx.scale(dpr, dpr);
+      const w = rect.width;
+      const h = rect.height;
+
+      const styles = getComputedStyle(document.documentElement);
+      const accent = styles.getPropertyValue('--accent').trim();
+      const textSec = styles.getPropertyValue('--text-secondary').trim();
+
+      const temps = data.map(d => d.temp);
+      const min = Math.min(...temps);
+      const max = Math.max(...temps);
+      const range = max - min || 1;
+      const padTop = 14;
+      const padBot = 14;
+      const chartH = h - padTop - padBot;
+
+      // Draw line
+      ctx.beginPath();
+      ctx.strokeStyle = accent;
+      ctx.lineWidth = 2;
+      ctx.lineJoin = 'round';
+      data.forEach((d, i) => {
+        const x = (i / (data.length - 1)) * w;
+        const y = padTop + chartH - ((d.temp - min) / range) * chartH;
+        if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+      });
+      ctx.stroke();
+
+      // Fill area under
+      const lastX = w;
+      const lastY = padTop + chartH - ((data[data.length - 1].temp - min) / range) * chartH;
+      ctx.lineTo(lastX, h);
+      ctx.lineTo(0, h);
+      ctx.closePath();
+      ctx.fillStyle = accent + '15';
+      ctx.fill();
+
+      // Draw dots and temp labels
+      ctx.font = '10px -apple-system, sans-serif';
+      ctx.textAlign = 'center';
+      data.forEach((d, i) => {
+        const x = (i / (data.length - 1)) * w;
+        const y = padTop + chartH - ((d.temp - min) / range) * chartH;
+
+        // Dot
+        ctx.beginPath();
+        ctx.arc(x, y, d.isNow ? 3.5 : 2, 0, Math.PI * 2);
+        ctx.fillStyle = accent;
+        ctx.fill();
+
+        // Temp label above (every 3rd + first and last)
+        if (i === 0 || i === data.length - 1 || i % 3 === 0) {
+          ctx.fillStyle = styles.getPropertyValue('--text').trim();
+          ctx.fillText(Math.round(d.temp) + '°', x, y - 6);
+        }
+      });
+
+      // Hour labels at bottom
+      ctx.fillStyle = textSec;
+      ctx.font = '9px -apple-system, sans-serif';
+      data.forEach((d, i) => {
+        if (i === 0 || i === data.length - 1 || i % 3 === 0) {
+          const x = (i / (data.length - 1)) * w;
+          const label = d.isNow ? 'Now' : String(d.hour).padStart(2, '0');
+          ctx.fillText(label, x, h - 2);
+        }
+      });
+
+      // Tooltip
+      canvas.onmousemove = (e) => {
+        const r = canvas.getBoundingClientRect();
+        const mx = e.clientX - r.left;
+        const idx = Math.round((mx / r.width) * (data.length - 1));
+        const d = data[Math.max(0, Math.min(idx, data.length - 1))];
+        const label = d.isNow ? 'Now' : String(d.hour).padStart(2, '0') + ':00';
+        showTooltip(canvas, mx, e.clientY - r.top, [
+          `<span class="chart-tooltip-value">${d.temp.toFixed(1)}°C</span>`,
+          `<span class="chart-tooltip-time">${label}</span>`
+        ]);
+      };
+      canvas.onmouseleave = hideTooltip;
+    }
+
+    function drawWeatherPrecipChart(canvas, data) {
+      if (!canvas || data.length < 2) return;
+      const dpr = window.devicePixelRatio || 1;
+      const rect = canvas.getBoundingClientRect();
+      canvas.width = rect.width * dpr;
+      canvas.height = rect.height * dpr;
+      const ctx = canvas.getContext('2d');
+      ctx.scale(dpr, dpr);
+      const w = rect.width;
+      const h = rect.height;
+
+      const styles = getComputedStyle(document.documentElement);
+      const accent = styles.getPropertyValue('--accent').trim();
+      const textSec = styles.getPropertyValue('--text-secondary').trim();
+
+      const barW = w / data.length;
+      const labelH = 12;
+      const chartH = h - labelH;
+
+      data.forEach((d, i) => {
+        const barH = (d.precip / 100) * chartH;
+        const x = i * barW;
+        const y = chartH - barH;
+
+        ctx.fillStyle = d.precip > 50 ? accent : accent + '50';
+        ctx.beginPath();
+        ctx.roundRect(x + 1, y, barW - 2, barH, [2, 2, 0, 0]);
+        ctx.fill();
+
+        // Percentage on bars with significant chance
+        if (d.precip >= 20) {
+          ctx.fillStyle = d.precip > 50 ? '#fff' : styles.getPropertyValue('--text').trim();
+          ctx.font = '8px -apple-system, sans-serif';
+          ctx.textAlign = 'center';
+          ctx.fillText(d.precip + '%', x + barW / 2, barH > 12 ? y + 9 : y - 2);
+        }
+      });
+
+      // Hour labels
+      ctx.fillStyle = textSec;
+      ctx.font = '9px -apple-system, sans-serif';
+      ctx.textAlign = 'center';
+      data.forEach((d, i) => {
+        if (i === 0 || i === data.length - 1 || i % 3 === 0) {
+          ctx.fillText(d.isNow ? 'Now' : String(d.hour).padStart(2, '0'), i * barW + barW / 2, h - 1);
+        }
+      });
+
+      // Tooltip
+      canvas.onmousemove = (e) => {
+        const r = canvas.getBoundingClientRect();
+        const mx = e.clientX - r.left;
+        const idx = Math.floor((mx / r.width) * data.length);
+        const d = data[Math.max(0, Math.min(idx, data.length - 1))];
+        const label = d.isNow ? 'Now' : String(d.hour).padStart(2, '0') + ':00';
+        showTooltip(canvas, mx, e.clientY - r.top, [
+          `<span class="chart-tooltip-value">${d.precip}% chance</span>`,
+          `<span class="chart-tooltip-time">${label}</span>`
+        ]);
+      };
+      canvas.onmouseleave = hideTooltip;
+    }
 
     // ── Tooltip helper ──
     let activeTooltip = null;

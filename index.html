@@ -1887,7 +1887,7 @@
       const hasTomorrow = prices.some(p => !p.isToday);
       const totalHours = hasTomorrow ? 48 : 24;
       const labelH = 16;
-      const pad = 4;
+      const pad = 14;
       const chartH = h - labelH - pad;
 
       const values = prices.map(p => p.value);
@@ -2043,13 +2043,9 @@
         const isFuture = !(prices[ci].isToday && ci <= currentHour);
         ctx.fillStyle = isFuture ? textColor + '80' : textColor;
         if (type === 'peak') {
-          // If label would go above canvas, draw below the line instead
-          const labelY = y - 5 < 8 ? y + 12 : y - 5;
-          ctx.fillText(labelText, x, labelY);
+          ctx.fillText(labelText, x, y - 5);
         } else {
-          // If label would go below chart area, draw above the line instead
-          const labelY = y + 12 > pad + chartH ? y - 5 : y + 12;
-          ctx.fillText(labelText, x, labelY);
+          ctx.fillText(labelText, x, y + 12);
         }
       });
 

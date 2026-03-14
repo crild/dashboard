@@ -4559,7 +4559,8 @@
       let urgency = '';
       if (walkMin != null) {
         const buffer = diff - walkMin;
-        if (buffer < 0) urgency = 'missed';          // grey: can't make it
+        const rush = walkMin * 0.6;                  // assume you can rush in 60% of walk time
+        if (diff < rush) urgency = 'missed';         // grey: can't make it even rushing
         else if (buffer <= 1) urgency = 'urgent';    // red: must leave NOW
         else if (buffer <= 4) urgency = 'hurry';     // yellow: get moving
         else urgency = 'relaxed';                    // green: plenty of time

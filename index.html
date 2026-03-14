@@ -2043,9 +2043,13 @@
         const isFuture = !(prices[ci].isToday && ci <= currentHour);
         ctx.fillStyle = isFuture ? textColor + '80' : textColor;
         if (type === 'peak') {
-          ctx.fillText(labelText, x, y - 5);
+          // If label would go above canvas, draw below the line instead
+          const labelY = y - 5 < 8 ? y + 12 : y - 5;
+          ctx.fillText(labelText, x, labelY);
         } else {
-          ctx.fillText(labelText, x, y + 12);
+          // If label would go below chart area, draw above the line instead
+          const labelY = y + 12 > pad + chartH ? y - 5 : y + 12;
+          ctx.fillText(labelText, x, labelY);
         }
       });
 

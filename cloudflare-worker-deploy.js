@@ -181,6 +181,40 @@ async function handleRequest(request) {
     return new Response(body, {status: resp.status, headers: {"Content-Type": "application/json", "Access-Control-Allow-Origin": "*"}});
   }
 
+  if (path === "/hue/scenes") {
+    var token = await getHueToken();
+    if (!token) {
+      return new Response(JSON.stringify({error: "Not authorized."}), {status: 401, headers: {"Content-Type": "application/json", "Access-Control-Allow-Origin": "*"}});
+    }
+    var username = await KV.get("hue_username");
+    var resp = await fetch("https://api.meethue.com/route/api/" + (username || "0") + "/scenes", {
+      headers: {"Authorization": "Bearer " + token}
+    });
+    var body = await resp.text();
+    return new Response(body, {status: resp.status, headers: {"Content-Type": "application/json", "Access-Control-Allow-Origin": "*"}});
+  }
+
+  if (path === "/hue/scene" && request.method === "POST") {
+    var token = await getHueToken();
+    if (!token) {
+      return new Response(JSON.stringify({error: "Not authorized."}), {status: 401, headers: {"Content-Type": "application/json", "Access-Control-Allow-Origin": "*"}});
+    }
+    var username = await KV.get("hue_username");
+    var reqBody = await request.json();
+    var sceneId = reqBody.scene;
+    var groupId = reqBody.group || "0";
+    var resp = await fetch("https://api.meethue.com/route/api/" + (username || "0") + "/groups/" + groupId + "/action", {
+      method: "PUT",
+      headers: {
+        "Authorization": "Bearer " + token,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({scene: sceneId})
+    });
+    var body = await resp.text();
+    return new Response(body, {status: resp.status, headers: {"Content-Type": "application/json", "Access-Control-Allow-Origin": "*"}});
+  }
+
   if (path === "/config/save" && request.method === "POST") {
     try {
       var configData = await request.text();

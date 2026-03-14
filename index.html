@@ -479,72 +479,44 @@
     }
 
     /* Hue Lights */
-    .hue-rooms {
+    .hue-scenes {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-      gap: 10px;
+      grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
+      gap: 8px;
     }
 
-    .hue-room {
+    .hue-scene-btn {
       border: 1px solid var(--border);
       border-radius: 12px;
-      padding: 14px;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 8px;
-      transition: border-color 0.2s, background 0.2s;
+      padding: 12px 8px;
+      background: var(--bg-card);
+      color: var(--text);
+      cursor: pointer;
+      text-align: center;
+      transition: all 0.2s;
+      font-size: 0.8rem;
+      font-weight: 500;
     }
 
-    .hue-room.room-on {
+    .hue-scene-btn:hover {
       border-color: #f5c518;
       background: rgba(245, 197, 24, 0.06);
     }
 
-    .hue-room-name {
-      font-size: 0.8rem;
-      font-weight: 600;
-      text-align: center;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      max-width: 100%;
+    .hue-scene-btn.active {
+      border-color: #f5c518;
+      background: rgba(245, 197, 24, 0.1);
+      box-shadow: 0 0 0 1px #f5c518;
     }
 
-    .hue-room-info {
-      font-size: 0.7rem;
+    .hue-scene-btn.off-btn {
       color: var(--text-secondary);
     }
 
-    .hue-toggle {
-      width: 48px;
-      height: 26px;
-      border-radius: 13px;
-      border: none;
-      cursor: pointer;
-      position: relative;
-      transition: background 0.2s;
-      background: var(--border);
-    }
-
-    .hue-toggle.on {
-      background: #f5c518;
-    }
-
-    .hue-toggle::after {
-      content: '';
-      position: absolute;
-      top: 3px;
-      left: 3px;
-      width: 20px;
-      height: 20px;
-      border-radius: 50%;
-      background: white;
-      transition: transform 0.2s;
-    }
-
-    .hue-toggle.on::after {
-      transform: translateX(22px);
+    .hue-scene-icon {
+      font-size: 1.4rem;
+      margin-bottom: 4px;
+      display: block;
     }
 
     /* Power prices */
@@ -1929,6 +1901,14 @@
     setInterval(fetchSensors, 5 * 60 * 1000);
 
     // ── Hue Lights ──
+    let allHueScenes = {};
+    let activeHueScene = null;
+
+    function getHueConfig() {
+      const cfg = loadConfig();
+      return cfg?.hueScenes ?? [];
+    }
+
     async function fetchHue() {
       try {
         const res = await fetch('https://yahoopull.charles-rutherford93.workers.dev/hue/groups');
@@ -1936,62 +1916,73 @@
           document.getElementById('hue-content').innerHTML = '<div class="error">Hue not authorized. <a href="https://yahoopull.charles-rutherford93.workers.dev/auth/hue" target="_blank" style="color:var(--accent)">Authorize here</a></div>';
           return;
         }
-        const data = await res.json();
-        if (data.error || Array.isArray(data)) {
-          document.getElementById('hue-content').innerHTML = '<div class="error">Could not load Hue data</div>';
+        const groupData = await res.json();
+
+        // Check if any lights are on
+        const allGroup = groupData['0'];
+        const anyOn = allGroup && allGroup.state && allGroup.state.any_on;
+
+        // Load scenes
+        const scenesRes = await fetch('https://yahoopull.charles-rutherford93.workers.dev/hue/scenes');
+        if (scenesRes.ok) {
+          allHueScenes = await scenesRes.json();
+        }
+
+        const selectedScenes = getHueConfig();
+
+        if (selectedScenes.length === 0) {
+          document.getElementById('hue-content').innerHTML = '<div style="color:var(--text-secondary);font-size:0.85rem;">No scenes configured. Click Edit to choose scenes.</div>';
+          document.getElementById('hue-status').textContent = 'Updated ' + new Date().toLocaleTimeString('nb-NO', { hour: '2-digit', minute: '2-digit' });
           return;
         }
 
-        const rooms = Object.entries(data)
-          .filter(([id, g]) => g.type === 'Room' || g.type === 'Zone')
-          .sort((a, b) => a[1].name.localeCompare(b[1].name));
+        let html = '<div class="hue-scenes">';
+        html += '<button class="hue-scene-btn off-btn' + (!anyOn ? ' active' : '') + '" onclick="hueAllOff()">' +
+          '<span class="hue-scene-icon">&#9790;</span>Off</button>';
 
-        if (rooms.length === 0) {
-          document.getElementById('hue-content').innerHTML = '<div style="color:var(--text-secondary);font-size:0.85rem;">No rooms found</div>';
-          return;
-        }
+        selectedScenes.forEach(s => {
+          const isActive = activeHueScene === s.id && anyOn;
+          html += '<button class="hue-scene-btn' + (isActive ? ' active' : '') + '" onclick="activateHueScene(\'' + s.id + '\', \'' + s.group + '\')">' +
+            '<span class="hue-scene-icon">' + (s.icon || '&#9728;') + '</span>' + s.label + '</button>';
+        });
 
-        document.getElementById('hue-content').innerHTML = '<div class="hue-rooms">' + rooms.map(([id, g]) => {
-          const anyOn = g.state && g.state.any_on;
-          const lightsCount = g.lights ? g.lights.length : 0;
-          const onCount = anyOn ? (g.state.all_on ? lightsCount : 'some') : 0;
-          return '<div class="hue-room' + (anyOn ? ' room-on' : '') + '" id="hue-room-' + id + '">' +
-            '<div class="hue-room-name">' + g.name + '</div>' +
-            '<button class="hue-toggle' + (anyOn ? ' on' : '') + '" id="hue-btn-' + id + '" onclick="toggleHueRoom(\'' + id + '\', ' + !anyOn + ')"></button>' +
-            '<div class="hue-room-info">' + lightsCount + ' light' + (lightsCount !== 1 ? 's' : '') + '</div>' +
-            '</div>';
-        }).join('') + '</div>';
-
+        html += '</div>';
+        document.getElementById('hue-content').innerHTML = html;
         document.getElementById('hue-status').textContent = 'Updated ' + new Date().toLocaleTimeString('nb-NO', { hour: '2-digit', minute: '2-digit' });
       } catch (e) {
         document.getElementById('hue-content').innerHTML = '<div class="error">Could not connect to Hue</div>';
       }
     }
 
-    async function toggleHueRoom(groupId, on) {
-      const btn = document.getElementById('hue-btn-' + groupId);
-      const room = document.getElementById('hue-room-' + groupId);
-      if (btn) { btn.classList.toggle('on', on); }
-      if (room) { room.classList.toggle('room-on', on); }
+    async function activateHueScene(sceneId, groupId) {
+      activeHueScene = sceneId;
+      // Update button states visually
+      document.querySelectorAll('.hue-scene-btn').forEach(b => b.classList.remove('active'));
+      event.currentTarget.classList.add('active');
+      try {
+        await fetch('https://yahoopull.charles-rutherford93.workers.dev/hue/scene', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ scene: sceneId, group: groupId })
+        });
+      } catch (e) {}
+    }
+
+    async function hueAllOff() {
+      activeHueScene = null;
+      document.querySelectorAll('.hue-scene-btn').forEach(b => b.classList.remove('active'));
+      document.querySelector('.hue-scene-btn.off-btn').classList.add('active');
       try {
         await fetch('https://yahoopull.charles-rutherford93.workers.dev/hue/toggle', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ group: groupId, on: on })
+          body: JSON.stringify({ group: '0', on: false })
         });
-        // Update the onclick to toggle the other way
-        if (btn) {
-          btn.setAttribute('onclick', "toggleHueRoom('" + groupId + "', " + !on + ")");
-        }
-      } catch (e) {
-        // Revert visual on error
-        if (btn) { btn.classList.toggle('on', !on); }
-        if (room) { room.classList.toggle('room-on', !on); }
-      }
+      } catch (e) {}
     }
 
     fetchHue();
-    setInterval(fetchHue, 30 * 1000);
+    setInterval(fetchHue, 60 * 1000);
 
     // ── News (RSS) ──
     const PROXY = 'https://yahoopull.charles-rutherford93.workers.dev/?url=';
@@ -2696,35 +2687,102 @@
     }
 
     // ── Hue Settings ──
+    let currentHueScenesSelection = [];
+    const HUE_ICONS = ['&#9728;', '&#9790;', '&#127748;', '&#127749;', '&#127750;', '&#127916;', '&#128218;', '&#127864;', '&#9749;', '&#127881;'];
+
     function getHueSettingsHTML() {
+      currentHueScenesSelection = [...getHueConfig()];
       return `
-        <h3>Hue Lights</h3>
-        <p style="color:var(--text-secondary);font-size:0.85rem;margin-bottom:12px;">Hue lights are controlled via your Cloudflare Worker. The worker handles authentication and communicates with the Hue Remote API.</p>
-        <div style="font-size:0.85rem;margin-bottom:16px;">
+        <h3>Hue Scenes</h3>
+        <div style="font-size:0.85rem;margin-bottom:12px;">
           <strong>Status:</strong> <span id="hue-settings-status">Checking...</span>
         </div>
+        <label>Your selected scenes</label>
+        <div class="tag-list" id="wp-hue-tags">${renderHueSceneTags()}</div>
+        <label style="margin-top:12px;">Available scenes from your bridge</label>
+        <div id="wp-hue-scenes-list" style="max-height:250px;overflow-y:auto;border:1px solid var(--border);border-radius:8px;padding:4px;">
+          <div class="loading">Loading scenes...</div>
+        </div>
         <div class="widget-popup-actions">
-          <a href="https://yahoopull.charles-rutherford93.workers.dev/auth/hue" target="_blank" class="btn btn-primary" style="text-decoration:none;">Authorize Hue</a>
-          <button class="btn" onclick="closeWidgetPopup()">Close</button>
+          <a href="https://yahoopull.charles-rutherford93.workers.dev/auth/hue" target="_blank" class="btn" style="text-decoration:none;margin-right:auto;font-size:0.78rem;color:var(--text-secondary);">Re-authorize</a>
+          <button class="btn" onclick="closeWidgetPopup()">Cancel</button>
+          <button class="btn btn-primary" onclick="saveHueSettings()">Save</button>
         </div>`;
     }
 
-    // Check Hue auth status when settings open
+    function renderHueSceneTags() {
+      if (currentHueScenesSelection.length === 0) return '<span style="color:var(--text-secondary);font-size:0.8rem;">No scenes selected</span>';
+      return currentHueScenesSelection.map((s, i) =>
+        '<span class="tag-item">' + s.icon + ' ' + s.label + '<button class="tag-remove" onclick="removeHueScene(' + i + ')">&times;</button></span>'
+      ).join('');
+    }
+
+    function removeHueScene(idx) {
+      currentHueScenesSelection.splice(idx, 1);
+      document.getElementById('wp-hue-tags').innerHTML = renderHueSceneTags();
+    }
+
+    function addHueScene(id, name, group) {
+      if (currentHueScenesSelection.find(s => s.id === id)) return;
+      currentHueScenesSelection.push({ id, label: name, group, icon: '&#9728;' });
+      document.getElementById('wp-hue-tags').innerHTML = renderHueSceneTags();
+    }
+
+    function loadHueScenesList() {
+      fetch('https://yahoopull.charles-rutherford93.workers.dev/hue/scenes')
+        .then(r => {
+          const el = document.getElementById('hue-settings-status');
+          if (r.status === 401) {
+            if (el) el.innerHTML = '<span style="color:var(--negative)">Not authorized</span>';
+            document.getElementById('wp-hue-scenes-list').innerHTML = '<div style="padding:8px;color:var(--text-secondary);font-size:0.85rem;">Not authorized. Click Re-authorize below.</div>';
+            return null;
+          }
+          if (el) el.innerHTML = '<span style="color:var(--positive)">Connected</span>';
+          return r.json();
+        })
+        .then(data => {
+          if (!data) return;
+          const scenes = Object.entries(data)
+            .filter(([id, s]) => s.type === 'LightScene' || s.type === 'GroupScene')
+            .sort((a, b) => a[1].name.localeCompare(b[1].name));
+
+          if (scenes.length === 0) {
+            document.getElementById('wp-hue-scenes-list').innerHTML = '<div style="padding:8px;color:var(--text-secondary);">No scenes found</div>';
+            return;
+          }
+
+          document.getElementById('wp-hue-scenes-list').innerHTML = scenes.map(([id, s]) => {
+            const already = currentHueScenesSelection.find(x => x.id === id);
+            return '<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 8px;border-bottom:1px solid var(--border);font-size:0.85rem;">' +
+              '<span>' + s.name + ' <span style="color:var(--text-secondary);font-size:0.75rem;">(Group ' + s.group + ')</span></span>' +
+              (already ? '<span style="color:var(--positive);font-size:0.75rem;">Added</span>' :
+              '<button class="btn" style="font-size:0.75rem;padding:2px 8px;" onclick="addHueScene(\'' + id + '\', \'' + s.name.replace(/'/g, "\\'") + '\', \'' + s.group + '\')">Add</button>') +
+              '</div>';
+          }).join('');
+        })
+        .catch(() => {
+          document.getElementById('wp-hue-scenes-list').innerHTML = '<div style="padding:8px;color:var(--negative);">Error loading scenes</div>';
+        });
+    }
+
+    function saveHueSettings() {
+      const cfg = loadConfig() || {};
+      cfg.hueScenes = currentHueScenesSelection;
+      if (!cfg.weather) cfg.weather = getWeather();
+      if (!cfg.stocks) cfg.stocks = getStocks();
+      if (!cfg.feeds) cfg.feeds = getFeeds();
+      localStorage.setItem('dashboard-config', JSON.stringify(cfg));
+      closeWidgetPopup();
+      showToast('Hue scenes updated');
+      fetchHue();
+    }
+
+    // Load scenes list when Hue settings open
     const origOpenSettings = openWidgetSettings;
     openWidgetSettings = function(widget) {
       origOpenSettings(widget);
       if (widget === 'hue') {
-        fetch('https://yahoopull.charles-rutherford93.workers.dev/hue/groups')
-          .then(r => {
-            const el = document.getElementById('hue-settings-status');
-            if (!el) return;
-            if (r.status === 401) el.innerHTML = '<span style="color:var(--negative)">Not authorized</span>';
-            else el.innerHTML = '<span style="color:var(--positive)">Connected</span>';
-          })
-          .catch(() => {
-            const el = document.getElementById('hue-settings-status');
-            if (el) el.innerHTML = '<span style="color:var(--negative)">Error</span>';
-          });
+        loadHueScenesList();
       }
     };
 

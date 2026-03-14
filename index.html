@@ -1367,27 +1367,24 @@
       try {
         const loc = getWeather();
         document.querySelector('#weather-status').closest('.card').querySelector('.card-title').textContent = `Weather — ${loc.name}`;
-        const url = `https://api.open-meteo.com/v1/forecast?latitude=${loc.lat}&longitude=${loc.lon}&current=temperature_2m,apparent_temperature,weather_code,wind_speed_10m,precipitation,relative_humidity_2m&hourly=temperature_2m,weather_code,precipitation_probability&timezone=auto&forecast_hours=13`;
+        const url = `https://api.open-meteo.com/v1/forecast?latitude=${loc.lat}&longitude=${loc.lon}&current=temperature_2m,apparent_temperature,weather_code,wind_speed_10m,precipitation,relative_humidity_2m&hourly=temperature_2m,weather_code,precipitation_probability&timezone=auto&forecast_days=1`;
         const res = await fetch(url);
         const data = await res.json();
         const c = data.current;
         const [desc, icon] = WMO_CODES[c.weather_code] || ['Unknown', '🌡'];
 
-        // Build hourly forecast data
+        // Build hourly forecast data for full day (midnight to midnight)
         const now = new Date();
-        const currentIso = now.toISOString().slice(0, 13);
-        let startIdx = data.hourly.time.findIndex(t => t.startsWith(currentIso));
-        if (startIdx < 0) startIdx = 0;
+        const currentHour = now.getHours();
 
         const forecastData = [];
-        for (let i = 0; i < 13; i++) {
-          const idx = startIdx + i;
-          if (idx >= data.hourly.time.length) break;
+        for (let i = 0; i < data.hourly.time.length && i < 24; i++) {
           forecastData.push({
-            hour: new Date(data.hourly.time[idx]).getHours(),
-            temp: data.hourly.temperature_2m[idx],
-            precip: data.hourly.precipitation_probability[idx] || 0,
-            isNow: i === 0
+            hour: new Date(data.hourly.time[i]).getHours(),
+            temp: data.hourly.temperature_2m[i],
+            precip: data.hourly.precipitation_probability[i] || 0,
+            isNow: i === currentHour,
+            isPast: i <= currentHour
           });
         }
 
@@ -1412,7 +1409,7 @@
             </div>
           </div>
           <div class="weather-forecast">
-            <div class="weather-forecast-label">Temperature next 12h</div>
+            <div class="weather-forecast-label">Temperature today</div>
             <canvas id="weather-temp-chart"></canvas>
             <div class="weather-precip-section">
               <div class="weather-forecast-label">Precipitation chance</div>
@@ -1446,6 +1443,7 @@
       const styles = getComputedStyle(document.documentElement);
       const accent = styles.getPropertyValue('--accent').trim();
       const textSec = styles.getPropertyValue('--text-secondary').trim();
+      const textColor = styles.getPropertyValue('--text').trim();
 
       const temps = data.map(d => d.temp);
       const min = Math.min(...temps);
@@ -1455,55 +1453,72 @@
       const padBot = 14;
       const chartH = h - padTop - padBot;
 
-      // Draw line
-      ctx.beginPath();
-      ctx.strokeStyle = accent;
-      ctx.lineWidth = 2;
-      ctx.lineJoin = 'round';
-      data.forEach((d, i) => {
-        const x = (i / (data.length - 1)) * w;
-        const y = padTop + chartH - ((d.temp - min) / range) * chartH;
-        if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
-      });
-      ctx.stroke();
+      const nowIdx = data.findIndex(d => d.isNow);
+      const getX = (i) => (i / (data.length - 1)) * w;
+      const getY = (temp) => padTop + chartH - ((temp - min) / range) * chartH;
 
-      // Fill area under
-      const lastX = w;
-      const lastY = padTop + chartH - ((data[data.length - 1].temp - min) / range) * chartH;
-      ctx.lineTo(lastX, h);
-      ctx.lineTo(0, h);
-      ctx.closePath();
-      ctx.fillStyle = accent + '15';
-      ctx.fill();
+      // Draw past line (solid)
+      if (nowIdx >= 0) {
+        ctx.beginPath();
+        ctx.strokeStyle = accent;
+        ctx.lineWidth = 2;
+        ctx.lineJoin = 'round';
+        for (let i = 0; i <= nowIdx; i++) {
+          const x = getX(i), y = getY(data[i].temp);
+          if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+        }
+        ctx.stroke();
 
-      // Draw dots and temp labels
+        // Fill under past
+        ctx.lineTo(getX(nowIdx), h);
+        ctx.lineTo(0, h);
+        ctx.closePath();
+        ctx.fillStyle = accent + '15';
+        ctx.fill();
+      }
+
+      // Draw future line (dashed/faded)
+      if (nowIdx < data.length - 1) {
+        ctx.beginPath();
+        ctx.strokeStyle = accent + '40';
+        ctx.lineWidth = 1.5;
+        ctx.setLineDash([4, 3]);
+        ctx.lineJoin = 'round';
+        for (let i = nowIdx; i < data.length; i++) {
+          const x = getX(i), y = getY(data[i].temp);
+          if (i === nowIdx) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+        }
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
+
+      // Dots and temp labels
       ctx.font = '10px -apple-system, sans-serif';
       ctx.textAlign = 'center';
       data.forEach((d, i) => {
-        const x = (i / (data.length - 1)) * w;
-        const y = padTop + chartH - ((d.temp - min) / range) * chartH;
-
-        // Dot
+        if (!d.isPast && !d.isNow) return; // only draw dots for past/current
+        const x = getX(i), y = getY(d.temp);
         ctx.beginPath();
         ctx.arc(x, y, d.isNow ? 3.5 : 2, 0, Math.PI * 2);
         ctx.fillStyle = accent;
         ctx.fill();
+      });
 
-        // Temp label above (every 3rd + first and last)
-        if (i === 0 || i === data.length - 1 || i % 3 === 0) {
-          ctx.fillStyle = styles.getPropertyValue('--text').trim();
+      // Temp labels (sparse)
+      data.forEach((d, i) => {
+        if (i % 4 === 0 || i === data.length - 1 || d.isNow) {
+          const x = getX(i), y = getY(d.temp);
+          ctx.fillStyle = d.isPast ? textColor : textSec;
           ctx.fillText(Math.round(d.temp) + '°', x, y - 6);
         }
       });
 
       // Hour labels at bottom
-      ctx.fillStyle = textSec;
       ctx.font = '9px -apple-system, sans-serif';
       data.forEach((d, i) => {
-        if (i === 0 || i === data.length - 1 || i % 3 === 0) {
-          const x = (i / (data.length - 1)) * w;
-          const label = d.isNow ? 'Now' : String(d.hour).padStart(2, '0');
-          ctx.fillText(label, x, h - 2);
+        if (i % 4 === 0 || i === data.length - 1) {
+          ctx.fillStyle = d.isPast ? textSec : textSec + '60';
+          ctx.fillText(String(d.hour).padStart(2, '0'), getX(i), h - 2);
         }
       });
 
@@ -1546,27 +1561,32 @@
         const x = i * barW;
         const y = chartH - barH;
 
-        ctx.fillStyle = d.precip > 50 ? accent : accent + '50';
+        const isFuture = !d.isPast && !d.isNow;
+        if (isFuture) {
+          ctx.fillStyle = d.precip > 50 ? accent + '30' : accent + '18';
+        } else {
+          ctx.fillStyle = d.precip > 50 ? accent : accent + '50';
+        }
         ctx.beginPath();
         ctx.roundRect(x + 1, y, barW - 2, barH, [2, 2, 0, 0]);
         ctx.fill();
 
         // Percentage on bars with significant chance
-        if (d.precip >= 20) {
-          ctx.fillStyle = d.precip > 50 ? '#fff' : styles.getPropertyValue('--text').trim();
+        if (d.precip >= 30 && barH > 10) {
+          ctx.fillStyle = (!isFuture && d.precip > 50) ? '#fff' : styles.getPropertyValue('--text').trim() + (isFuture ? '60' : '');
           ctx.font = '8px -apple-system, sans-serif';
           ctx.textAlign = 'center';
-          ctx.fillText(d.precip + '%', x + barW / 2, barH > 12 ? y + 9 : y - 2);
+          ctx.fillText(d.precip + '%', x + barW / 2, y + 9);
         }
       });
 
       // Hour labels
-      ctx.fillStyle = textSec;
       ctx.font = '9px -apple-system, sans-serif';
       ctx.textAlign = 'center';
       data.forEach((d, i) => {
-        if (i === 0 || i === data.length - 1 || i % 3 === 0) {
-          ctx.fillText(d.isNow ? 'Now' : String(d.hour).padStart(2, '0'), i * barW + barW / 2, h - 1);
+        if (i % 4 === 0 || i === data.length - 1) {
+          ctx.fillStyle = d.isPast ? textSec : textSec + '60';
+          ctx.fillText(String(d.hour).padStart(2, '0'), i * barW + barW / 2, h - 1);
         }
       });
 
@@ -1633,12 +1653,25 @@
       const textSecondary = styles.getPropertyValue('--text-secondary').trim();
       const borderColor = styles.getPropertyValue('--border').trim();
 
-      // Reserve space for day labels if we have timestamp data
       const hasTimestamps = points && points.length === prices.length;
       const labelH = hasTimestamps ? 18 : 0;
       const pad = 4;
+
+      // Calculate full time span from midnight of first day to midnight after last day
+      let totalSlots, getSlotX;
+      if (hasTimestamps) {
+        const firstTime = points[0].time;
+        const lastTime = points[points.length - 1].time;
+        const firstMidnight = new Date(firstTime);
+        firstMidnight.setHours(0, 0, 0, 0);
+        const lastMidnight = new Date(lastTime);
+        lastMidnight.setDate(lastMidnight.getDate() + 1);
+        lastMidnight.setHours(0, 0, 0, 0);
+        const totalMs = lastMidnight.getTime() - firstMidnight.getTime();
+        getSlotX = (time) => ((time - firstMidnight.getTime()) / totalMs) * w;
+      }
+
       const chartH = h - pad * 2 - labelH;
-      const stepX = w / (prices.length - 1);
 
       const min = Math.min(...prices);
       const max = Math.max(...prices);
@@ -1650,48 +1683,57 @@
 
       // Find day boundaries for vertical separators
       const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-      const dayBoundaries = []; // { index, label }
+      const dayBoundaries = [];
       if (hasTimestamps) {
-        let lastDay = -1;
-        points.forEach((pt, i) => {
-          const d = new Date(pt.time);
-          const day = d.getDay();
-          if (day !== lastDay) {
-            dayBoundaries.push({ index: i, label: dayNames[day] });
-            lastDay = day;
-          }
-        });
+        const firstTime = points[0].time;
+        const firstMidnight = new Date(firstTime);
+        firstMidnight.setHours(0, 0, 0, 0);
+        const lastTime = points[points.length - 1].time;
+        const lastMidnight = new Date(lastTime);
+        lastMidnight.setDate(lastMidnight.getDate() + 1);
+        lastMidnight.setHours(0, 0, 0, 0);
+
+        // Walk through each midnight
+        const d = new Date(firstMidnight);
+        while (d.getTime() <= lastMidnight.getTime()) {
+          dayBoundaries.push({ time: d.getTime(), label: dayNames[d.getDay()] });
+          d.setDate(d.getDate() + 1);
+        }
       }
 
       // Draw day separator lines
-      if (dayBoundaries.length > 0) {
+      if (dayBoundaries.length > 0 && getSlotX) {
         ctx.strokeStyle = borderColor;
         ctx.lineWidth = 1;
         ctx.setLineDash([3, 3]);
         dayBoundaries.forEach((db, di) => {
-          if (di === 0) return; // skip first boundary (left edge)
-          const x = Math.round(db.index * stepX) + 0.5;
-          ctx.beginPath();
-          ctx.moveTo(x, pad);
-          ctx.lineTo(x, pad + chartH);
-          ctx.stroke();
+          if (di === 0) return;
+          const x = Math.round(getSlotX(db.time)) + 0.5;
+          if (x > 0 && x < w) {
+            ctx.beginPath();
+            ctx.moveTo(x, pad);
+            ctx.lineTo(x, pad + chartH);
+            ctx.stroke();
+          }
         });
         ctx.setLineDash([]);
       }
 
-      // Gradient fill
+      // Gradient fill (only under existing data)
       const grad = ctx.createLinearGradient(0, 0, 0, pad + chartH);
       grad.addColorStop(0, color + '30');
       grad.addColorStop(1, color + '05');
 
+      const lastPtX = hasTimestamps ? getSlotX(points[points.length - 1].time) : w;
+
       ctx.beginPath();
-      ctx.moveTo(0, pad + chartH);
+      ctx.moveTo(hasTimestamps ? getSlotX(points[0].time) : 0, pad + chartH);
       prices.forEach((p, i) => {
-        const x = i * stepX;
+        const x = hasTimestamps ? getSlotX(points[i].time) : (i / (prices.length - 1)) * w;
         const y = pad + chartH - ((p - min) / range) * chartH;
         ctx.lineTo(x, y);
       });
-      ctx.lineTo(w, pad + chartH);
+      ctx.lineTo(lastPtX, pad + chartH);
       ctx.closePath();
       ctx.fillStyle = grad;
       ctx.fill();
@@ -1699,7 +1741,7 @@
       // Line
       ctx.beginPath();
       prices.forEach((p, i) => {
-        const x = i * stepX;
+        const x = hasTimestamps ? getSlotX(points[i].time) : (i / (prices.length - 1)) * w;
         const y = pad + chartH - ((p - min) / range) * chartH;
         if (i === 0) ctx.moveTo(x, y);
         else ctx.lineTo(x, y);
@@ -1710,21 +1752,17 @@
       ctx.stroke();
 
       // Draw day labels
-      if (dayBoundaries.length > 0) {
+      if (dayBoundaries.length > 1 && getSlotX) {
         ctx.fillStyle = textSecondary;
         ctx.font = '10px -apple-system, sans-serif';
         ctx.textAlign = 'center';
         const labelY = h - 3;
 
-        dayBoundaries.forEach((db, di) => {
-          // Label centered between this boundary and the next
-          const startX = db.index * stepX;
-          const endX = (di < dayBoundaries.length - 1)
-            ? dayBoundaries[di + 1].index * stepX
-            : w;
-          const centerX = (startX + endX) / 2;
-          ctx.fillText(db.label, centerX, labelY);
-        });
+        for (let di = 0; di < dayBoundaries.length - 1; di++) {
+          const startX = getSlotX(dayBoundaries[di].time);
+          const endX = getSlotX(dayBoundaries[di + 1].time);
+          ctx.fillText(dayBoundaries[di].label, (startX + endX) / 2, labelY);
+        }
       }
     }
 
@@ -1782,8 +1820,22 @@
             canvas.onmousemove = (e) => {
               const rect = canvas.getBoundingClientRect();
               const x = e.clientX - rect.left;
-              const idx = Math.round((x / rect.width) * (s.points.length - 1));
-              const pt = s.points[Math.max(0, Math.min(idx, s.points.length - 1))];
+              // Map x position back to time using same midnight-aligned scale
+              const pts = s.points;
+              const firstMid = new Date(pts[0].time);
+              firstMid.setHours(0, 0, 0, 0);
+              const lastMid = new Date(pts[pts.length - 1].time);
+              lastMid.setDate(lastMid.getDate() + 1);
+              lastMid.setHours(0, 0, 0, 0);
+              const hoverTime = firstMid.getTime() + (x / rect.width) * (lastMid.getTime() - firstMid.getTime());
+              // Find closest point
+              let closest = 0;
+              let closestDist = Infinity;
+              pts.forEach((pt, idx) => {
+                const dist = Math.abs(pt.time - hoverTime);
+                if (dist < closestDist) { closestDist = dist; closest = idx; }
+              });
+              const pt = pts[closest];
               if (!pt) return;
               const timeStr = new Date(pt.time).toLocaleString('nb-NO', {
                 day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit'
@@ -1846,8 +1898,13 @@
         const x = i * barW;
         const y = 4 + chartH - barH;
         const isNow = p.hour === currentHour && p.isToday;
+        const isPast = p.isToday && p.hour < currentHour;
 
-        ctx.fillStyle = isNow ? accentColor : (p.isToday ? accentColor + '40' : accentColor + '20');
+        if (isNow) ctx.fillStyle = accentColor;
+        else if (isPast) ctx.fillStyle = accentColor + '60';
+        else if (p.isToday) ctx.fillStyle = accentColor + '20';
+        else ctx.fillStyle = accentColor + '15';
+
         ctx.beginPath();
         ctx.roundRect(x + 1, y, barW - 2, barH, [2, 2, 0, 0]);
         ctx.fill();
@@ -1977,47 +2034,62 @@
 
       if (!points || points.length < 2) return;
 
+      const styles = getComputedStyle(document.documentElement);
+      const textSecondary = styles.getPropertyValue('--text-secondary').trim();
+      const borderColor = styles.getPropertyValue('--border').trim();
+
       const values = points.map(p => p.value);
       const min = Math.min(...values, 400);
       const max = Math.max(...values, 1000);
       const range = max - min || 1;
       const labelH = 16;
       const chartH = h - labelH - 4;
-      const stepX = w / (points.length - 1);
 
-      const textSecondary = getComputedStyle(document.documentElement).getPropertyValue('--text-secondary').trim();
+      // Map time axis: from midnight 2 days ago to midnight tonight
+      const now = new Date();
+      const endMidnight = new Date(now);
+      endMidnight.setDate(endMidnight.getDate() + 1);
+      endMidnight.setHours(0, 0, 0, 0);
+      const startMidnight = new Date(endMidnight);
+      startMidnight.setDate(startMidnight.getDate() - 2);
+      const totalMs = endMidnight.getTime() - startMidnight.getTime();
+      const getX = (timeS) => ((timeS * 1000 - startMidnight.getTime()) / totalMs) * w;
+
+      // Draw midnight separator
+      const midMidnight = new Date(startMidnight);
+      midMidnight.setDate(midMidnight.getDate() + 1);
+      const sepX = Math.round(getX(midMidnight.getTime() / 1000)) + 0.5;
+      ctx.strokeStyle = borderColor;
+      ctx.lineWidth = 1;
+      ctx.setLineDash([3, 3]);
+      ctx.beginPath();
+      ctx.moveTo(sepX, 4);
+      ctx.lineTo(sepX, 4 + chartH);
+      ctx.stroke();
+      ctx.setLineDash([]);
 
       // Draw threshold zones
       const y800 = 4 + chartH - ((800 - min) / range) * chartH;
       const y1200 = 4 + chartH - ((1200 - min) / range) * chartH;
 
-      if (y800 > 0 && y800 < chartH + 4) {
-        ctx.strokeStyle = textSecondary + '30';
-        ctx.lineWidth = 1;
-        ctx.setLineDash([4, 4]);
-        ctx.beginPath();
-        ctx.moveTo(0, y800);
-        ctx.lineTo(w, y800);
-        ctx.stroke();
-        ctx.setLineDash([]);
-      }
+      [y800, y1200].forEach(yLine => {
+        if (yLine > 0 && yLine < chartH + 4) {
+          ctx.strokeStyle = textSecondary + '30';
+          ctx.lineWidth = 1;
+          ctx.setLineDash([4, 4]);
+          ctx.beginPath();
+          ctx.moveTo(0, yLine);
+          ctx.lineTo(w, yLine);
+          ctx.stroke();
+          ctx.setLineDash([]);
+        }
+      });
 
-      if (y1200 > 0 && y1200 < chartH + 4) {
-        ctx.strokeStyle = textSecondary + '30';
-        ctx.lineWidth = 1;
-        ctx.setLineDash([4, 4]);
-        ctx.beginPath();
-        ctx.moveTo(0, y1200);
-        ctx.lineTo(w, y1200);
-        ctx.stroke();
-        ctx.setLineDash([]);
-      }
-
-      // Draw line with color gradient based on CO2 level
+      // Draw line with color based on CO2 level
       for (let i = 1; i < points.length; i++) {
-        const x0 = (i - 1) * stepX;
+        const x0 = getX(points[i-1].time);
         const y0 = 4 + chartH - ((points[i-1].value - min) / range) * chartH;
-        const x1 = i * stepX;
+        const x1 = getX(points[i].time);
         const y1 = 4 + chartH - ((points[i].value - min) / range) * chartH;
         ctx.beginPath();
         ctx.moveTo(x0, y0);
@@ -2028,20 +2100,17 @@
         ctx.stroke();
       }
 
-      // X-axis time labels
+      // X-axis labels: show midnight markers and day labels
       ctx.fillStyle = textSecondary;
-      ctx.font = '10px -apple-system, sans-serif';
+      ctx.font = '9px -apple-system, sans-serif';
       ctx.textAlign = 'center';
       const labelY = h - 2;
-      const hoursShown = (points[points.length - 1].time - points[0].time) / 3600000;
-      const labelEvery = Math.max(1, Math.floor(points.length / 6));
-      points.forEach((p, i) => {
-        if (i % labelEvery === 0 || i === points.length - 1) {
-          const x = i * stepX;
-          const timeStr = new Date(p.time * 1000).toLocaleTimeString('nb-NO', { hour: '2-digit', minute: '2-digit' });
-          ctx.fillText(timeStr, x, labelY);
-        }
-      });
+
+      const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+      // Yesterday label
+      ctx.fillText(dayNames[startMidnight.getDay()], sepX / 2, labelY);
+      // Today label
+      ctx.fillText('Today', (sepX + w) / 2, labelY);
     }
 
     async function fetchSensors() {

@@ -1604,6 +1604,7 @@
       </div>
       <div style="display:flex;gap:8px;">
         <button class="layout-btn" onclick="openLayoutSettings()" title="Layout settings">&#9881; Layout</button>
+        <button class="theme-toggle" id="auth-btn" onclick="promptDashboardToken()" title="Enter owner token">&#128274;</button>
         <button class="theme-toggle" onclick="openSharePanel()">Share</button>
         <button class="theme-toggle" id="theme-btn" onclick="toggleTheme()">Light</button>
       </div>
@@ -1822,6 +1823,49 @@
       if (saved) return JSON.parse(saved);
       return null;
     }
+
+    // ── Worker auth token ──
+    const WORKER_URL = 'https://yahoopull.charles-rutherford93.workers.dev';
+
+    function getDashboardToken() {
+      return localStorage.getItem('dashboard-token') || '';
+    }
+
+    function workerFetch(path, options) {
+      const token = getDashboardToken();
+      const opts = options || {};
+      if (token) {
+        opts.headers = Object.assign({}, opts.headers || {}, { 'X-Dashboard-Token': token });
+      }
+      return fetch(WORKER_URL + path, opts);
+    }
+
+    function workerAuthUrl(path) {
+      const token = getDashboardToken();
+      return WORKER_URL + path + (token ? '?token=' + encodeURIComponent(token) : '');
+    }
+
+    function promptDashboardToken() {
+      const current = getDashboardToken();
+      const token = prompt('Enter dashboard owner token' + (current ? ' (leave empty to clear)' : '') + ':', current);
+      if (token === null) return; // cancelled
+      if (token) {
+        localStorage.setItem('dashboard-token', token);
+        showToast('Token saved — refreshing widgets');
+      } else {
+        localStorage.removeItem('dashboard-token');
+        showToast('Token cleared');
+      }
+      updateAuthButton();
+      fetchSensors();
+      fetchHue();
+    }
+
+    function updateAuthButton() {
+      const btn = document.getElementById('auth-btn');
+      if (btn) btn.innerHTML = getDashboardToken() ? '&#128275;' : '&#128274;';
+    }
+    updateAuthButton();
 
     function getStops() {
       const cfg = loadConfig();
@@ -2504,7 +2548,7 @@
         const results = await Promise.all(stocks.map(async (s) => {
           // Use 1mo range with 30m interval to ensure we get 7+ days for all instruments
           const yahooUrl = `https://query2.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(s.symbol)}?interval=30m&range=1mo`;
-          const res = await fetch(`https://yahoopull.charles-rutherford93.workers.dev/?url=${encodeURIComponent(yahooUrl)}`);
+          const res = await fetch(`${WORKER_URL}/?url=${encodeURIComponent(yahooUrl)}`);
           if (!res.ok) throw new Error(`HTTP ${res.status}`);
           const data = await res.json();
           const result = data.chart.result[0];
@@ -3189,9 +3233,9 @@
 
     async function fetchSensors() {
       try {
-        const res = await fetch('https://yahoopull.charles-rutherford93.workers.dev/netatmo/data');
+        const res = await workerFetch('/netatmo/data');
         if (res.status === 401) {
-          document.getElementById('sensors-content').innerHTML = '<div style="color:var(--text-secondary);font-size:0.85rem;line-height:1.5;">Requires Netatmo authorization.<br>Dashboard owner: <a href="https://yahoopull.charles-rutherford93.workers.dev/auth/netatmo" target="_blank" style="color:var(--accent)">authorize here</a></div>';
+          document.getElementById('sensors-content').innerHTML = `<div style="color:var(--text-secondary);font-size:0.85rem;line-height:1.5;">Requires Netatmo authorization.<br>Dashboard owner: <a href="${workerAuthUrl('/auth/netatmo')}" target="_blank" style="color:var(--accent)">authorize here</a></div>`;
           return;
         }
         const data = await res.json();
@@ -3273,9 +3317,9 @@
             midnightYesterday.setDate(midnightYesterday.getDate() - 1);
             midnightYesterday.setHours(0, 0, 0, 0);
             const dateBegin = Math.floor(midnightYesterday.getTime() / 1000);
-            let measureUrl = `https://yahoopull.charles-rutherford93.workers.dev/netatmo/measure?device_id=${encodeURIComponent(src.deviceId)}&type=CO2&date_begin=${dateBegin}`;
-            if (src.moduleId) measureUrl += `&module_id=${encodeURIComponent(src.moduleId)}`;
-            const mRes = await fetch(measureUrl);
+            let measurePath = `/netatmo/measure?device_id=${encodeURIComponent(src.deviceId)}&type=CO2&date_begin=${dateBegin}`;
+            if (src.moduleId) measurePath += `&module_id=${encodeURIComponent(src.moduleId)}`;
+            const mRes = await workerFetch(measurePath);
             const mData = await mRes.json();
             const body = mData.body;
             if (!body) return;
@@ -3347,9 +3391,9 @@
 
     async function fetchHue() {
       try {
-        const res = await fetch('https://yahoopull.charles-rutherford93.workers.dev/hue/groups');
+        const res = await workerFetch('/hue/groups');
         if (res.status === 401) {
-          document.getElementById('hue-content').innerHTML = '<div style="color:var(--text-secondary);font-size:0.85rem;line-height:1.5;">Requires Hue authorization.<br>Dashboard owner: <a href="https://yahoopull.charles-rutherford93.workers.dev/auth/hue" target="_blank" style="color:var(--accent)">authorize here</a></div>';
+          document.getElementById('hue-content').innerHTML = `<div style="color:var(--text-secondary);font-size:0.85rem;line-height:1.5;">Requires Hue authorization.<br>Dashboard owner: <a href="${workerAuthUrl('/auth/hue')}" target="_blank" style="color:var(--accent)">authorize here</a></div>`;
           return;
         }
         const groupData = await res.json();
@@ -3359,7 +3403,7 @@
         const anyOn = allGroup && allGroup.state && allGroup.state.any_on;
 
         // Load scenes
-        const scenesRes = await fetch('https://yahoopull.charles-rutherford93.workers.dev/hue/scenes');
+        const scenesRes = await workerFetch('/hue/scenes');
         if (scenesRes.ok) {
           allHueScenes = await scenesRes.json();
         }
@@ -3396,7 +3440,7 @@
       document.querySelectorAll('.hue-scene-btn').forEach(b => b.classList.remove('active'));
       event.currentTarget.classList.add('active');
       try {
-        await fetch('https://yahoopull.charles-rutherford93.workers.dev/hue/scene', {
+        await workerFetch('/hue/scene', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ scene: sceneId, group: groupId })
@@ -3409,7 +3453,7 @@
       document.querySelectorAll('.hue-scene-btn').forEach(b => b.classList.remove('active'));
       document.querySelector('.hue-scene-btn.off-btn').classList.add('active');
       try {
-        await fetch('https://yahoopull.charles-rutherford93.workers.dev/hue/toggle', {
+        await workerFetch('/hue/toggle', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ group: '0', on: false })
@@ -3440,7 +3484,7 @@
     async function fetchWaste() {
       try {
         const wasteCfg = getWaste();
-        const WORKER = 'https://yahoopull.charles-rutherford93.workers.dev';
+        const WORKER = WORKER_URL;
         if (!wasteCfg.gatekode) {
           document.getElementById('waste-content').innerHTML = '<div class="error">No address set. <a href="#" onclick="openWidgetSettings(\'waste\');return false;" style="color:var(--accent)">Set your address</a></div>';
           return;
@@ -3797,7 +3841,7 @@
       mobilitySearchTimeout = setTimeout(async () => {
         try {
           // Use Geonorge for Norwegian address search first, fall back to Open-Meteo
-          const geoRes = await fetch(`https://yahoopull.charles-rutherford93.workers.dev/?url=${encodeURIComponent(`https://ws.geonorge.no/adresser/v1/sok?sok=${encodeURIComponent(query)}&treffPerSide=5&asciiKompatibel=true`)}`);
+          const geoRes = await fetch(`${WORKER_URL}/?url=${encodeURIComponent(`https://ws.geonorge.no/adresser/v1/sok?sok=${encodeURIComponent(query)}&treffPerSide=5&asciiKompatibel=true`)}`);
           const geoData = await geoRes.json();
           const addresses = geoData?.adresser || [];
           if (addresses.length > 0) {
@@ -4264,7 +4308,7 @@
     setInterval(refreshMobilityData, 30 * 1000);
 
     // ── News (RSS) ──
-    const PROXY = 'https://yahoopull.charles-rutherford93.workers.dev/?url=';
+    const PROXY = WORKER_URL + '/?url=';
     let newsCache = {};
     let activeTab = 0;
 
@@ -4817,7 +4861,7 @@
       const sync = document.getElementById('wp-weather-sync')?.checked;
       if (sync && cfg.weather) {
         try {
-          const WORKER = 'https://yahoopull.charles-rutherford93.workers.dev';
+          const WORKER = WORKER_URL;
           const addrRes = await fetch(`${WORKER}/?url=${encodeURIComponent(`https://ws.geonorge.no/adresser/v1/punktsok?lat=${cfg.weather.lat}&lon=${cfg.weather.lon}&radius=500&treffPerSide=1`)}`);
           const addrData = await addrRes.json();
           const a = addrData?.adresser?.[0];
@@ -5255,7 +5299,7 @@
           <div class="loading">Loading scenes...</div>
         </div>
         <div class="widget-popup-actions">
-          <a href="https://yahoopull.charles-rutherford93.workers.dev/auth/hue" target="_blank" class="btn" style="text-decoration:none;margin-right:auto;font-size:0.78rem;color:var(--text-secondary);">Re-authorize</a>
+          <a href="${workerAuthUrl('/auth/hue')}" target="_blank" class="btn" style="text-decoration:none;margin-right:auto;font-size:0.78rem;color:var(--text-secondary);">Re-authorize</a>
           <button class="btn" onclick="closeWidgetPopup()">Cancel</button>
           <button class="btn btn-primary" onclick="saveHueSettings()">Save</button>
         </div>`;
@@ -5280,7 +5324,7 @@
     }
 
     function loadHueScenesList() {
-      fetch('https://yahoopull.charles-rutherford93.workers.dev/hue/scenes')
+      workerFetch('/hue/scenes')
         .then(r => {
           const el = document.getElementById('hue-settings-status');
           if (r.status === 401) {
@@ -5359,7 +5403,7 @@
       }
       wasteSearchTimeout = setTimeout(async () => {
         try {
-          const WORKER = 'https://yahoopull.charles-rutherford93.workers.dev';
+          const WORKER = WORKER_URL;
           const res = await fetch(`${WORKER}/?url=${encodeURIComponent(`https://ws.geonorge.no/adresser/v1/sok?sok=${encodeURIComponent(query)}&treffPerSide=8`)}`);
           const data = await res.json();
           const container = document.getElementById('wp-waste-results');
@@ -5513,7 +5557,7 @@
     });
 
     // ── Share & Save ──
-    const WORKER_BASE = 'https://yahoopull.charles-rutherford93.workers.dev';
+    const WORKER_BASE = WORKER_URL;
     const DASHBOARD_URL = window.location.origin + window.location.pathname;
 
     function openSharePanel() {

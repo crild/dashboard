@@ -15,9 +15,29 @@ var ALLOWED = [
   "https://news.google.com/"
 ];
 
+function checkDashboardToken(request) {
+  var expected = typeof DASHBOARD_TOKEN !== "undefined" ? DASHBOARD_TOKEN : "";
+  if (!expected) return true; // no token configured = no protection
+  var token = request.headers.get("X-Dashboard-Token") || new URL(request.url).searchParams.get("token");
+  return token === expected;
+}
+
 async function handleRequest(request) {
   var url = new URL(request.url);
   var path = url.pathname;
+
+  // Protected endpoints: netatmo and hue
+  if (path.startsWith("/netatmo") || path.startsWith("/hue") || path.startsWith("/auth/") || path.startsWith("/callback/")) {
+    // Allow callbacks (they come from OAuth providers, not the dashboard)
+    if (!path.startsWith("/callback/")) {
+      if (!checkDashboardToken(request)) {
+        return new Response(JSON.stringify({error: "Unauthorized"}), {
+          status: 403,
+          headers: {"Content-Type": "application/json", "Access-Control-Allow-Origin": "*"}
+        });
+      }
+    }
+  }
 
   if (path === "/auth/netatmo") {
     var clientId = typeof NETATMO_CLIENT_ID !== "undefined" ? NETATMO_CLIENT_ID : "";
@@ -279,7 +299,7 @@ async function handleRequest(request) {
   }
 
   if (request.method === "OPTIONS") {
-    return new Response(null, {headers: {"Access-Control-Allow-Origin": "*", "Access-Control-Allow-Methods": "GET,POST,OPTIONS", "Access-Control-Allow-Headers": "Content-Type"}});
+    return new Response(null, {headers: {"Access-Control-Allow-Origin": "*", "Access-Control-Allow-Methods": "GET,POST,OPTIONS", "Access-Control-Allow-Headers": "Content-Type,X-Dashboard-Token"}});
   }
 
   var target = url.searchParams.get("url");

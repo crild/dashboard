@@ -1973,35 +1973,63 @@
       ctx.font = '9px -apple-system, sans-serif';
       ctx.textAlign = 'center';
       const textColor = styles.getPropertyValue('--text').trim();
-      const labeled = [];
 
+      // Find daily highs and lows (always labeled)
+      const todayPrices = prices.filter(p => p.isToday);
+      const tmrwPrices = prices.filter(p => !p.isToday);
+      const mustLabel = new Set();
+
+      [todayPrices, tmrwPrices].forEach(dayPrices => {
+        if (dayPrices.length === 0) return;
+        let hiIdx = 0, loIdx = 0;
+        dayPrices.forEach((p, i) => {
+          if (p.value > dayPrices[hiIdx].value) hiIdx = i;
+          if (p.value < dayPrices[loIdx].value) loIdx = i;
+        });
+        // Map back to index in full prices array
+        const offset = dayPrices === todayPrices ? 0 : todayPrices.length;
+        mustLabel.add(offset + hiIdx);
+        mustLabel.add(offset + loIdx);
+      });
+
+      // Detect all local peaks and troughs
+      const candidates = [];
       for (let i = 0; i < prices.length; i++) {
         const prev = i > 0 ? prices[i - 1].value : prices[i].value;
         const next = i < prices.length - 1 ? prices[i + 1].value : prices[i].value;
         const val = prices[i].value;
         const isPeak = val >= prev && val >= next && (val > prev || val > next);
         const isTrough = val <= prev && val <= next && (val < prev || val < next);
-
         if (isPeak || isTrough) {
-          const x = getX(i) + getX(1) / 2;
-          const y = getY(val);
-          const labelText = val.toFixed(0);
-
-          // Skip if too close to another label
-          const minGap = totalHours > 24 ? 20 : 28;
-          const tooClose = labeled.some(lx => Math.abs(lx - x) < minGap);
-          if (tooClose) continue;
-          labeled.push(x);
-
-          const isFuture = !(prices[i].isToday && i <= currentHour);
-          ctx.fillStyle = isFuture ? textColor + '80' : textColor;
-          if (isPeak) {
-            ctx.fillText(labelText, x, y - 5);
-          } else {
-            ctx.fillText(labelText, x, y + 12);
-          }
+          candidates.push({ i, isPeak, priority: mustLabel.has(i) ? 0 : 1 });
         }
       }
+
+      // Sort by priority (daily hi/lo first) then by index
+      candidates.sort((a, b) => a.priority - b.priority || a.i - b.i);
+
+      const labeled = [];
+      candidates.forEach(({ i, isPeak, priority }) => {
+        const x = getX(i) + getX(1) / 2;
+        const y = getY(prices[i].value);
+        const labelText = prices[i].value.toFixed(0);
+
+        // Daily hi/lo always shown; others need spacing
+        if (priority > 0) {
+          const minGap = totalHours > 24 ? 18 : 24;
+          const tooClose = labeled.some(lx => Math.abs(lx - x) < minGap);
+          if (tooClose) return;
+        }
+        labeled.push(x);
+
+        const isFuture = !(prices[i].isToday && i <= currentHour);
+        ctx.fillStyle = isFuture ? textColor + '80' : textColor;
+        if (isPeak) {
+          ctx.fillText(labelText, x, y - 5);
+        } else {
+          ctx.fillText(labelText, x, y + 12);
+        }
+      });
 
       // X-axis labels
       ctx.fillStyle = textSecondary;

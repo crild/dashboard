@@ -8,7 +8,9 @@ var ALLOWED = [
   "https://www.nrk.no/",
   "https://feeds.bbci.co.uk/",
   "https://www.theverge.com/",
-  "https://feeds.arstechnica.com/"
+  "https://feeds.arstechnica.com/",
+  "https://query1.finance.yahoo.com/v1/finance/search",
+  "https://query2.finance.yahoo.com/v1/finance/search"
 ];
 
 async function handleRequest(request) {
@@ -71,6 +73,109 @@ async function handleRequest(request) {
     }
     var resp = await fetch("https://api.netatmo.com/api/getstationsdata", {
       headers: {"Authorization": "Bearer " + token}
+    });
+    var body = await resp.text();
+    return new Response(body, {status: resp.status, headers: {"Content-Type": "application/json", "Access-Control-Allow-Origin": "*"}});
+  }
+
+  if (path === "/auth/hue") {
+    var hueClientId = typeof HUE_CLIENT_ID !== "undefined" ? HUE_CLIENT_ID : "";
+    var hueAppId = typeof HUE_APP_ID !== "undefined" ? HUE_APP_ID : "";
+    var redirect = url.origin + "/callback/hue";
+    var authUrl = "https://api.meethue.com/v2/oauth2/authorize?client_id=" + hueClientId + "&response_type=code&state=dashboard&deviceid=" + hueAppId + "&devicename=Dashboard";
+    return Response.redirect(authUrl, 302);
+  }
+
+  if (path === "/callback/hue") {
+    var code = url.searchParams.get("code");
+    if (!code) {
+      return new Response("Missing code", {status: 400});
+    }
+    var hueClientId = typeof HUE_CLIENT_ID !== "undefined" ? HUE_CLIENT_ID : "";
+    var hueClientSecret = typeof HUE_CLIENT_SECRET !== "undefined" ? HUE_CLIENT_SECRET : "";
+    var authHeader = "Basic " + btoa(hueClientId + ":" + hueClientSecret);
+    var resp = await fetch("https://api.meethue.com/v2/oauth2/token", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        "Authorization": authHeader
+      },
+      body: "grant_type=authorization_code&code=" + code
+    });
+    var data = await resp.json();
+    if (data.access_token) {
+      await KV.put("hue_access_token", data.access_token);
+      await KV.put("hue_refresh_token", data.refresh_token);
+      await KV.put("hue_expires", String(Date.now() + (data.access_token_expires_in || 604800) * 1000));
+      // Link the remote API to the bridge by pressing the link button remotely
+      await fetch("https://api.meethue.com/route/api/0/config", {
+        method: "PUT",
+        headers: {
+          "Authorization": "Bearer " + data.access_token,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({linkbutton: true})
+      });
+      // Create a whitelist entry
+      var whitelistResp = await fetch("https://api.meethue.com/route/api", {
+        method: "POST",
+        headers: {
+          "Authorization": "Bearer " + data.access_token,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({devicetype: "dashboard#browser"})
+      });
+      var wlData = await whitelistResp.json();
+      if (wlData[0] && wlData[0].success) {
+        await KV.put("hue_username", wlData[0].success.username);
+      }
+      return new Response("Hue authorized successfully! You can close this tab.", {headers: {"Content-Type": "text/plain"}});
+    }
+    return new Response("Hue auth failed: " + JSON.stringify(data), {status: 400});
+  }
+
+  if (path === "/hue/lights") {
+    var token = await getHueToken();
+    if (!token) {
+      return new Response(JSON.stringify({error: "Not authorized. Visit /auth/hue first."}), {status: 401, headers: {"Content-Type": "application/json", "Access-Control-Allow-Origin": "*"}});
+    }
+    var username = await KV.get("hue_username");
+    var resp = await fetch("https://api.meethue.com/route/api/" + (username || "0") + "/lights", {
+      headers: {"Authorization": "Bearer " + token}
+    });
+    var body = await resp.text();
+    return new Response(body, {status: resp.status, headers: {"Content-Type": "application/json", "Access-Control-Allow-Origin": "*"}});
+  }
+
+  if (path === "/hue/groups") {
+    var token = await getHueToken();
+    if (!token) {
+      return new Response(JSON.stringify({error: "Not authorized. Visit /auth/hue first."}), {status: 401, headers: {"Content-Type": "application/json", "Access-Control-Allow-Origin": "*"}});
+    }
+    var username = await KV.get("hue_username");
+    var resp = await fetch("https://api.meethue.com/route/api/" + (username || "0") + "/groups", {
+      headers: {"Authorization": "Bearer " + token}
+    });
+    var body = await resp.text();
+    return new Response(body, {status: resp.status, headers: {"Content-Type": "application/json", "Access-Control-Allow-Origin": "*"}});
+  }
+
+  if (path === "/hue/toggle" && request.method === "POST") {
+    var token = await getHueToken();
+    if (!token) {
+      return new Response(JSON.stringify({error: "Not authorized."}), {status: 401, headers: {"Content-Type": "application/json", "Access-Control-Allow-Origin": "*"}});
+    }
+    var username = await KV.get("hue_username");
+    var reqBody = await request.json();
+    var groupId = reqBody.group;
+    var on = reqBody.on;
+    var resp = await fetch("https://api.meethue.com/route/api/" + (username || "0") + "/groups/" + groupId + "/action", {
+      method: "PUT",
+      headers: {
+        "Authorization": "Bearer " + token,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({on: on})
     });
     var body = await resp.text();
     return new Response(body, {status: resp.status, headers: {"Content-Type": "application/json", "Access-Control-Allow-Origin": "*"}});
@@ -148,6 +253,35 @@ async function getNetatmoToken() {
     await KV.put("netatmo_access_token", data.access_token);
     await KV.put("netatmo_refresh_token", data.refresh_token);
     await KV.put("netatmo_expires", String(Date.now() + data.expires_in * 1000));
+    return data.access_token;
+  }
+  return null;
+}
+
+async function getHueToken() {
+  var token = await KV.get("hue_access_token");
+  var expires = await KV.get("hue_expires");
+  if (token && expires && Date.now() < Number(expires) - 60000) {
+    return token;
+  }
+  var refresh = await KV.get("hue_refresh_token");
+  if (!refresh) return null;
+  var hueClientId = typeof HUE_CLIENT_ID !== "undefined" ? HUE_CLIENT_ID : "";
+  var hueClientSecret = typeof HUE_CLIENT_SECRET !== "undefined" ? HUE_CLIENT_SECRET : "";
+  var authHeader = "Basic " + btoa(hueClientId + ":" + hueClientSecret);
+  var resp = await fetch("https://api.meethue.com/v2/oauth2/token", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/x-www-form-urlencoded",
+      "Authorization": authHeader
+    },
+    body: "grant_type=refresh_token&refresh_token=" + refresh
+  });
+  var data = await resp.json();
+  if (data.access_token) {
+    await KV.put("hue_access_token", data.access_token);
+    await KV.put("hue_refresh_token", data.refresh_token);
+    await KV.put("hue_expires", String(Date.now() + (data.access_token_expires_in || 604800) * 1000));
     return data.access_token;
   }
   return null;

@@ -478,6 +478,75 @@
       cursor: crosshair;
     }
 
+    /* Hue Lights */
+    .hue-rooms {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+      gap: 10px;
+    }
+
+    .hue-room {
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 14px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 8px;
+      transition: border-color 0.2s, background 0.2s;
+    }
+
+    .hue-room.room-on {
+      border-color: #f5c518;
+      background: rgba(245, 197, 24, 0.06);
+    }
+
+    .hue-room-name {
+      font-size: 0.8rem;
+      font-weight: 600;
+      text-align: center;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: 100%;
+    }
+
+    .hue-room-info {
+      font-size: 0.7rem;
+      color: var(--text-secondary);
+    }
+
+    .hue-toggle {
+      width: 48px;
+      height: 26px;
+      border-radius: 13px;
+      border: none;
+      cursor: pointer;
+      position: relative;
+      transition: background 0.2s;
+      background: var(--border);
+    }
+
+    .hue-toggle.on {
+      background: #f5c518;
+    }
+
+    .hue-toggle::after {
+      content: '';
+      position: absolute;
+      top: 3px;
+      left: 3px;
+      width: 20px;
+      height: 20px;
+      border-radius: 50%;
+      background: white;
+      transition: transform 0.2s;
+    }
+
+    .hue-toggle.on::after {
+      transform: translateX(22px);
+    }
+
     /* Power prices */
     .power-current {
       display: flex;
@@ -1004,6 +1073,20 @@
         </div>
         <div id="sensors-content">
           <div class="loading">Loading sensors...</div>
+        </div>
+      </div>
+
+      <!-- Hue Lights -->
+      <div class="card card-narrow" data-widget="hue">
+        <div class="card-header">
+          <span class="card-title">Lights</span>
+          <div class="card-header-right">
+            <span class="card-status" id="hue-status"></span>
+            <button class="card-edit-btn" onclick="openWidgetSettings('hue')" title="Hue settings">&#9998;<span class="edit-label">Edit</span></button>
+          </div>
+        </div>
+        <div id="hue-content">
+          <div class="loading">Loading lights...</div>
         </div>
       </div>
 
@@ -1845,6 +1928,71 @@
     fetchSensors();
     setInterval(fetchSensors, 5 * 60 * 1000);
 
+    // ── Hue Lights ──
+    async function fetchHue() {
+      try {
+        const res = await fetch('https://yahoopull.charles-rutherford93.workers.dev/hue/groups');
+        if (res.status === 401) {
+          document.getElementById('hue-content').innerHTML = '<div class="error">Hue not authorized. <a href="https://yahoopull.charles-rutherford93.workers.dev/auth/hue" target="_blank" style="color:var(--accent)">Authorize here</a></div>';
+          return;
+        }
+        const data = await res.json();
+        if (data.error || Array.isArray(data)) {
+          document.getElementById('hue-content').innerHTML = '<div class="error">Could not load Hue data</div>';
+          return;
+        }
+
+        const rooms = Object.entries(data)
+          .filter(([id, g]) => g.type === 'Room' || g.type === 'Zone')
+          .sort((a, b) => a[1].name.localeCompare(b[1].name));
+
+        if (rooms.length === 0) {
+          document.getElementById('hue-content').innerHTML = '<div style="color:var(--text-secondary);font-size:0.85rem;">No rooms found</div>';
+          return;
+        }
+
+        document.getElementById('hue-content').innerHTML = '<div class="hue-rooms">' + rooms.map(([id, g]) => {
+          const anyOn = g.state && g.state.any_on;
+          const lightsCount = g.lights ? g.lights.length : 0;
+          const onCount = anyOn ? (g.state.all_on ? lightsCount : 'some') : 0;
+          return '<div class="hue-room' + (anyOn ? ' room-on' : '') + '" id="hue-room-' + id + '">' +
+            '<div class="hue-room-name">' + g.name + '</div>' +
+            '<button class="hue-toggle' + (anyOn ? ' on' : '') + '" id="hue-btn-' + id + '" onclick="toggleHueRoom(\'' + id + '\', ' + !anyOn + ')"></button>' +
+            '<div class="hue-room-info">' + lightsCount + ' light' + (lightsCount !== 1 ? 's' : '') + '</div>' +
+            '</div>';
+        }).join('') + '</div>';
+
+        document.getElementById('hue-status').textContent = 'Updated ' + new Date().toLocaleTimeString('nb-NO', { hour: '2-digit', minute: '2-digit' });
+      } catch (e) {
+        document.getElementById('hue-content').innerHTML = '<div class="error">Could not connect to Hue</div>';
+      }
+    }
+
+    async function toggleHueRoom(groupId, on) {
+      const btn = document.getElementById('hue-btn-' + groupId);
+      const room = document.getElementById('hue-room-' + groupId);
+      if (btn) { btn.classList.toggle('on', on); }
+      if (room) { room.classList.toggle('room-on', on); }
+      try {
+        await fetch('https://yahoopull.charles-rutherford93.workers.dev/hue/toggle', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ group: groupId, on: on })
+        });
+        // Update the onclick to toggle the other way
+        if (btn) {
+          btn.setAttribute('onclick', "toggleHueRoom('" + groupId + "', " + !on + ")");
+        }
+      } catch (e) {
+        // Revert visual on error
+        if (btn) { btn.classList.toggle('on', !on); }
+        if (room) { room.classList.toggle('room-on', !on); }
+      }
+    }
+
+    fetchHue();
+    setInterval(fetchHue, 30 * 1000);
+
     // ── News (RSS) ──
     const PROXY = 'https://yahoopull.charles-rutherford93.workers.dev/?url=';
     let newsCache = {};
@@ -2064,6 +2212,7 @@
         case 'stocks': return getStocksSettingsHTML();
         case 'news': return getNewsSettingsHTML();
         case 'transit': return getTransitSettingsHTML();
+        case 'hue': return getHueSettingsHTML();
         default: return '<p>No settings available.</p>';
       }
     }
@@ -2225,12 +2374,12 @@
         </div>
         <label style="margin-bottom:8px;">Quick add from presets</label>
         ${presetsHTML}
-        <label style="margin-top:12px;">Or add a custom symbol</label>
-        <div style="display:flex;gap:8px;">
-          <input id="wp-stock-custom" placeholder="e.g. TSLA or DNB.OL" style="margin-bottom:0;flex:1;" onkeydown="if(event.key==='Enter')addCustomStock()" />
-          <button class="btn" onclick="addCustomStock()" style="white-space:nowrap;">Add</button>
+        <label style="margin-top:12px;">Search for a stock, index, or currency</label>
+        <div class="search-wrapper">
+          <input id="wp-stock-search" placeholder="Type to search (e.g. Apple, Equinor, NASDAQ...)" oninput="onStockSearch(this.value)" onkeydown="if(event.key==='Enter'){event.preventDefault();selectFirstStockResult();}" autocomplete="off" style="margin-bottom:0;" />
+          <div class="search-results" id="wp-stock-results"></div>
         </div>
-        <p class="hint" style="margin-top:4px;">Yahoo Finance symbol. Use .OL for Oslo stocks.</p>
+        <p class="hint" style="margin-top:4px;">Search by company name, ticker, or index.</p>
         <div class="widget-popup-actions">
           <button class="btn" onclick="resetWidget('stocks')" style="margin-right:auto;font-size:0.78rem;color:var(--text-secondary);">Reset to default</button>
           <button class="btn" onclick="closeWidgetPopup()">Cancel</button>
@@ -2273,18 +2422,58 @@
       updateStockTags();
     }
 
-    function addCustomStock() {
-      const input = document.getElementById('wp-stock-custom');
-      const sym = input.value.trim().toUpperCase();
-      if (!sym) return;
-      if (currentStocksSelection.find(s => s.symbol === sym)) {
-        input.value = '';
+    let stockSearchTimeout = null;
+    function onStockSearch(query) {
+      clearTimeout(stockSearchTimeout);
+      if (query.length < 2) {
+        document.getElementById('wp-stock-results').classList.remove('visible');
         return;
       }
-      const knownLabels = {};
-      STOCK_PRESETS.forEach(p => { knownLabels[p.symbol] = p.label; });
-      currentStocksSelection.push({ symbol: sym, label: knownLabels[sym] || sym });
-      input.value = '';
+      stockSearchTimeout = setTimeout(async () => {
+        try {
+          const yahooUrl = `https://query2.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(query)}&quotesCount=15&newsCount=0&listsCount=0&enableFuzzyQuery=true&enableEnhancedTrivialQuery=true`;
+          const res = await fetch(WORKER_BASE + '/?url=' + encodeURIComponent(yahooUrl));
+          const data = await res.json();
+          const quotes = (data.quotes || []).filter(q => q.symbol);
+          const container = document.getElementById('wp-stock-results');
+          if (quotes.length === 0) {
+            container.innerHTML = '<div class="search-result-item"><span class="result-name">No results found</span></div>';
+          } else {
+            container.innerHTML = quotes.map((q, i) => {
+              const name = q.longname || q.shortname || q.symbol;
+              const type = q.typeDisp || q.quoteType || '';
+              const exchange = q.exchDisp || q.exchange || '';
+              return `
+              <div class="search-result-item" onclick="selectStockSearchResult(${i})">
+                <div class="result-name">${name}</div>
+                <div class="result-detail">${q.symbol} · ${exchange}${type ? ' · ' + type : ''}</div>
+              </div>`;
+            }).join('');
+          }
+          container.classList.add('visible');
+          window._stockSearchResults = quotes;
+        } catch (e) {}
+      }, 300);
+    }
+
+    function selectFirstStockResult() {
+      if (window._stockSearchResults && window._stockSearchResults.length > 0) {
+        selectStockSearchResult(0);
+      }
+    }
+
+    function selectStockSearchResult(idx) {
+      const q = window._stockSearchResults[idx];
+      if (!q) return;
+      if (currentStocksSelection.find(s => s.symbol === q.symbol)) {
+        document.getElementById('wp-stock-search').value = '';
+        document.getElementById('wp-stock-results').classList.remove('visible');
+        return;
+      }
+      const isFund = q.quoteType === 'MUTUALFUND' || q.quoteType === 'ETF';
+      currentStocksSelection.push({ symbol: q.symbol, label: isFund ? (q.longname || q.shortname || q.symbol) : (q.shortname || q.longname || q.symbol) });
+      document.getElementById('wp-stock-search').value = '';
+      document.getElementById('wp-stock-results').classList.remove('visible');
       updateStockTags();
     }
 
@@ -2505,6 +2694,39 @@
       showToast('Transit stops updated');
       fetchTransit();
     }
+
+    // ── Hue Settings ──
+    function getHueSettingsHTML() {
+      return `
+        <h3>Hue Lights</h3>
+        <p style="color:var(--text-secondary);font-size:0.85rem;margin-bottom:12px;">Hue lights are controlled via your Cloudflare Worker. The worker handles authentication and communicates with the Hue Remote API.</p>
+        <div style="font-size:0.85rem;margin-bottom:16px;">
+          <strong>Status:</strong> <span id="hue-settings-status">Checking...</span>
+        </div>
+        <div class="widget-popup-actions">
+          <a href="https://yahoopull.charles-rutherford93.workers.dev/auth/hue" target="_blank" class="btn btn-primary" style="text-decoration:none;">Authorize Hue</a>
+          <button class="btn" onclick="closeWidgetPopup()">Close</button>
+        </div>`;
+    }
+
+    // Check Hue auth status when settings open
+    const origOpenSettings = openWidgetSettings;
+    openWidgetSettings = function(widget) {
+      origOpenSettings(widget);
+      if (widget === 'hue') {
+        fetch('https://yahoopull.charles-rutherford93.workers.dev/hue/groups')
+          .then(r => {
+            const el = document.getElementById('hue-settings-status');
+            if (!el) return;
+            if (r.status === 401) el.innerHTML = '<span style="color:var(--negative)">Not authorized</span>';
+            else el.innerHTML = '<span style="color:var(--positive)">Connected</span>';
+          })
+          .catch(() => {
+            const el = document.getElementById('hue-settings-status');
+            if (el) el.innerHTML = '<span style="color:var(--negative)">Error</span>';
+          });
+      }
+    };
 
     // ── Reset to defaults ──
     function resetWidget(widget) {
@@ -2727,7 +2949,7 @@
       const grid = document.querySelector('.grid');
       if (!grid) return;
       const cards = Array.from(grid.querySelectorAll('.card[data-widget]'));
-      const narrowWidgets = new Set(['clock', 'weather', 'sensors']);
+      const narrowWidgets = new Set(['clock', 'weather', 'sensors', 'hue']);
 
       // Clear previous layout spans
       cards.forEach(c => c.classList.remove('span-full', 'span-half'));

@@ -1826,21 +1826,52 @@
         { symbol: 'OSEBX.OL', label: 'OSEBX' },
         { symbol: 'BTC-USD', label: 'Bitcoin' }
       ],
-      weather: { name: 'Bestum', lat: 59.9240, lon: 10.6550 },
+      location: {
+        name: 'Bestum', lat: 59.9240, lon: 10.6550,
+        address: 'Bestumveien 1', gatenavn: 'Bestumveien', gatekode: '10572', husnr: '1', kommunenr: '0301'
+      },
       feeds: [
         { name: 'BBC News', url: 'https://feeds.bbci.co.uk/news/world/rss.xml' },
         { name: 'BBC Tech', url: 'https://feeds.bbci.co.uk/news/technology/rss.xml' },
         { name: 'NRK', url: 'https://www.nrk.no/toppsaker.rss' },
         { name: 'Hawk Infinity', type: 'search', query: 'Hawk Infinity' }
-      ],
-      waste: { address: 'Bestumveien 1', gatenavn: 'Bestumveien', gatekode: '10572', husnr: '1', kommunenr: '0301', lat: 59.919, lon: 10.666 },
-      powerZone: 'NO1'
+      ]
     };
 
     function loadConfig() {
       const saved = localStorage.getItem('dashboard-config');
-      if (saved) return JSON.parse(saved);
-      return null;
+      if (!saved) return null;
+      const cfg = JSON.parse(saved);
+      // Migrate old separate weather/waste/powerZone into unified location
+      if (!cfg.location && (cfg.weather || cfg.waste)) {
+        const w = cfg.weather || DEFAULTS.location;
+        const wa = cfg.waste || {};
+        cfg.location = {
+          name: w.name, lat: w.lat, lon: w.lon,
+          address: wa.address || '', gatenavn: wa.gatenavn || '', gatekode: wa.gatekode || '',
+          husnr: wa.husnr || '', kommunenr: wa.kommunenr || '0301'
+        };
+        delete cfg.weather;
+        delete cfg.waste;
+        delete cfg.powerZone;
+        localStorage.setItem('dashboard-config', JSON.stringify(cfg));
+      }
+      return cfg;
+    }
+
+    // Cache walking times to transit stops (cleared on location change)
+    const transitWalkCache = {};
+
+    function getLocation() {
+      const cfg = loadConfig();
+      return cfg?.location ?? DEFAULTS.location;
+    }
+
+    function saveLocation(loc) {
+      const cfg = loadConfig() || {};
+      cfg.location = loc;
+      localStorage.setItem('dashboard-config', JSON.stringify(cfg));
+      Object.keys(transitWalkCache).forEach(k => delete transitWalkCache[k]);
     }
 
     // ── Worker auth token ──
@@ -1897,13 +1928,13 @@
     }
 
     function getWeather() {
-      const cfg = loadConfig();
-      return cfg?.weather ?? DEFAULTS.weather;
+      const loc = getLocation();
+      return { name: loc.name, lat: loc.lat, lon: loc.lon };
     }
 
     function getWaste() {
-      const cfg = loadConfig();
-      return cfg?.waste ?? DEFAULTS.waste;
+      const loc = getLocation();
+      return { address: loc.address, gatenavn: loc.gatenavn, gatekode: loc.gatekode, husnr: loc.husnr, kommunenr: loc.kommunenr, lat: loc.lat, lon: loc.lon };
     }
 
     function getFeeds() {
@@ -1912,8 +1943,8 @@
     }
 
     function getPowerZone() {
-      const cfg = loadConfig();
-      return cfg?.powerZone ?? DEFAULTS.powerZone;
+      const loc = getLocation();
+      return zoneFromKommunenr(loc.kommunenr || '0301');
     }
 
     // Map Norwegian kommunenummer to electricity price zone
@@ -3722,21 +3753,14 @@
     }
 
     function getMobilityAddress() {
-      // Check saved mobility location first
+      // Check saved mobility override (GPS or manual pin) first
       const cfg = loadConfig();
       if (cfg?.mobility?.lat && cfg?.mobility?.lon) {
         return { name: cfg.mobility.name || 'Saved location', lat: cfg.mobility.lat, lon: cfg.mobility.lon };
       }
-      // Fall back to waste address, then weather, then default
-      const wasteCfg = getWaste();
-      if (wasteCfg && wasteCfg.address && wasteCfg.lat && wasteCfg.lon) {
-        return { name: wasteCfg.address, lat: wasteCfg.lat, lon: wasteCfg.lon };
-      }
-      const weatherCfg = getWeather();
-      if (weatherCfg && weatherCfg.name !== 'Bestum') {
-        return { name: weatherCfg.name, lat: weatherCfg.lat, lon: weatherCfg.lon };
-      }
-      return { name: 'Bestum', lat: 59.9240, lon: 10.6550 };
+      // Otherwise use global location
+      const loc = getLocation();
+      return { name: loc.name, lat: loc.lat, lon: loc.lon };
     }
 
     function getMobilityMaxDistance() {
@@ -4574,13 +4598,9 @@
       };
     }
 
-    // Cache walking times to stops so we don't re-fetch every 30s
-    const transitWalkCache = {};
-
     async function getWalkTimeToStop(stopId, stopLat, stopLon) {
       if (transitWalkCache[stopId] != null) return transitWalkCache[stopId];
-      // Use weather location as home location
-      const loc = getWeather();
+      const loc = getLocation();
       try {
         const route = await fetchWalkingRoute(loc.lat, loc.lon, stopLat, stopLon);
         if (route) {
@@ -4869,128 +4889,93 @@
       }
     }
 
-    // ── Weather Settings ──
-    let weatherSearchTimeout = null;
-    function getWeatherSettingsHTML() {
-      const loc = getWeather();
+    // ── Location Settings (shared by weather, waste, power) ──
+    function getLocationSettingsHTML(source) {
+      const loc = getLocation();
       return `
-        <h3>Weather Location</h3>
-        <label>Search for a place</label>
-        <div class="search-wrapper">
-          <input id="wp-weather-search" placeholder="Type a city or place name..." value="${loc.name}" oninput="onWeatherSearch(this.value)" onkeydown="if(event.key==='Enter'){event.preventDefault();selectFirstWeatherResult();}" autocomplete="off" />
-          <div class="search-results" id="wp-weather-results"></div>
-        </div>
-        <p class="hint">Start typing to search. Select a result to update the location.</p>
-        <div id="wp-weather-selected" style="font-size:0.85rem;color:var(--text-secondary);margin-bottom:12px;">
-          Current: <strong>${loc.name}</strong> (${loc.lat.toFixed(2)}, ${loc.lon.toFixed(2)})
-        </div>
-        <label style="display:flex;align-items:center;gap:8px;margin-bottom:12px;cursor:pointer;">
-          <input type="checkbox" id="wp-weather-sync" checked style="width:auto;margin:0;">
-          <span style="font-size:0.85rem;">Update waste &amp; power zone to match</span>
-        </label>
+        <h3>Location</h3>
+        <p class="hint" style="margin-bottom:8px;">This sets the location for all widgets: weather, waste, power price, mobility, and departure walking times.</p>
+        <label>Search for an address</label>
+        <input type="text" id="wp-location-search" value="${loc.address || loc.name}" placeholder="Start typing your address..." oninput="searchLocationAddress(this.value)" autocomplete="off" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:8px;font-size:0.9rem;background:var(--bg);color:var(--text);margin-bottom:4px;">
+        <div id="wp-location-results" style="max-height:200px;overflow-y:auto;border:1px solid var(--border);border-radius:8px;display:none;"></div>
+        <div id="wp-location-selected" style="font-size:0.8rem;color:var(--positive);margin-top:4px;">${loc.address ? '&#10003; ' + loc.address : loc.name}</div>
         <div class="widget-popup-actions">
-          <button class="btn" onclick="resetWidget('weather')" style="margin-right:auto;font-size:0.78rem;color:var(--text-secondary);">Reset to default</button>
+          <button class="btn" onclick="resetWidget('location')" style="margin-right:auto;font-size:0.78rem;color:var(--text-secondary);">Reset to default</button>
           <button class="btn" onclick="closeWidgetPopup()">Cancel</button>
-          <button class="btn btn-primary" onclick="saveWeatherSettings()">Save</button>
+          <button class="btn btn-primary" onclick="saveLocationSettings()">Save</button>
         </div>`;
     }
 
-    let selectedWeatherResult = null;
-    function onWeatherSearch(query) {
-      clearTimeout(weatherSearchTimeout);
-      if (query.length < 2) {
-        document.getElementById('wp-weather-results').classList.remove('visible');
+    // Weather and waste settings both open the shared location settings
+    function getWeatherSettingsHTML() { return getLocationSettingsHTML('weather'); }
+
+    let locationSearchTimeout = null;
+    let locationSelectedAddress = null;
+
+    function searchLocationAddress(query) {
+      clearTimeout(locationSearchTimeout);
+      if (query.length < 3) {
+        document.getElementById('wp-location-results').style.display = 'none';
         return;
       }
-      weatherSearchTimeout = setTimeout(async () => {
+      locationSearchTimeout = setTimeout(async () => {
         try {
-          const res = await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(query)}&count=5&language=en&format=json`);
+          const res = await fetch(`${WORKER_URL}/?url=${encodeURIComponent(`https://ws.geonorge.no/adresser/v1/sok?sok=${encodeURIComponent(query)}&treffPerSide=8`)}`);
           const data = await res.json();
-          const results = data.results || [];
-          const container = document.getElementById('wp-weather-results');
-          if (results.length === 0) {
-            container.innerHTML = '<div class="search-result-item"><span class="result-name">No results found</span></div>';
-          } else {
-            container.innerHTML = results.map((r, i) => `
-              <div class="search-result-item" onclick="selectWeatherResult(${i})">
-                <div class="result-name">${r.name}</div>
-                <div class="result-detail">${[r.admin1, r.country].filter(Boolean).join(', ')}</div>
-              </div>`).join('');
+          const container = document.getElementById('wp-location-results');
+          if (!data.adresser || data.adresser.length === 0) {
+            container.innerHTML = '<div style="padding:8px;color:var(--text-secondary);font-size:0.85rem;">No addresses found</div>';
+            container.style.display = 'block';
+            return;
           }
-          container.classList.add('visible');
-          // Store results for selection
-          window._weatherSearchResults = results;
-        } catch (e) {}
+          container.innerHTML = data.adresser.map((a, i) =>
+            `<div style="padding:8px;border-bottom:1px solid var(--border);cursor:pointer;font-size:0.85rem;" onmouseover="this.style.background='var(--border)'" onmouseout="this.style.background=''" onclick="selectLocationAddress(${i})">${a.adressetekst}, ${a.kommunenavn}</div>`
+          ).join('');
+          container.style.display = 'block';
+          container._addresses = data.adresser;
+        } catch (e) {
+          document.getElementById('wp-location-results').innerHTML = '<div style="padding:8px;color:var(--negative);font-size:0.85rem;">Search failed</div>';
+          document.getElementById('wp-location-results').style.display = 'block';
+        }
       }, 300);
     }
 
-    function selectFirstWeatherResult() {
-      if (window._weatherSearchResults && window._weatherSearchResults.length > 0) {
-        selectWeatherResult(0);
-      }
+    function selectLocationAddress(idx) {
+      const container = document.getElementById('wp-location-results');
+      const addrs = container._addresses;
+      if (!addrs || !addrs[idx]) return;
+      const a = addrs[idx];
+      const pt = a.representasjonspunkt || {};
+      locationSelectedAddress = {
+        name: a.adressenavn || a.adressetekst.split(',')[0],
+        lat: pt.lat, lon: pt.lon,
+        address: a.adressetekst,
+        gatenavn: a.adressenavn,
+        gatekode: a.adressekode,
+        husnr: String(a.nummer),
+        kommunenr: a.kommunenummer
+      };
+      document.getElementById('wp-location-search').value = a.adressetekst;
+      document.getElementById('wp-location-selected').innerHTML = '&#10003; ' + a.adressetekst + ', ' + a.kommunenavn;
+      container.style.display = 'none';
     }
 
-    function selectWeatherResult(idx) {
-      const r = window._weatherSearchResults[idx];
-      if (!r) return;
-      selectedWeatherResult = { name: r.name, lat: r.latitude, lon: r.longitude };
-      document.getElementById('wp-weather-search').value = r.name;
-      document.getElementById('wp-weather-results').classList.remove('visible');
-      document.getElementById('wp-weather-selected').innerHTML = `Selected: <strong>${r.name}</strong> (${r.latitude.toFixed(2)}, ${r.longitude.toFixed(2)}) &mdash; ${[r.admin1, r.country].filter(Boolean).join(', ')}`;
-    }
-
-    async function saveWeatherSettings() {
-      const cfg = loadConfig() || {};
-      if (selectedWeatherResult) {
-        cfg.weather = selectedWeatherResult;
-      } else {
-        const name = document.getElementById('wp-weather-search').value.trim();
-        if (name && name !== getWeather().name) {
-          try {
-            const geoRes = await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(name)}&count=1&language=en&format=json`);
-            const geoData = await geoRes.json();
-            if (geoData.results && geoData.results.length > 0) {
-              const r = geoData.results[0];
-              cfg.weather = { name: r.name, lat: r.latitude, lon: r.longitude };
-            } else {
-              cfg.weather = { ...getWeather(), name: name };
-            }
-          } catch (e) {
-            cfg.weather = { ...getWeather(), name: name };
-          }
-        }
+    function saveLocationSettings() {
+      if (!locationSelectedAddress) {
+        showToast('Please select an address from the search results');
+        return;
       }
-      if (!cfg.stops) cfg.stops = getStops();
-      if (!cfg.stocks) cfg.stocks = getStocks();
-      if (!cfg.feeds) cfg.feeds = getFeeds();
-
-      // Sync to other widgets if checked
-      const sync = document.getElementById('wp-weather-sync')?.checked;
-      if (sync && cfg.weather) {
-        try {
-          const WORKER = WORKER_URL;
-          const addrRes = await fetch(`${WORKER}/?url=${encodeURIComponent(`https://ws.geonorge.no/adresser/v1/punktsok?lat=${cfg.weather.lat}&lon=${cfg.weather.lon}&radius=500&treffPerSide=1`)}`);
-          const addrData = await addrRes.json();
-          const a = addrData?.adresser?.[0];
-          if (a) {
-            cfg.waste = {
-              address: a.adressetekst,
-              kommunenr: a.kommunenummer,
-              gatekode: a.adressekode,
-              gatenavn: a.adressenavn,
-              husnr: String(a.nummer)
-            };
-            cfg.powerZone = zoneFromKommunenr(a.kommunenummer);
-          }
-        } catch (e) { /* sync failed silently, weather still saved */ }
-      }
-
-      localStorage.setItem('dashboard-config', JSON.stringify(cfg));
-      selectedWeatherResult = null;
+      saveLocation(locationSelectedAddress);
+      locationSelectedAddress = null;
       closeWidgetPopup();
-      showToast(sync ? 'Location updated for all widgets' : 'Weather location updated');
+      showToast('Location updated for all widgets');
       fetchWeather();
-      if (sync) { fetchWaste(); fetchPower(); }
+      fetchWaste();
+      fetchPower();
+      fetchTransit();
+      if (mobilityMap) {
+        setMobilityCenter(getLocation().lat, getLocation().lon, getLocation().name);
+      }
     }
 
     // ── Stocks Settings ──
@@ -5166,7 +5151,7 @@
       const cfg = loadConfig() || {};
       cfg.stocks = currentStocksSelection;
       if (!cfg.stops) cfg.stops = getStops();
-      if (!cfg.weather) cfg.weather = getWeather();
+      if (!cfg.location) cfg.location = getLocation();
       if (!cfg.feeds) cfg.feeds = getFeeds();
       localStorage.setItem('dashboard-config', JSON.stringify(cfg));
       closeWidgetPopup();
@@ -5284,7 +5269,7 @@
       const cfg = loadConfig() || {};
       cfg.feeds = currentFeedsSelection;
       if (!cfg.stops) cfg.stops = getStops();
-      if (!cfg.weather) cfg.weather = getWeather();
+      if (!cfg.location) cfg.location = getLocation();
       if (!cfg.stocks) cfg.stocks = getStocks();
       localStorage.setItem('dashboard-config', JSON.stringify(cfg));
       activeTab = 0;
@@ -5386,7 +5371,7 @@
     function saveTransitSettings() {
       const cfg = loadConfig() || {};
       cfg.stops = currentStopsSelection.map(s => s.id);
-      if (!cfg.weather) cfg.weather = getWeather();
+      if (!cfg.location) cfg.location = getLocation();
       if (!cfg.stocks) cfg.stocks = getStocks();
       if (!cfg.feeds) cfg.feeds = getFeeds();
       localStorage.setItem('dashboard-config', JSON.stringify(cfg));
@@ -5477,7 +5462,7 @@
     function saveHueSettings() {
       const cfg = loadConfig() || {};
       cfg.hueScenes = currentHueScenesSelection;
-      if (!cfg.weather) cfg.weather = getWeather();
+      if (!cfg.location) cfg.location = getLocation();
       if (!cfg.stocks) cfg.stocks = getStocks();
       if (!cfg.feeds) cfg.feeds = getFeeds();
       localStorage.setItem('dashboard-config', JSON.stringify(cfg));
@@ -5486,102 +5471,8 @@
       fetchHue();
     }
 
-    // ── Waste Settings ──
-    let wasteSearchTimeout = null;
-    let wasteSelectedAddress = null;
-
-    function getWasteSettingsHTML() {
-      const wasteCfg = getWaste();
-      wasteSelectedAddress = wasteCfg.gatekode ? wasteCfg : null;
-      return `
-        <h3>Waste Collection</h3>
-        <label>Search address</label>
-        <input type="text" id="wp-waste-search" value="${wasteCfg.address || ''}" placeholder="Start typing your address..." oninput="searchWasteAddress(this.value)" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:8px;font-size:0.9rem;background:var(--bg);color:var(--text);margin-bottom:4px;">
-        <div id="wp-waste-results" style="max-height:200px;overflow-y:auto;border:1px solid var(--border);border-radius:8px;display:none;"></div>
-        <div id="wp-waste-selected" style="font-size:0.8rem;color:var(--positive);margin-top:4px;">${wasteSelectedAddress ? '&#10003; ' + wasteCfg.address : ''}</div>
-        <label style="display:flex;align-items:center;gap:8px;margin-top:8px;margin-bottom:12px;cursor:pointer;">
-          <input type="checkbox" id="wp-waste-sync" checked style="width:auto;margin:0;">
-          <span style="font-size:0.85rem;">Update weather &amp; power zone to match</span>
-        </label>
-        <div class="widget-popup-actions">
-          <button class="btn" onclick="closeWidgetPopup()">Cancel</button>
-          <button class="btn btn-primary" onclick="saveWasteSettings()">Save</button>
-        </div>`;
-    }
-
-    function searchWasteAddress(query) {
-      clearTimeout(wasteSearchTimeout);
-      if (query.length < 3) {
-        document.getElementById('wp-waste-results').style.display = 'none';
-        return;
-      }
-      wasteSearchTimeout = setTimeout(async () => {
-        try {
-          const WORKER = WORKER_URL;
-          const res = await fetch(`${WORKER}/?url=${encodeURIComponent(`https://ws.geonorge.no/adresser/v1/sok?sok=${encodeURIComponent(query)}&treffPerSide=8`)}`);
-          const data = await res.json();
-          const container = document.getElementById('wp-waste-results');
-          if (!data.adresser || data.adresser.length === 0) {
-            container.innerHTML = '<div style="padding:8px;color:var(--text-secondary);font-size:0.85rem;">No addresses found</div>';
-            container.style.display = 'block';
-            return;
-          }
-          container.innerHTML = data.adresser.map((a, i) => {
-            const display = `${a.adressetekst}, ${a.kommunenavn}`;
-            return `<div style="padding:8px;border-bottom:1px solid var(--border);cursor:pointer;font-size:0.85rem;" onmouseover="this.style.background='var(--border)'" onmouseout="this.style.background=''" onclick="selectWasteAddress(${i})" data-addr='${JSON.stringify({ address: a.adressetekst, kommunenr: a.kommunenummer, gatekode: a.adressekode, husnr: String(a.nummer), display }).replace(/'/g, "&#39;")}'>${display}</div>`;
-          }).join('');
-          container.style.display = 'block';
-          // Store addresses for selection
-          container._addresses = data.adresser;
-        } catch (e) {
-          document.getElementById('wp-waste-results').innerHTML = '<div style="padding:8px;color:var(--negative);font-size:0.85rem;">Search failed</div>';
-          document.getElementById('wp-waste-results').style.display = 'block';
-        }
-      }, 300);
-    }
-
-    function selectWasteAddress(idx) {
-      const container = document.getElementById('wp-waste-results');
-      const addrs = container._addresses;
-      if (!addrs || !addrs[idx]) return;
-      const a = addrs[idx];
-      const pt = a.representasjonspunkt || {};
-      wasteSelectedAddress = {
-        address: a.adressetekst,
-        kommunenr: a.kommunenummer,
-        gatekode: a.adressekode,
-        gatenavn: a.adressenavn,
-        husnr: String(a.nummer),
-        lat: pt.lat,
-        lon: pt.lon
-      };
-      document.getElementById('wp-waste-search').value = a.adressetekst;
-      document.getElementById('wp-waste-selected').innerHTML = '&#10003; ' + a.adressetekst + ', ' + a.kommunenavn;
-      container.style.display = 'none';
-    }
-
-    function saveWasteSettings() {
-      if (!wasteSelectedAddress) {
-        showToast('Please select an address from the search results');
-        return;
-      }
-      const cfg = loadConfig() || {};
-      cfg.waste = wasteSelectedAddress;
-
-      // Sync to other widgets if checked
-      const sync = document.getElementById('wp-waste-sync')?.checked;
-      if (sync && wasteSelectedAddress.lat && wasteSelectedAddress.lon) {
-        const name = wasteSelectedAddress.gatenavn || wasteSelectedAddress.address || 'Home';
-        cfg.weather = { name, lat: wasteSelectedAddress.lat, lon: wasteSelectedAddress.lon };
-        cfg.powerZone = zoneFromKommunenr(wasteSelectedAddress.kommunenr);
-      }
-
-      localStorage.setItem('dashboard-config', JSON.stringify(cfg));
-      closeWidgetPopup();
-      showToast(sync ? 'Location updated for all widgets' : 'Waste address updated');
-      fetchWaste();
-      if (sync) { fetchWeather(); fetchPower(); }
-    }
+    // ── Waste Settings (delegates to shared location settings) ──
+    function getWasteSettingsHTML() { return getLocationSettingsHTML('waste'); }
 
     // ── Mobility Settings ──
     function getMobilitySettingsHTML() {
@@ -5631,11 +5522,14 @@
       const cfg = loadConfig() || {};
       switch (widget) {
         case 'weather':
-          cfg.weather = DEFAULTS.weather;
+        case 'waste':
+        case 'location':
+          cfg.location = DEFAULTS.location;
           localStorage.setItem('dashboard-config', JSON.stringify(cfg));
+          Object.keys(transitWalkCache).forEach(k => delete transitWalkCache[k]);
           closeWidgetPopup();
-          showToast('Weather reset to default');
-          fetchWeather();
+          showToast('Location reset to default');
+          fetchWeather(); fetchWaste(); fetchPower(); fetchTransit();
           break;
         case 'stocks':
           cfg.stocks = DEFAULTS.stocks;

@@ -1006,6 +1006,122 @@
       opacity: 0.9;
       box-shadow: 0 2px 8px rgba(0,113,227,0.3);
     }
+
+    /* Layout settings button */
+    .layout-btn {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 8px 16px;
+      border-radius: 20px;
+      cursor: pointer;
+      font-size: 0.85rem;
+      font-weight: 500;
+      transition: all 0.2s;
+    }
+
+    .layout-btn:hover {
+      border-color: var(--accent);
+    }
+
+    /* Layout popup */
+    .layout-option-group {
+      margin-bottom: 18px;
+    }
+
+    .layout-option-group label {
+      display: block;
+      font-size: 0.8rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: var(--text-secondary);
+      margin-bottom: 8px;
+    }
+
+    .layout-choices {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .layout-choice {
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 10px 16px;
+      background: var(--bg-card);
+      color: var(--text);
+      cursor: pointer;
+      font-size: 0.85rem;
+      font-weight: 500;
+      transition: all 0.2s;
+      text-align: center;
+      min-width: 60px;
+    }
+
+    .layout-choice:hover {
+      border-color: var(--accent);
+    }
+
+    .layout-choice.selected {
+      border-color: var(--accent);
+      background: rgba(0, 113, 227, 0.08);
+      box-shadow: 0 0 0 1px var(--accent);
+    }
+
+    .layout-choice-icon {
+      display: flex;
+      gap: 2px;
+      justify-content: center;
+      margin-bottom: 4px;
+    }
+
+    .layout-choice-bar {
+      width: 6px;
+      height: 18px;
+      border-radius: 2px;
+      background: var(--text-secondary);
+      opacity: 0.5;
+    }
+
+    .layout-choice.selected .layout-choice-bar {
+      background: var(--accent);
+      opacity: 1;
+    }
+
+    /* Grid column overrides */
+    .grid.cols-2 { grid-template-columns: repeat(2, 1fr); }
+    .grid.cols-3 { grid-template-columns: repeat(3, 1fr); }
+    .grid.cols-4 { grid-template-columns: repeat(4, 1fr); }
+
+    /* Compact spacing */
+    .grid.spacing-compact { gap: 8px; }
+    .grid.spacing-comfortable { gap: 16px; }
+    .grid.spacing-spacious { gap: 24px; }
+
+    .grid.spacing-compact .card { padding: 12px; }
+    .grid.spacing-spacious .card { padding: 24px; }
+
+    /* Max width overrides */
+    .container.width-narrow { max-width: 1000px; }
+    .container.width-default { max-width: 1200px; }
+    .container.width-wide { max-width: 1600px; }
+    .container.width-full { max-width: 100%; }
+
+    @media (max-width: 700px) {
+      .grid.cols-2, .grid.cols-3, .grid.cols-4 {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    @media (min-width: 701px) and (max-width: 1000px) {
+      .grid.cols-4 {
+        grid-template-columns: repeat(2, 1fr);
+      }
+      .grid.cols-3 {
+        grid-template-columns: repeat(2, 1fr);
+      }
+    }
   </style>
 </head>
 <body>
@@ -1017,6 +1133,7 @@
         <span class="clock-date" id="clock-date" style="font-size:0.85rem;color:var(--text-secondary);margin-left:8px;"></span>
       </div>
       <div style="display:flex;gap:8px;">
+        <button class="layout-btn" onclick="openLayoutSettings()" title="Layout settings">&#9881; Layout</button>
         <button class="theme-toggle" onclick="openSharePanel()">Share</button>
         <button class="theme-toggle" id="theme-btn" onclick="toggleTheme()">Light</button>
       </div>
@@ -2859,6 +2976,9 @@
         if (order) cfg._widgetOrder = JSON.parse(order);
         // Include theme
         cfg._theme = localStorage.getItem('dashboard-theme') || 'dark';
+        // Include layout
+        const layout = localStorage.getItem('dashboard-layout');
+        if (layout) cfg._layout = JSON.parse(layout);
 
         const res = await fetch(WORKER_BASE + '/config/save', {
           method: 'POST',
@@ -2919,6 +3039,11 @@
           localStorage.setItem('dashboard-theme', cfg._theme);
           delete cfg._theme;
         }
+        // Apply layout if present
+        if (cfg._layout) {
+          localStorage.setItem('dashboard-layout', JSON.stringify(cfg._layout));
+          delete cfg._layout;
+        }
 
         localStorage.setItem('dashboard-config', JSON.stringify(cfg));
         closeSharePanel();
@@ -2935,6 +3060,8 @@
       const order = localStorage.getItem('dashboard-widget-order');
       if (order) cfg._widgetOrder = JSON.parse(order);
       cfg._theme = localStorage.getItem('dashboard-theme') || 'dark';
+      const layoutData = localStorage.getItem('dashboard-layout');
+      if (layoutData) cfg._layout = JSON.parse(layoutData);
       const blob = new Blob([JSON.stringify(cfg, null, 2)], { type: 'application/json' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -2959,6 +3086,10 @@
           if (cfg._theme) {
             localStorage.setItem('dashboard-theme', cfg._theme);
             delete cfg._theme;
+          }
+          if (cfg._layout) {
+            localStorage.setItem('dashboard-layout', JSON.stringify(cfg._layout));
+            delete cfg._layout;
           }
           localStorage.setItem('dashboard-config', JSON.stringify(cfg));
           showToast('Config imported! Refreshing...');
@@ -2987,6 +3118,10 @@
             localStorage.setItem('dashboard-theme', cfg._theme);
             delete cfg._theme;
           }
+          if (cfg._layout) {
+            localStorage.setItem('dashboard-layout', JSON.stringify(cfg._layout));
+            delete cfg._layout;
+          }
           localStorage.setItem('dashboard-config', JSON.stringify(cfg));
           // Remove ?config= from URL and reload
           window.history.replaceState({}, '', window.location.pathname);
@@ -3002,40 +3137,163 @@
       }
     });
 
+    // ── Layout Settings ──
+    function getLayoutConfig() {
+      const saved = localStorage.getItem('dashboard-layout');
+      if (saved) return JSON.parse(saved);
+      return { columns: 2, spacing: 'comfortable', width: 'default' };
+    }
+
+    function saveLayoutConfig(cfg) {
+      localStorage.setItem('dashboard-layout', JSON.stringify(cfg));
+    }
+
+    function applyLayoutConfig() {
+      const cfg = getLayoutConfig();
+      const grid = document.querySelector('.grid');
+      const container = document.querySelector('.container');
+      if (!grid || !container) return;
+
+      // Columns
+      grid.classList.remove('cols-2', 'cols-3', 'cols-4');
+      grid.classList.add('cols-' + cfg.columns);
+
+      // Spacing
+      grid.classList.remove('spacing-compact', 'spacing-comfortable', 'spacing-spacious');
+      grid.classList.add('spacing-' + cfg.spacing);
+
+      // Width
+      container.classList.remove('width-narrow', 'width-default', 'width-wide', 'width-full');
+      container.classList.add('width-' + cfg.width);
+    }
+
+    function openLayoutSettings() {
+      const cfg = getLayoutConfig();
+      const popup = document.getElementById('widget-popup');
+      const overlay = document.getElementById('widget-popup-overlay');
+
+      function colIcon(n) {
+        let bars = '';
+        for (let i = 0; i < n; i++) bars += '<div class="layout-choice-bar"></div>';
+        return '<div class="layout-choice-icon">' + bars + '</div>';
+      }
+
+      popup.innerHTML = `
+        <h3>Layout Settings</h3>
+
+        <div class="layout-option-group">
+          <label>Columns</label>
+          <div class="layout-choices">
+            <button class="layout-choice${cfg.columns === 2 ? ' selected' : ''}" onclick="setLayoutOption('columns', 2, this)">
+              ${colIcon(2)}2
+            </button>
+            <button class="layout-choice${cfg.columns === 3 ? ' selected' : ''}" onclick="setLayoutOption('columns', 3, this)">
+              ${colIcon(3)}3
+            </button>
+            <button class="layout-choice${cfg.columns === 4 ? ' selected' : ''}" onclick="setLayoutOption('columns', 4, this)">
+              ${colIcon(4)}4
+            </button>
+          </div>
+        </div>
+
+        <div class="layout-option-group">
+          <label>Spacing</label>
+          <div class="layout-choices">
+            <button class="layout-choice${cfg.spacing === 'compact' ? ' selected' : ''}" onclick="setLayoutOption('spacing', 'compact', this)">Compact</button>
+            <button class="layout-choice${cfg.spacing === 'comfortable' ? ' selected' : ''}" onclick="setLayoutOption('spacing', 'comfortable', this)">Comfortable</button>
+            <button class="layout-choice${cfg.spacing === 'spacious' ? ' selected' : ''}" onclick="setLayoutOption('spacing', 'spacious', this)">Spacious</button>
+          </div>
+        </div>
+
+        <div class="layout-option-group">
+          <label>Page width</label>
+          <div class="layout-choices">
+            <button class="layout-choice${cfg.width === 'narrow' ? ' selected' : ''}" onclick="setLayoutOption('width', 'narrow', this)">Narrow</button>
+            <button class="layout-choice${cfg.width === 'default' ? ' selected' : ''}" onclick="setLayoutOption('width', 'default', this)">Default</button>
+            <button class="layout-choice${cfg.width === 'wide' ? ' selected' : ''}" onclick="setLayoutOption('width', 'wide', this)">Wide</button>
+            <button class="layout-choice${cfg.width === 'full' ? ' selected' : ''}" onclick="setLayoutOption('width', 'full', this)">Full</button>
+          </div>
+        </div>
+
+        <div class="widget-popup-actions">
+          <button class="btn" onclick="resetLayout()" style="margin-right:auto;font-size:0.78rem;color:var(--text-secondary);">Reset to default</button>
+          <button class="btn" onclick="closeWidgetPopup()">Close</button>
+        </div>`;
+
+      overlay.classList.add('open');
+    }
+
+    function setLayoutOption(key, value, btn) {
+      const cfg = getLayoutConfig();
+      cfg[key] = value;
+      saveLayoutConfig(cfg);
+      applyLayoutConfig();
+      applyAdaptiveLayout();
+
+      // Update selected state in the group
+      const group = btn.closest('.layout-choices');
+      group.querySelectorAll('.layout-choice').forEach(b => b.classList.remove('selected'));
+      btn.classList.add('selected');
+    }
+
+    function resetLayout() {
+      localStorage.removeItem('dashboard-layout');
+      applyLayoutConfig();
+      applyAdaptiveLayout();
+      closeWidgetPopup();
+      showToast('Layout reset to default');
+    }
+
+    // Apply layout on load
+    applyLayoutConfig();
+
     // ── Adaptive Grid Layout ──
     function applyAdaptiveLayout() {
       const grid = document.querySelector('.grid');
       if (!grid) return;
       const cards = Array.from(grid.querySelectorAll('.card[data-widget]'));
       const narrowWidgets = new Set(['clock', 'weather', 'sensors', 'hue']);
+      const layoutCfg = getLayoutConfig();
+      const cols = layoutCfg.columns;
 
       // Clear previous layout spans
-      cards.forEach(c => c.classList.remove('span-full', 'span-half'));
+      cards.forEach(c => {
+        c.classList.remove('span-full', 'span-half');
+        c.style.gridColumn = '';
+      });
 
-      let i = 0;
-      while (i < cards.length) {
-        const card = cards[i];
-        const isNarrow = narrowWidgets.has(card.dataset.widget);
-        const next = cards[i + 1];
-        const nextIsNarrow = next ? narrowWidgets.has(next.dataset.widget) : false;
+      if (cols >= 3) {
+        // With 3+ columns, narrow widgets each take 1 column, wide take full width
+        cards.forEach(c => {
+          const isNarrow = narrowWidgets.has(c.dataset.widget);
+          if (!isNarrow) {
+            c.classList.add('span-full');
+          }
+          // Narrow cards just flow naturally into available columns
+        });
+      } else {
+        // 2-column layout: original pairing logic
+        let i = 0;
+        while (i < cards.length) {
+          const card = cards[i];
+          const isNarrow = narrowWidgets.has(card.dataset.widget);
+          const next = cards[i + 1];
+          const nextIsNarrow = next ? narrowWidgets.has(next.dataset.widget) : false;
 
-        if (isNarrow && next && nextIsNarrow) {
-          // Two consecutive narrow cards share a row
-          card.classList.add('span-half');
-          next.classList.add('span-half');
-          i += 2;
-        } else if (isNarrow && next && !nextIsNarrow) {
-          // Narrow followed by wide: narrow gets full, wide gets full
-          card.classList.add('span-full');
-          i += 1;
-        } else if (!isNarrow) {
-          // Wide card always gets full width
-          card.classList.add('span-full');
-          i += 1;
-        } else {
-          // Last narrow card alone
-          card.classList.add('span-full');
-          i += 1;
+          if (isNarrow && next && nextIsNarrow) {
+            card.classList.add('span-half');
+            next.classList.add('span-half');
+            i += 2;
+          } else if (isNarrow && next && !nextIsNarrow) {
+            card.classList.add('span-full');
+            i += 1;
+          } else if (!isNarrow) {
+            card.classList.add('span-full');
+            i += 1;
+          } else {
+            card.classList.add('span-full');
+            i += 1;
+          }
         }
       }
     }

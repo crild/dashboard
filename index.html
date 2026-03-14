@@ -534,7 +534,7 @@
 
     .power-chart {
       width: 100%;
-      height: 100px;
+      height: 110px;
       display: block;
       cursor: crosshair;
     }
@@ -1882,54 +1882,114 @@
       const styles = getComputedStyle(document.documentElement);
       const accentColor = styles.getPropertyValue('--accent').trim();
       const textSecondary = styles.getPropertyValue('--text-secondary').trim();
+      const borderColor = styles.getPropertyValue('--border').trim();
 
-      const labelH = 20;
-      const chartH = h - labelH - 4;
+      const hasTomorrow = prices.some(p => !p.isToday);
+      const totalHours = hasTomorrow ? 48 : 24;
+      const labelH = 16;
+      const pad = 4;
+      const chartH = h - labelH - pad;
+
       const values = prices.map(p => p.value);
       const min = Math.min(...values);
       const max = Math.max(...values);
       const range = max - min || 1;
-      const barW = w / prices.length;
-      const hasTomorrow = prices.some(p => !p.isToday);
 
-      // Draw bars
-      prices.forEach((p, i) => {
-        const barH = ((p.value - min) / range) * chartH * 0.9 + chartH * 0.1;
-        const x = i * barW;
-        const y = 4 + chartH - barH;
-        const isNow = p.hour === currentHour && p.isToday;
-        const isPast = p.isToday && p.hour < currentHour;
+      // X position: map to full 24h or 48h span
+      const getX = (i) => (i / totalHours) * w;
 
-        if (isNow) ctx.fillStyle = accentColor;
-        else if (isPast) ctx.fillStyle = accentColor + '60';
-        else if (p.isToday) ctx.fillStyle = accentColor + '20';
-        else ctx.fillStyle = accentColor + '15';
+      // Find the "now" index
+      const nowIdx = prices.findIndex(p => p.hour === currentHour && p.isToday);
 
+      // Draw midnight separator if showing tomorrow
+      if (hasTomorrow) {
+        const sepX = Math.round(getX(24)) + 0.5;
+        ctx.strokeStyle = borderColor;
+        ctx.lineWidth = 1;
+        ctx.setLineDash([3, 3]);
         ctx.beginPath();
-        ctx.roundRect(x + 1, y, barW - 2, barH, [2, 2, 0, 0]);
-        ctx.fill();
-      });
+        ctx.moveTo(sepX, pad);
+        ctx.lineTo(sepX, pad + chartH);
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
 
-      // Draw x-axis labels
-      ctx.fillStyle = textSecondary;
-      ctx.font = `${Math.min(11, barW * 1.2)}px -apple-system, sans-serif`;
-      ctx.textAlign = 'center';
-      const labelY = h - 4;
+      // Helper to get Y for a price value
+      const getY = (val) => pad + chartH - ((val - min) / range) * chartH;
 
-      // Determine label interval based on available space
-      const labelEvery = prices.length > 30 ? 6 : (prices.length > 16 ? 3 : 2);
-
-      prices.forEach((p, i) => {
-        if (p.hour % labelEvery === 0) {
-          const x = i * barW + barW / 2;
-          let label = `${String(p.hour).padStart(2, '0')}`;
-          // Mark day boundary
-          if (hasTomorrow && !p.isToday && p.hour === 0) {
-            label = 'tmrw';
-          }
-          ctx.fillText(label, x, labelY);
+      // Draw past line (solid) + fill
+      if (nowIdx >= 0) {
+        // Gradient fill under past
+        const grad = ctx.createLinearGradient(0, 0, 0, pad + chartH);
+        grad.addColorStop(0, accentColor + '25');
+        grad.addColorStop(1, accentColor + '05');
+        ctx.beginPath();
+        ctx.moveTo(getX(0), pad + chartH);
+        for (let i = 0; i <= nowIdx; i++) {
+          ctx.lineTo(getX(i) + getX(1) / 2, getY(prices[i].value));
         }
-      });
+        ctx.lineTo(getX(nowIdx) + getX(1) / 2, pad + chartH);
+        ctx.closePath();
+        ctx.fillStyle = grad;
+        ctx.fill();
+
+        // Solid line for past
+        ctx.beginPath();
+        for (let i = 0; i <= nowIdx; i++) {
+          const x = getX(i) + getX(1) / 2;
+          const y = getY(prices[i].value);
+          if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+        }
+        ctx.strokeStyle = accentColor;
+        ctx.lineWidth = 2;
+        ctx.lineJoin = 'round';
+        ctx.stroke();
+
+        // Current dot
+        ctx.beginPath();
+        ctx.arc(getX(nowIdx) + getX(1) / 2, getY(prices[nowIdx].value), 3.5, 0, Math.PI * 2);
+        ctx.fillStyle = accentColor;
+        ctx.fill();
+      }
+
+      // Draw future line (dashed/faded)
+      const futureStart = Math.max(0, nowIdx);
+      if (futureStart < prices.length - 1) {
+        ctx.beginPath();
+        ctx.strokeStyle = accentColor + '40';
+        ctx.lineWidth = 1.5;
+        ctx.setLineDash([4, 3]);
+        ctx.lineJoin = 'round';
+        for (let i = futureStart; i < prices.length; i++) {
+          const x = getX(i) + getX(1) / 2;
+          const y = getY(prices[i].value);
+          if (i === futureStart) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+        }
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
+
+      // X-axis labels
+      ctx.fillStyle = textSecondary;
+      ctx.font = '9px -apple-system, sans-serif';
+      ctx.textAlign = 'center';
+      const labelY = h - 2;
+      const labelEvery = totalHours > 24 ? 6 : 4;
+
+      for (let hr = 0; hr < totalHours; hr += labelEvery) {
+        const displayHour = hr % 24;
+        ctx.fillStyle = hr <= currentHour ? textSecondary : textSecondary + '60';
+        ctx.fillText(String(displayHour).padStart(2, '0'), getX(hr) + getX(1) / 2, labelY);
+      }
+
+      // Day labels
+      if (hasTomorrow) {
+        ctx.fillStyle = textSecondary;
+        ctx.font = '9px -apple-system, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText('Today', getX(12), labelY);
+        ctx.fillText('Tomorrow', getX(36), labelY);
+      }
     }
 
     async function fetchPower() {
@@ -1972,12 +2032,15 @@
         const minPrice = Math.min(...todayData.map(p => p.NOK_per_kWh));
         const maxPrice = Math.max(...todayData.map(p => p.NOK_per_kWh));
 
+        const hasTmrw = allPrices.some(p => !p.isToday);
+        const titleSuffix = hasTmrw ? ' + tomorrow' : '';
+
         document.getElementById('power-content').innerHTML = `
           <div class="power-current">
             <span class="power-price">${(currentPrice.NOK_per_kWh * 100).toFixed(1)}</span>
             <span class="power-unit">ore/kWh now</span>
           </div>
-          <div class="power-label">Avg ${(avgPrice * 100).toFixed(1)} · Low ${(minPrice * 100).toFixed(1)} · High ${(maxPrice * 100).toFixed(1)} ore/kWh today</div>
+          <div class="power-label">Avg ${(avgPrice * 100).toFixed(1)} · Low ${(minPrice * 100).toFixed(1)} · High ${(maxPrice * 100).toFixed(1)} ore/kWh today${titleSuffix}</div>
           <canvas class="power-chart" id="power-chart"></canvas>`;
 
         requestAnimationFrame(() => {
@@ -1985,14 +2048,15 @@
           if (!canvas) return;
           drawPowerChart(canvas, allPrices, currentHour);
 
+          const totalHours = hasTmrw ? 48 : 24;
           canvas.onmousemove = (e) => {
             const rect = canvas.getBoundingClientRect();
             const x = e.clientX - rect.left;
-            const idx = Math.floor((x / rect.width) * allPrices.length);
+            const idx = Math.floor((x / rect.width) * totalHours);
             const pt = allPrices[Math.max(0, Math.min(idx, allPrices.length - 1))];
-            if (!pt) return;
+            if (!pt || idx >= allPrices.length) { hideTooltip(); return; }
             const dayLabel = pt.isToday ? 'Today' : 'Tomorrow';
-            const timeStr = `${dayLabel} ${String(pt.hour).padStart(2, '0')}:00–${String(pt.hour + 1).padStart(2, '0')}:00`;
+            const timeStr = `${dayLabel} ${String(pt.hour).padStart(2, '0')}:00\u2013${String((pt.hour + 1) % 24).padStart(2, '0')}:00`;
             showTooltip(canvas, x, e.clientY - rect.top, [
               `<span class="chart-tooltip-value">${pt.value.toFixed(1)} ore/kWh</span>`,
               `<span class="chart-tooltip-time">${timeStr}</span>`

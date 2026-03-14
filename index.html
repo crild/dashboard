@@ -1988,12 +1988,13 @@
           const labelText = val.toFixed(0);
 
           // Skip if too close to another label
-          const tooClose = labeled.some(lx => Math.abs(lx - x) < 28);
+          const minGap = totalHours > 24 ? 20 : 28;
+          const tooClose = labeled.some(lx => Math.abs(lx - x) < minGap);
           if (tooClose) continue;
           labeled.push(x);
 
           const isFuture = !(prices[i].isToday && i <= currentHour);
-          ctx.fillStyle = isFuture ? textColor + '50' : textColor;
+          ctx.fillStyle = isFuture ? textColor + '80' : textColor;
           if (isPeak) {
             ctx.fillText(labelText, x, y - 5);
           } else {

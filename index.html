@@ -3191,7 +3191,7 @@
       try {
         const res = await fetch('https://yahoopull.charles-rutherford93.workers.dev/netatmo/data');
         if (res.status === 401) {
-          document.getElementById('sensors-content').innerHTML = '<div class="error">Netatmo not authorized. <a href="https://yahoopull.charles-rutherford93.workers.dev/auth/netatmo" target="_blank" style="color:var(--accent)">Authorize here</a></div>';
+          document.getElementById('sensors-content').innerHTML = '<div style="color:var(--text-secondary);font-size:0.85rem;line-height:1.5;">Requires Netatmo authorization.<br>Dashboard owner: <a href="https://yahoopull.charles-rutherford93.workers.dev/auth/netatmo" target="_blank" style="color:var(--accent)">authorize here</a></div>';
           return;
         }
         const data = await res.json();
@@ -3349,7 +3349,7 @@
       try {
         const res = await fetch('https://yahoopull.charles-rutherford93.workers.dev/hue/groups');
         if (res.status === 401) {
-          document.getElementById('hue-content').innerHTML = '<div class="error">Hue not authorized. <a href="https://yahoopull.charles-rutherford93.workers.dev/auth/hue" target="_blank" style="color:var(--accent)">Authorize here</a></div>';
+          document.getElementById('hue-content').innerHTML = '<div style="color:var(--text-secondary);font-size:0.85rem;line-height:1.5;">Requires Hue authorization.<br>Dashboard owner: <a href="https://yahoopull.charles-rutherford93.workers.dev/auth/hue" target="_blank" style="color:var(--accent)">authorize here</a></div>';
           return;
         }
         const groupData = await res.json();
@@ -3635,7 +3635,7 @@
       if (weatherCfg && weatherCfg.name !== 'Bestum') {
         return { name: weatherCfg.name, lat: weatherCfg.lat, lon: weatherCfg.lon };
       }
-      return { name: 'Bestumveien 33', lat: 59.92180, lon: 10.65830 };
+      return { name: 'Bestum', lat: 59.9220, lon: 10.6580 };
     }
 
     function getMobilityMaxDistance() {

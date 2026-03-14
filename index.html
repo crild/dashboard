@@ -4508,19 +4508,27 @@
       }`;
 
     const LINE_COLORS = {
-      '1': '#e60000', '2': '#f5a623', '3': '#0071b5', '4': '#1b5a8a',
-      '5': '#00a857', '6': '#8b6914', '11': '#0071b5', '12': '#006644',
-      '13': '#5e2ca5', '17': '#b8860b', '18': '#006644', '19': '#ff6600',
-      '30': '#e60000', '31': '#0071b5', '32': '#f5a623', '33': '#00a857',
-      '34': '#5e2ca5', '54': '#006644'
+      // Metro (T-bane) — official Ruter line colors
+      '1': '#d4373a', '2': '#f0a030', '3': '#009bd6', '4': '#1a5ba3',
+      '5': '#009a6e',
+      // Trams — Ruter blue
+      '11': '#009bd6', '12': '#009bd6', '13': '#009bd6',
+      '17': '#009bd6', '18': '#009bd6', '19': '#009bd6',
+      // Buses — Ruter red (city), green (regional)
+      '20': '#e60012', '21': '#e60012', '23': '#e60012', '25': '#e60012',
+      '28': '#e60012', '30': '#e60012', '31': '#e60012', '32': '#e60012',
+      '33': '#e60012', '34': '#e60012', '37': '#e60012',
+      '54': '#007c41', '60': '#007c41', '70': '#007c41',
+      '80': '#007c41', '81': '#007c41', '83': '#007c41', '85': '#007c41'
     };
 
     function getLineColor(code, mode) {
       if (LINE_COLORS[code]) return LINE_COLORS[code];
-      if (mode === 'metro') return '#e60000';
-      if (mode === 'tram') return '#0071b5';
-      if (mode === 'bus') return '#e60000';
-      if (mode === 'rail') return '#333';
+      if (mode === 'metro') return '#d4373a';
+      if (mode === 'tram') return '#009bd6';
+      if (mode === 'bus') return '#e60012';
+      if (mode === 'rail') return '#333333';
+      if (mode === 'water') return '#0077c0';
       return 'var(--accent)';
     }
 

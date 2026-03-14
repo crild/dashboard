@@ -5681,12 +5681,17 @@
         case 'waste':
         case 'location':
           cfg.location = DEFAULTS.location;
+          if (cfg.mobility) { delete cfg.mobility.lat; delete cfg.mobility.lon; delete cfg.mobility.name; }
           localStorage.setItem('dashboard-config', JSON.stringify(cfg));
           Object.keys(transitWalkCache).forEach(k => delete transitWalkCache[k]);
           closeWidgetPopup();
           showToast('Location reset to default');
           fetchWeather(); fetchWaste(); fetchPower();
           updateStopsForLocation();
+          if (mobilityMap) {
+            const loc = getLocation();
+            setMobilityCenter(loc.lat, loc.lon, loc.address || loc.name, true);
+          }
           break;
         case 'stocks':
           cfg.stocks = DEFAULTS.stocks;

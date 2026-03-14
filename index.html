@@ -2191,25 +2191,30 @@
 
       // Map time axis: from midnight 2 days ago to midnight tonight
       const now = new Date();
+      const startMidnight = new Date(now);
+      startMidnight.setDate(startMidnight.getDate() - 2);
+      startMidnight.setHours(0, 0, 0, 0);
       const endMidnight = new Date(now);
       endMidnight.setDate(endMidnight.getDate() + 1);
       endMidnight.setHours(0, 0, 0, 0);
-      const startMidnight = new Date(endMidnight);
-      startMidnight.setDate(startMidnight.getDate() - 2);
       const totalMs = endMidnight.getTime() - startMidnight.getTime();
       const getX = (timeS) => ((timeS * 1000 - startMidnight.getTime()) / totalMs) * w;
 
-      // Draw midnight separator
-      const midMidnight = new Date(startMidnight);
-      midMidnight.setDate(midMidnight.getDate() + 1);
-      const sepX = Math.round(getX(midMidnight.getTime() / 1000)) + 0.5;
+      // Draw midnight separators
       ctx.strokeStyle = borderColor;
       ctx.lineWidth = 1;
       ctx.setLineDash([3, 3]);
-      ctx.beginPath();
-      ctx.moveTo(sepX, 4);
-      ctx.lineTo(sepX, 4 + chartH);
-      ctx.stroke();
+      for (let d = 1; d <= 2; d++) {
+        const mid = new Date(startMidnight);
+        mid.setDate(mid.getDate() + d);
+        const sepX = Math.round(getX(mid.getTime() / 1000)) + 0.5;
+        if (sepX > 0 && sepX < w) {
+          ctx.beginPath();
+          ctx.moveTo(sepX, 4);
+          ctx.lineTo(sepX, 4 + chartH);
+          ctx.stroke();
+        }
+      }
       ctx.setLineDash([]);
 
       // Draw threshold zones
@@ -2244,17 +2249,23 @@
         ctx.stroke();
       }
 
-      // X-axis labels: show midnight markers and day labels
+      // X-axis day labels
       ctx.fillStyle = textSecondary;
       ctx.font = '9px -apple-system, sans-serif';
       ctx.textAlign = 'center';
       const labelY = h - 2;
 
       const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-      // Yesterday label
-      ctx.fillText(dayNames[startMidnight.getDay()], sepX / 2, labelY);
-      // Today label
-      ctx.fillText('Today', (sepX + w) / 2, labelY);
+      for (let d = 0; d < 3; d++) {
+        const dayStart = new Date(startMidnight);
+        dayStart.setDate(dayStart.getDate() + d);
+        const dayEnd = new Date(dayStart);
+        dayEnd.setDate(dayEnd.getDate() + 1);
+        const x0 = Math.max(0, getX(dayStart.getTime() / 1000));
+        const x1 = Math.min(w, getX(dayEnd.getTime() / 1000));
+        const label = d === 2 ? 'Today' : (d === 1 ? 'Yesterday' : dayNames[dayStart.getDay()]);
+        ctx.fillText(label, (x0 + x1) / 2, labelY);
+      }
     }
 
     async function fetchSensors() {

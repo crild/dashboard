@@ -796,8 +796,20 @@
       white-space: nowrap;
     }
 
-    .departure-time.soon {
+    .departure-time.urgent {
       color: var(--negative);
+      font-weight: 700;
+    }
+    .departure-time.hurry {
+      color: #f5a623;
+    }
+    .departure-time.relaxed {
+      color: var(--positive);
+    }
+    .stop-walk-time {
+      font-weight: 400;
+      color: var(--text-secondary);
+      font-size: 0.75rem;
     }
 
     .stop-name {
@@ -4489,6 +4501,8 @@
         stopPlace(id: $id) {
           id
           name
+          latitude
+          longitude
           estimatedCalls(numberOfDepartures: $n) {
             expectedDepartureTime
             destinationDisplay { frontText }
@@ -4532,16 +4546,44 @@
       return 'var(--accent)';
     }
 
-    function formatMinutes(isoTime) {
+    function formatMinutes(isoTime, walkMin) {
       const diff = Math.round((new Date(isoTime) - new Date()) / 60000);
-      if (diff <= 0) return { text: 'Now', soon: true };
-      if (diff === 1) return { text: '1 min', soon: true };
-      if (diff < 10) return { text: `${diff} min`, soon: true };
-      if (diff < 60) return { text: `${diff} min`, soon: false };
+      // RAG urgency based on walk time
+      let urgency = '';
+      if (walkMin != null) {
+        const buffer = diff - walkMin;
+        if (buffer <= 1) urgency = 'urgent';       // red: must leave NOW
+        else if (buffer <= 4) urgency = 'hurry';    // yellow: get moving
+        else urgency = 'relaxed';                   // green: plenty of time
+      }
+      if (diff <= 0) return { text: 'Now', urgency: urgency || 'urgent' };
+      if (diff === 1) return { text: '1 min', urgency: urgency || 'urgent' };
+      if (diff < 10) return { text: `${diff} min`, urgency };
       return {
         text: new Date(isoTime).toLocaleTimeString('nb-NO', { hour: '2-digit', minute: '2-digit' }),
-        soon: false
+        urgency
       };
+    }
+
+    // Cache walking times to stops so we don't re-fetch every 30s
+    const transitWalkCache = {};
+
+    async function getWalkTimeToStop(stopId, stopLat, stopLon) {
+      if (transitWalkCache[stopId] != null) return transitWalkCache[stopId];
+      // Use weather location as home location
+      const loc = getWeather();
+      try {
+        const route = await fetchWalkingRoute(loc.lat, loc.lon, stopLat, stopLon);
+        if (route) {
+          transitWalkCache[stopId] = route.durationMin;
+          return route.durationMin;
+        }
+      } catch {}
+      // Fallback: estimate from straight-line distance at ~5 km/h walking
+      const dist = distanceKm(loc.lat, loc.lon, stopLat, stopLon);
+      const est = Math.round((dist / 5) * 60);
+      transitWalkCache[stopId] = est;
+      return est;
     }
 
     async function fetchTransit() {
@@ -4559,6 +4601,13 @@
           const data = await res.json();
           return data.data.stopPlace;
         }));
+
+        // Calculate walking times in parallel
+        await Promise.all(results.filter(Boolean).map(stop =>
+          stop.latitude && stop.longitude
+            ? getWalkTimeToStop(stop.id, stop.latitude, stop.longitude)
+            : Promise.resolve(null)
+        ));
 
         // Load saved ordering
         const cfg = loadConfig() || {};
@@ -4579,6 +4628,9 @@
         }
 
         document.getElementById('transit-content').innerHTML = '<div class="stops-grid">' + orderedResults.map((stop, si) => {
+          const walkMin = transitWalkCache[stop.id];
+          const walkLabel = walkMin != null ? ` <span class="stop-walk-time">(${walkMin} min walk)</span>` : '';
+
           // Group departures by quay (direction/platform)
           const quayGroups = {};
           stop.estimatedCalls.forEach(call => {
@@ -4609,13 +4661,13 @@
             const dirLabel = group.desc ? `<div class="departure-direction">${group.desc}</div>` : '';
             const deps = group.calls.map(call => {
               const line = call.serviceJourney.line;
-              const time = formatMinutes(call.expectedDepartureTime);
+              const time = formatMinutes(call.expectedDepartureTime, walkMin);
               const color = getLineColor(line.publicCode, line.transportMode);
               return `
                 <div class="departure-item">
                   <span class="departure-line" style="background:${color}">${line.publicCode}</span>
                   <span class="departure-dest">${call.destinationDisplay.frontText}</span>
-                  <span class="departure-time ${time.soon ? 'soon' : ''}">${time.text}</span>
+                  <span class="departure-time ${time.urgency || ''}">${time.text}</span>
                 </div>`;
             }).join('');
             return `<div class="departure-group" data-quay="${qId}">${dirLabel}${deps}</div>`;
@@ -4624,7 +4676,7 @@
           const stopKey = stop.id || stop.name;
           return `
             <div class="stop-section" data-stop="${stopKey}" draggable="true">
-              <div class="stop-name" style="cursor:grab;">${stop.name}</div>
+              <div class="stop-name" style="cursor:grab;">${stop.name}${walkLabel}</div>
               ${sections}
             </div>`;
         }).join('') + '</div>';

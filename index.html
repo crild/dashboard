@@ -4969,7 +4969,7 @@
       container.style.display = 'none';
     }
 
-    function saveLocationSettings() {
+    async function saveLocationSettings() {
       if (!locationSelectedAddress) {
         showToast('Please select an address from the search results');
         return;
@@ -4981,7 +4981,7 @@
       fetchWeather();
       fetchWaste();
       fetchPower();
-      fetchTransit();
+      updateStopsForLocation();
       if (mobilityMap) {
         setMobilityCenter(getLocation().lat, getLocation().lon, getLocation().name);
       }
@@ -5291,11 +5291,33 @@
     let currentStopsSelection = [];
     let stopSearchTimeout = null;
 
+    async function findNearestStops(lat, lon, count) {
+      try {
+        const res = await fetch(`https://api.entur.io/geocoder/v1/reverse?point.lat=${lat}&point.lon=${lon}&layers=venue&size=${count || 2}&boundary.circle.radius=2`, {
+          headers: { 'ET-Client-Name': 'crild-dashboard' }
+        });
+        const data = await res.json();
+        const features = (data.features || []).filter(f => f.properties.id.startsWith('NSR:StopPlace:'));
+        return features.map(f => f.properties.id);
+      } catch (e) { return []; }
+    }
+
+    async function updateStopsForLocation() {
+      const loc = getLocation();
+      const stops = await findNearestStops(loc.lat, loc.lon, 2);
+      if (stops.length > 0) {
+        const cfg = loadConfig() || {};
+        cfg.stops = stops;
+        localStorage.setItem('dashboard-config', JSON.stringify(cfg));
+        fetchTransit();
+      }
+    }
+
     function getTransitSettingsHTML() {
       currentStopsSelection = getStops().map(id => ({ id, name: '' }));
       // Try to get names from existing DOM
       document.querySelectorAll('.stop-name').forEach((el, i) => {
-        if (currentStopsSelection[i]) currentStopsSelection[i].name = el.textContent;
+        if (currentStopsSelection[i]) currentStopsSelection[i].name = el.textContent.replace(/\s*\(.*\)$/, '');
       });
 
       return `
@@ -5304,17 +5326,40 @@
         <div class="tag-list" id="wp-stops-tags">
           ${renderStopTags()}
         </div>
+        <button class="btn" onclick="findNearbyStopsUI()" id="wp-find-nearby-btn" style="margin-bottom:12px;font-size:0.8rem;">Find nearest stops to my location</button>
         <label>Search for a stop</label>
         <div class="search-wrapper">
           <input id="wp-stop-search" placeholder="Type a stop name (e.g. Jernbanetorget, Majorstuen)" oninput="onStopSearch(this.value)" autocomplete="off" />
           <div class="search-results" id="wp-stop-results"></div>
         </div>
-        <p class="hint">Search by name. No need to know stop IDs.</p>
+        <p class="hint">Search by name, or use the button above to auto-detect nearby stops.</p>
         <div class="widget-popup-actions">
-          <button class="btn" onclick="resetWidget('transit')" style="margin-right:auto;font-size:0.78rem;color:var(--text-secondary);">Reset to default</button>
           <button class="btn" onclick="closeWidgetPopup()">Cancel</button>
           <button class="btn btn-primary" onclick="saveTransitSettings()">Save</button>
         </div>`;
+    }
+
+    async function findNearbyStopsUI() {
+      const btn = document.getElementById('wp-find-nearby-btn');
+      btn.textContent = 'Searching...';
+      btn.disabled = true;
+      const loc = getLocation();
+      try {
+        const res = await fetch(`https://api.entur.io/geocoder/v1/reverse?point.lat=${loc.lat}&point.lon=${loc.lon}&layers=venue&size=5&boundary.circle.radius=2`, {
+          headers: { 'ET-Client-Name': 'crild-dashboard' }
+        });
+        const data = await res.json();
+        const features = (data.features || []).filter(f => f.properties.id.startsWith('NSR:StopPlace:'));
+        if (features.length > 0) {
+          currentStopsSelection = features.slice(0, 2).map(f => ({ id: f.properties.id, name: f.properties.name }));
+          updateStopTags();
+        }
+        btn.textContent = 'Find nearest stops to my location';
+        btn.disabled = false;
+      } catch (e) {
+        btn.textContent = 'Search failed — try again';
+        btn.disabled = false;
+      }
     }
 
     function renderStopTags() {
@@ -5538,7 +5583,8 @@
           Object.keys(transitWalkCache).forEach(k => delete transitWalkCache[k]);
           closeWidgetPopup();
           showToast('Location reset to default');
-          fetchWeather(); fetchWaste(); fetchPower(); fetchTransit();
+          fetchWeather(); fetchWaste(); fetchPower();
+          updateStopsForLocation();
           break;
         case 'stocks':
           cfg.stocks = DEFAULTS.stocks;

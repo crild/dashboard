@@ -1969,6 +1969,39 @@
         ctx.setLineDash([]);
       }
 
+      // Label local peaks and troughs
+      ctx.font = '9px -apple-system, sans-serif';
+      ctx.textAlign = 'center';
+      const textColor = styles.getPropertyValue('--text').trim();
+      const labeled = [];
+
+      for (let i = 0; i < prices.length; i++) {
+        const prev = i > 0 ? prices[i - 1].value : prices[i].value;
+        const next = i < prices.length - 1 ? prices[i + 1].value : prices[i].value;
+        const val = prices[i].value;
+        const isPeak = val >= prev && val >= next && (val > prev || val > next);
+        const isTrough = val <= prev && val <= next && (val < prev || val < next);
+
+        if (isPeak || isTrough) {
+          const x = getX(i) + getX(1) / 2;
+          const y = getY(val);
+          const labelText = val.toFixed(0);
+
+          // Skip if too close to another label
+          const tooClose = labeled.some(lx => Math.abs(lx - x) < 28);
+          if (tooClose) continue;
+          labeled.push(x);
+
+          const isFuture = !(prices[i].isToday && i <= currentHour);
+          ctx.fillStyle = isFuture ? textColor + '50' : textColor;
+          if (isPeak) {
+            ctx.fillText(labelText, x, y - 5);
+          } else {
+            ctx.fillText(labelText, x, y + 12);
+          }
+        }
+      }
+
       // X-axis labels
       ctx.fillStyle = textSecondary;
       ctx.font = '9px -apple-system, sans-serif';

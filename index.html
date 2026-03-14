@@ -3873,9 +3873,9 @@
 
     }
 
-    function setMobilityCenter(lat, lon, name) {
+    function setMobilityCenter(lat, lon, name, skipSave) {
       mobilityCenter = { lat, lon, name };
-      saveMobilityAddress(lat, lon, name);
+      if (!skipSave) saveMobilityAddress(lat, lon, name);
       if (mobilityMap) {
         mobilityMap.setView([lat, lon], 16);
         if (mobilityLocationMarker) mobilityLocationMarker.remove();
@@ -3992,7 +3992,7 @@
         const cfg = loadConfig() || {};
         if (cfg.mobility) { delete cfg.mobility.lat; delete cfg.mobility.lon; delete cfg.mobility.name; }
         localStorage.setItem('dashboard-config', JSON.stringify(cfg));
-        setMobilityCenter(pt.lat, pt.lon, a.adressetekst);
+        setMobilityCenter(pt.lat, pt.lon, a.adressetekst, true);
         // Update all dependent widgets
         fetchWeather(); fetchWaste(); fetchPower();
         updateStopsForLocation();
@@ -5053,7 +5053,7 @@
       updateStopsForLocation();
       if (mobilityMap) {
         const loc = getLocation();
-        setMobilityCenter(loc.lat, loc.lon, loc.address || loc.name);
+        setMobilityCenter(loc.lat, loc.lon, loc.address || loc.name, true);
       }
     }
 

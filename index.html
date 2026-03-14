@@ -2327,7 +2327,10 @@
         // Fetch CO2 history for each source
         co2Sources.forEach(async (src, i) => {
           try {
-            const dateBegin = Math.floor(Date.now() / 1000) - 172800;
+            const midnightTwoDaysAgo = new Date();
+            midnightTwoDaysAgo.setDate(midnightTwoDaysAgo.getDate() - 2);
+            midnightTwoDaysAgo.setHours(0, 0, 0, 0);
+            const dateBegin = Math.floor(midnightTwoDaysAgo.getTime() / 1000);
             let measureUrl = `https://yahoopull.charles-rutherford93.workers.dev/netatmo/measure?device_id=${encodeURIComponent(src.deviceId)}&type=CO2&date_begin=${dateBegin}`;
             if (src.moduleId) measureUrl += `&module_id=${encodeURIComponent(src.moduleId)}`;
             const mRes = await fetch(measureUrl);

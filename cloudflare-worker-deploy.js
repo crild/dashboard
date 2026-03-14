@@ -10,7 +10,9 @@ var ALLOWED = [
   "https://www.theverge.com/",
   "https://feeds.arstechnica.com/",
   "https://query1.finance.yahoo.com/v1/finance/search",
-  "https://query2.finance.yahoo.com/v1/finance/search"
+  "https://query2.finance.yahoo.com/v1/finance/search",
+  "https://ws.geonorge.no/",
+  "https://news.google.com/"
 ];
 
 async function handleRequest(request) {
@@ -210,6 +212,43 @@ async function handleRequest(request) {
         "Content-Type": "application/json"
       },
       body: JSON.stringify({scene: sceneId})
+    });
+    var body = await resp.text();
+    return new Response(body, {status: resp.status, headers: {"Content-Type": "application/json", "Access-Control-Allow-Origin": "*"}});
+  }
+
+  if (path === "/waste/calendar") {
+    var kommunenr = url.searchParams.get("kommunenr") || "0301";
+    var gatekode = url.searchParams.get("gatekode");
+    var gatenavn = url.searchParams.get("gatenavn") || "";
+    var husnr = url.searchParams.get("husnr") || "1";
+    if (!gatekode) {
+      return new Response(JSON.stringify({error: "Missing gatekode"}), {status: 400, headers: {"Content-Type": "application/json", "Access-Control-Allow-Origin": "*"}});
+    }
+
+    // Oslo has its own API
+    if (kommunenr === "0301" || kommunenr === "301") {
+      var osloUrl = "https://www.oslo.kommune.no/xmlhttprequest.php?service=ren.search&street=" + encodeURIComponent(gatenavn) + "&number=" + encodeURIComponent(husnr) + "&street_id=" + encodeURIComponent(gatekode);
+      var resp = await fetch(osloUrl, {
+        headers: {"User-Agent": "Mozilla/5.0"}
+      });
+      var body = await resp.text();
+      return new Response(body, {status: resp.status, headers: {"Content-Type": "application/json", "Access-Control-Allow-Origin": "*"}});
+    }
+
+    // All other municipalities: Norkart Min Renovasjon
+    var today = new Date();
+    var fraDato = today.toISOString().split("T")[0];
+    var endDate = new Date(today);
+    endDate.setMonth(endDate.getMonth() + 6);
+    var dato = endDate.toISOString().split("T")[0];
+    var calUrl = "https://norkartrenovasjon.azurewebsites.net/proxyserver.ashx?server=" +
+      encodeURIComponent("https://komteksky.norkart.no/MinRenovasjon.Api/api/tommekalender/?gatenavn=" + gatenavn + "&gatekode=" + gatekode + "&husnr=" + husnr + "&fraDato=" + fraDato + "&dato=" + dato + "&api-version=2");
+    var resp = await fetch(calUrl, {
+      headers: {
+        "RenovasjonAppKey": "AE13DEEC-804F-4615-A74E-B4FAC11F0A30",
+        "Kommunenr": kommunenr
+      }
     });
     var body = await resp.text();
     return new Response(body, {status: resp.status, headers: {"Content-Type": "application/json", "Access-Control-Allow-Origin": "*"}});

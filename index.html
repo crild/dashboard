@@ -49,9 +49,16 @@
       display: flex;
       justify-content: space-between;
       align-items: center;
-      margin-bottom: 24px;
+      padding: 12px 16px;
       flex-wrap: wrap;
       gap: 8px;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      background: var(--bg);
+      border-bottom: 1px solid var(--border);
+      margin: -24px -16px 24px -16px;
+      transition: background 0.3s, border-color 0.3s;
     }
 
     header h1 {
@@ -107,6 +114,8 @@
       padding: 16px;
       box-shadow: var(--shadow);
       position: relative;
+      display: flex;
+      flex-direction: column;
     }
 
     .card:hover {
@@ -143,6 +152,65 @@
       box-shadow: 0 0 0 2px var(--accent), var(--shadow);
     }
 
+    .card.collapsed > *:not(.card-header) {
+      display: none !important;
+    }
+
+    .card.collapsed {
+      min-height: 0;
+    }
+
+    .card.collapsed .card-header {
+      margin-bottom: 0;
+    }
+
+    .card-collapse-btn {
+      background: none;
+      border: none;
+      color: var(--text-secondary);
+      cursor: pointer;
+      font-size: 0.7rem;
+      padding: 2px 4px;
+      line-height: 1;
+      transition: transform 0.2s;
+    }
+
+    .card.collapsed .card-collapse-btn {
+      transform: rotate(-90deg);
+    }
+
+    .kbd-help-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.5);
+      z-index: 300;
+      align-items: center;
+      justify-content: center;
+    }
+    .kbd-help-overlay.open { display: flex; }
+    .kbd-help {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 24px 32px;
+      max-width: 400px;
+      width: 90%;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+    }
+    .kbd-help h3 { margin: 0 0 16px; font-size: 1rem; }
+    .kbd-row { display: flex; justify-content: space-between; padding: 4px 0; font-size: 0.85rem; }
+    .kbd-key {
+      display: inline-block;
+      background: var(--border);
+      border-radius: 4px;
+      padding: 2px 8px;
+      font-family: monospace;
+      font-size: 0.8rem;
+      min-width: 24px;
+      text-align: center;
+    }
+
     .card-title {
       font-size: 0.8rem;
       font-weight: 600;
@@ -162,6 +230,7 @@
       align-items: center;
       gap: 16px;
       margin-bottom: 12px;
+      flex-wrap: wrap;
     }
 
     .weather-icon {
@@ -219,9 +288,48 @@
 
     .weather-forecast canvas {
       width: 100%;
-      height: 50px;
+      height: 40px;
       display: block;
       cursor: crosshair;
+    }
+
+    .weather-daily-strip {
+      display: flex;
+      gap: 12px;
+      margin-left: auto;
+    }
+
+    .weather-daily-item {
+      text-align: center;
+      font-size: 0.7rem;
+      color: var(--text-secondary);
+      line-height: 1.3;
+    }
+
+    .weather-daily-item .daily-icon {
+      font-size: 1.1rem;
+      display: block;
+    }
+
+    .weather-daily-item .daily-day {
+      font-weight: 500;
+      color: var(--text);
+      font-size: 0.6rem;
+    }
+
+    .weather-daily-item .daily-temps {
+      font-size: 0.6rem;
+    }
+
+    .weather-daily-item .daily-hi {
+      color: var(--text);
+      font-weight: 500;
+    }
+
+    .weather-daily-item .daily-rain {
+      display: block;
+      font-size: 0.55rem;
+      color: var(--accent);
     }
 
     .weather-precip-section {
@@ -230,7 +338,7 @@
 
     .weather-precip-section canvas {
       width: 100%;
-      height: 30px;
+      height: 40px;
       display: block;
       cursor: crosshair;
     }
@@ -276,20 +384,57 @@
       font-size: 1rem;
       font-weight: 500;
       font-variant-numeric: tabular-nums;
+      padding: 1px 4px;
+      border-radius: 4px;
+      transition: background 0.6s ease;
     }
 
-    .stock-change {
-      font-size: 0.75rem;
-      font-weight: 500;
+    .stock-price.flash-up { animation: flashUp 0.6s ease; }
+    .stock-price.flash-down { animation: flashDown 0.6s ease; }
+
+    @keyframes flashUp {
+      0% { background: color-mix(in srgb, var(--positive) 30%, transparent); }
+      100% { background: transparent; }
+    }
+    @keyframes flashDown {
+      0% { background: color-mix(in srgb, var(--negative) 30%, transparent); }
+      100% { background: transparent; }
+    }
+
+    .co2-ticker {
+      display: inline-block;
       font-variant-numeric: tabular-nums;
+      font-size: 0.85rem;
+      line-height: 1.2;
+      padding: 2px 6px;
+      border-radius: 4px;
     }
 
-    .stock-change.positive { color: var(--positive); }
-    .stock-change.negative { color: var(--negative); }
+    .co2-ticker.flash-up { animation: flashUp 0.6s ease; }
+    .co2-ticker.flash-down { animation: flashDown 0.6s ease; }
+
+    .stock-changes {
+      display: flex;
+      gap: 6px;
+      margin-bottom: 8px;
+      flex-wrap: wrap;
+    }
+
+    .stock-badge {
+      font-size: 0.68rem;
+      font-weight: 600;
+      font-variant-numeric: tabular-nums;
+      padding: 2px 6px;
+      border-radius: 6px;
+      white-space: nowrap;
+    }
+
+    .stock-badge.positive { color: var(--positive); background: color-mix(in srgb, var(--positive) 12%, transparent); }
+    .stock-badge.negative { color: var(--negative); background: color-mix(in srgb, var(--negative) 12%, transparent); }
 
     .stock-chart {
       width: 100%;
-      height: 110px;
+      height: 80px;
       display: block;
       cursor: crosshair;
     }
@@ -450,6 +595,9 @@
       margin-top: 12px;
       padding-top: 10px;
       border-top: 1px solid var(--border);
+      flex: 1;
+      display: flex;
+      flex-direction: column;
     }
 
     .co2-chart-label {
@@ -459,9 +607,19 @@
       margin-bottom: 6px;
     }
 
+    #sensors-content {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .co2-chart-wrap {
+      flex: 1;
+      min-height: 40px;
+      overflow: hidden;
+    }
+
     .co2-chart {
-      width: 100%;
-      height: 60px;
       display: block;
       cursor: crosshair;
     }
@@ -532,19 +690,75 @@
       margin-bottom: 8px;
     }
 
+    #power-content {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .power-chart-wrap {
+      flex: 1;
+      min-height: 80px;
+      overflow: hidden;
+    }
+
     .power-chart {
-      width: 100%;
-      height: 110px;
       display: block;
       cursor: crosshair;
     }
 
     /* Transit */
+    /* List widgets — use container query to scale with card width */
+    .card[data-widget="transit"],
+    .card[data-widget="waste"] { container-type: inline-size; }
+
+    .departure-group {
+      padding-bottom: 8px;
+      margin-bottom: 8px;
+      border-bottom: 2px solid var(--border);
+      transition: opacity 0.15s;
+    }
+
+    .departure-group:last-child {
+      border-bottom: none;
+      margin-bottom: 0;
+      padding-bottom: 0;
+    }
+
+    .departure-group.drag-above {
+      border-top: 2px solid var(--accent);
+      padding-top: 6px;
+    }
+
+    .departure-group.drag-below {
+      border-bottom: 2px solid var(--accent);
+      padding-bottom: 6px;
+    }
+
+    .stop-section.drag-above {
+      border-top: 2px solid var(--accent);
+      padding-top: 8px;
+    }
+
+    .stop-section.drag-below {
+      border-bottom: 2px solid var(--accent);
+      padding-bottom: 8px;
+    }
+
+    .departure-direction {
+      font-size: 0.7rem;
+      font-weight: 600;
+      color: var(--text-secondary);
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+      padding-bottom: 3px;
+    }
+
     .departure-item {
       display: flex;
       align-items: center;
-      gap: 12px;
-      padding: 10px 0;
+      gap: 6px;
+      padding: 4px 0;
       border-bottom: 1px solid var(--border);
     }
 
@@ -553,26 +767,22 @@
       padding-bottom: 0;
     }
 
-    .departure-item:first-child {
-      padding-top: 0;
-    }
-
     .departure-line {
-      min-width: 40px;
-      height: 28px;
+      min-width: 32px;
+      height: 22px;
       display: flex;
       align-items: center;
       justify-content: center;
-      border-radius: 6px;
+      border-radius: 4px;
       font-weight: 700;
-      font-size: 0.85rem;
+      font-size: 0.75rem;
       color: #fff;
       background: var(--accent);
     }
 
     .departure-dest {
       flex: 1;
-      font-size: 0.9rem;
+      font-size: 0.78rem;
       font-weight: 500;
       white-space: nowrap;
       overflow: hidden;
@@ -580,7 +790,7 @@
     }
 
     .departure-time {
-      font-size: 1rem;
+      font-size: 0.8rem;
       font-weight: 600;
       font-variant-numeric: tabular-nums;
       white-space: nowrap;
@@ -591,17 +801,17 @@
     }
 
     .stop-name {
-      font-size: 0.95rem;
+      font-size: 0.8rem;
       font-weight: 600;
-      margin-bottom: 12px;
-      padding-bottom: 8px;
+      margin-bottom: 6px;
+      padding-bottom: 4px;
       border-bottom: 1px solid var(--border);
     }
 
     .stops-grid {
       display: grid;
       grid-template-columns: 1fr 1fr;
-      gap: 20px;
+      gap: 10px;
     }
 
     @media (max-width: 600px) {
@@ -612,6 +822,276 @@
 
     .stop-section {
       margin-bottom: 0;
+    }
+
+    /* Scale up departures when card is wide, but cap at moderate size */
+    @container (min-width: 500px) {
+      .departure-item { gap: 10px; padding: 5px 0; }
+      .departure-line { min-width: 38px; height: 24px; font-size: 0.8rem; border-radius: 5px; }
+      .departure-dest { font-size: 0.88rem; }
+      .departure-time { font-size: 0.88rem; }
+      .stop-name { font-size: 0.88rem; margin-bottom: 8px; padding-bottom: 5px; }
+      .stops-grid { gap: 14px; }
+      .departure-direction { font-size: 0.74rem; }
+      .departure-group { padding-bottom: 10px; margin-bottom: 10px; }
+    }
+
+    /* Waste collection */
+    .waste-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 6px 0;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .waste-item:last-child { border-bottom: none; }
+    .waste-item:first-child { padding-top: 0; }
+
+    .waste-icon {
+      font-size: 1.2rem;
+      width: 28px;
+      text-align: center;
+      flex-shrink: 0;
+    }
+
+    .waste-info {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .waste-name {
+      font-size: 0.85rem;
+      font-weight: 500;
+    }
+
+    .waste-date {
+      font-size: 0.7rem;
+      color: var(--text-secondary);
+    }
+
+    .waste-countdown {
+      font-size: 0.85rem;
+      font-weight: 600;
+      font-variant-numeric: tabular-nums;
+      white-space: nowrap;
+    }
+
+    .waste-countdown.today {
+      color: var(--negative);
+    }
+
+    .waste-countdown.tomorrow {
+      color: var(--accent);
+    }
+
+    .waste-item.waste-past {
+      opacity: 0.45;
+    }
+
+    .waste-item.waste-past .waste-name {
+      text-decoration: line-through;
+    }
+
+    /* Scale up waste when card is wide */
+    @container (min-width: 400px) {
+      .waste-item { gap: 12px; padding: 8px 0; }
+      .waste-icon { font-size: 1.3rem; width: 32px; }
+      .waste-name { font-size: 0.9rem; }
+      .waste-date { font-size: 0.75rem; }
+      .waste-countdown { font-size: 0.9rem; }
+    }
+
+    /* Mobility controls */
+    .mobility-controls {
+      display: flex;
+      gap: 6px;
+      margin-bottom: 8px;
+      align-items: center;
+    }
+
+    .mobility-search-wrap {
+      flex: 1;
+      position: relative;
+    }
+
+    .mobility-search {
+      width: 100%;
+      padding: 6px 10px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--bg-card);
+      color: var(--text);
+      font-size: 0.8rem;
+      outline: none;
+      box-sizing: border-box;
+    }
+
+    .mobility-search:focus {
+      border-color: var(--accent);
+    }
+
+    .mobility-search-results {
+      position: absolute;
+      top: 100%;
+      left: 0;
+      right: 0;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      margin-top: 2px;
+      max-height: 180px;
+      overflow-y: auto;
+      z-index: 100;
+      display: none;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    }
+
+    .mobility-search-results.active {
+      display: block;
+    }
+
+    .mobility-search-result {
+      padding: 6px 10px;
+      font-size: 0.78rem;
+      cursor: pointer;
+      color: var(--text);
+    }
+
+    .mobility-search-result:hover {
+      background: var(--hover);
+    }
+
+    .mobility-btn {
+      width: 32px;
+      height: 32px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--bg-card);
+      color: var(--text);
+      font-size: 1.1rem;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+
+    .mobility-btn:hover {
+      background: var(--hover);
+    }
+
+    /* Mobility map */
+    .mobility-map-wrap {
+      position: relative;
+    }
+
+    .mobility-map {
+      width: 100%;
+      height: 300px;
+      border-radius: 10px;
+      z-index: 1;
+    }
+
+    .mobility-walk-overlay {
+      position: absolute;
+      top: 8px;
+      right: 8px;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 6px 10px;
+      font-size: 0.75rem;
+      color: var(--text);
+      line-height: 1.4;
+      z-index: 10;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.15);
+      pointer-events: none;
+    }
+
+    .mobility-map-nav {
+      position: absolute;
+      bottom: 10px;
+      right: 8px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 2px;
+      z-index: 10;
+    }
+
+    .mobility-nav-btn {
+      width: 28px;
+      height: 28px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: var(--bg-card);
+      color: var(--text);
+      font-size: 0.8rem;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.12);
+    }
+
+    .mobility-nav-btn:hover {
+      background: var(--hover);
+    }
+
+    .mobility-legend {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin-top: 8px;
+      font-size: 0.75rem;
+      color: var(--text-secondary);
+    }
+
+    .mobility-legend-item {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      cursor: pointer;
+      user-select: none;
+      padding: 2px 6px;
+      border-radius: 6px;
+      transition: opacity 0.2s;
+    }
+
+    .mobility-legend-item:hover {
+      background: var(--hover);
+    }
+
+    .mobility-legend-item.disabled {
+      opacity: 0.35;
+      text-decoration: line-through;
+    }
+
+    .mobility-legend-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+
+    .mobility-scooter-icon {
+      background: none !important;
+      border: none !important;
+    }
+
+    .mobility-marker-glow {
+      filter: drop-shadow(0 0 4px currentColor) drop-shadow(0 0 8px currentColor);
+      transition: filter 1.5s ease-out;
+    }
+
+    .mobility-marker-glow-fade {
+      filter: none;
+    }
+
+    .map-tiles-dark {
+      filter: brightness(0.7) invert(1) contrast(1.1) hue-rotate(200deg) saturate(0.3);
     }
 
     /* Toast notification */
@@ -1111,6 +1591,8 @@
       }
     }
   </style>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 </head>
 <body>
   <div class="container">
@@ -1220,6 +1702,34 @@
           <div class="loading">Loading departures...</div>
         </div>
       </div>
+
+      <!-- Waste collection -->
+      <div class="card card-narrow" data-widget="waste">
+        <div class="card-header">
+          <span class="card-title">Waste collection</span>
+          <div class="card-header-right">
+            <span class="card-status" id="waste-status"></span>
+            <button class="card-edit-btn" onclick="openWidgetSettings('waste')" title="Edit address">&#9998;<span class="edit-label">Edit</span></button>
+          </div>
+        </div>
+        <div id="waste-content">
+          <div class="loading">Loading schedule...</div>
+        </div>
+      </div>
+
+      <!-- Mobility -->
+      <div class="card card-wide" data-widget="mobility">
+        <div class="card-header">
+          <span class="card-title">Nearby mobility</span>
+          <div class="card-header-right">
+            <span class="card-status" id="mobility-status"></span>
+            <button class="card-edit-btn" onclick="openWidgetSettings('mobility')" title="Mobility settings">&#9998;<span class="edit-label">Edit</span></button>
+          </div>
+        </div>
+        <div id="mobility-content">
+          <div class="loading">Loading map...</div>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -1227,6 +1737,20 @@
   <div class="widget-popup-overlay" id="widget-popup-overlay" onclick="closeWidgetPopup(event)">
     <div class="widget-popup" id="widget-popup" onclick="event.stopPropagation()">
       <!-- Content dynamically injected -->
+    </div>
+  </div>
+
+  <!-- Keyboard shortcuts help -->
+  <div class="kbd-help-overlay" id="kbd-help-overlay" onclick="this.classList.remove('open')">
+    <div class="kbd-help" onclick="event.stopPropagation()">
+      <h3>Keyboard shortcuts</h3>
+      <div class="kbd-row"><span>Refresh all widgets</span><span class="kbd-key">R</span></div>
+      <div class="kbd-row"><span>Toggle dark/light mode</span><span class="kbd-key">D</span></div>
+      <div class="kbd-row"><span>Collapse/expand widget 1-9</span><span class="kbd-key">1</span>-<span class="kbd-key">9</span></div>
+      <div class="kbd-row"><span>Show this help</span><span class="kbd-key">?</span></div>
+      <div style="margin-top:16px;text-align:right;">
+        <button class="btn" onclick="document.getElementById('kbd-help-overlay').classList.remove('open')">Close</button>
+      </div>
     </div>
   </div>
 
@@ -1279,14 +1803,18 @@
       stops: ['NSR:StopPlace:6460', 'NSR:StopPlace:6463'],
       stocks: [
         { symbol: '^GSPC', label: 'S&P 500' },
-        { symbol: 'OSEBX.OL', label: 'OSEBX' }
+        { symbol: 'OSEBX.OL', label: 'OSEBX' },
+        { symbol: 'BTC-USD', label: 'Bitcoin' }
       ],
       weather: { name: 'Bestum', lat: 59.9205, lon: 10.6646 },
       feeds: [
-        { name: 'BBC', url: 'https://feeds.bbci.co.uk/news/world/rss.xml' },
+        { name: 'BBC News', url: 'https://feeds.bbci.co.uk/news/world/rss.xml' },
+        { name: 'BBC Tech', url: 'https://feeds.bbci.co.uk/news/technology/rss.xml' },
         { name: 'NRK', url: 'https://www.nrk.no/toppsaker.rss' },
-        { name: 'Tech', url: 'https://feeds.arstechnica.com/arstechnica/index' }
-      ]
+        { name: 'Hawk Infinity', type: 'search', query: 'Hawk Infinity' }
+      ],
+      waste: { address: '' },
+      powerZone: 'NO1'
     };
 
     function loadConfig() {
@@ -1310,9 +1838,36 @@
       return cfg?.weather ?? DEFAULTS.weather;
     }
 
+    function getWaste() {
+      const cfg = loadConfig();
+      return cfg?.waste ?? DEFAULTS.waste;
+    }
+
     function getFeeds() {
       const cfg = loadConfig();
       return cfg?.feeds ?? DEFAULTS.feeds;
+    }
+
+    function getPowerZone() {
+      const cfg = loadConfig();
+      return cfg?.powerZone ?? DEFAULTS.powerZone;
+    }
+
+    // Map Norwegian kommunenummer to electricity price zone
+    function zoneFromKommunenr(knr) {
+      const prefix = knr.replace(/^0+/, '').substring(0, 2);
+      const p = parseInt(prefix);
+      // NO4: Nordland (18xx), Troms (55xx), Finnmark (54xx)
+      if ([18, 54, 55].includes(p)) return 'NO4';
+      // NO3: Trøndelag (50xx)
+      if (p === 50) return 'NO3';
+      // NO5: Vestland (46xx), Møre og Romsdal (15xx)
+      if ([15, 46].includes(p)) return 'NO5';
+      // NO2: Rogaland (11xx), Agder (42xx)
+      if ([11, 42].includes(p)) return 'NO2';
+      // NO1: Oslo (03/3xx), Østfold (31xx), Akershus (32xx), Buskerud (33xx),
+      // Innlandet (34xx), Vestfold (38xx), Telemark (39xx/40xx)
+      return 'NO1';
     }
 
     // ── Theme ──
@@ -1335,6 +1890,100 @@
       document.documentElement.setAttribute('data-theme', saved);
       document.getElementById('theme-btn').textContent = saved === 'dark' ? 'Light' : 'Dark';
     })();
+
+    // ── Auto theme schedule (dark after sunset, light after sunrise) ──
+    // Reset manual override on each page load so auto-schedule applies to new sessions
+    localStorage.removeItem('dashboard-theme-manual');
+    (function initAutoTheme() {
+      const cfg = loadConfig();
+      if (cfg?.themeSchedule === false) return; // user opted out
+      const hour = new Date().getHours();
+      const isDark = hour >= 21 || hour < 7; // dark 21:00–07:00
+      const theme = isDark ? 'dark' : 'light';
+      document.documentElement.setAttribute('data-theme', theme);
+      document.getElementById('theme-btn').textContent = isDark ? 'Light' : 'Dark';
+      localStorage.setItem('dashboard-theme', theme);
+    })();
+
+    // Mark manual toggle so auto-schedule doesn't override
+    const _origToggleTheme = toggleTheme;
+    toggleTheme = function() {
+      _origToggleTheme();
+      localStorage.setItem('dashboard-theme-manual', '1');
+    };
+
+    // Re-check auto theme every 10 minutes (only if not manually overridden)
+    setInterval(() => {
+      if (localStorage.getItem('dashboard-theme-manual')) return;
+      const cfg = loadConfig();
+      if (cfg?.themeSchedule === false) return;
+      const hour = new Date().getHours();
+      const isDark = hour >= 21 || hour < 7;
+      const theme = isDark ? 'dark' : 'light';
+      if (document.documentElement.getAttribute('data-theme') !== theme) {
+        document.documentElement.setAttribute('data-theme', theme);
+        document.getElementById('theme-btn').textContent = isDark ? 'Light' : 'Dark';
+        localStorage.setItem('dashboard-theme', theme);
+      }
+    }, 10 * 60 * 1000);
+
+    // ── Widget collapse/expand ──
+    (function initCollapse() {
+      const collapsed = JSON.parse(localStorage.getItem('dashboard-collapsed') || '[]');
+      document.querySelectorAll('.card').forEach(card => {
+        const widget = card.getAttribute('data-widget');
+        if (!widget) return;
+        if (collapsed.includes(widget)) card.classList.add('collapsed');
+        const title = card.querySelector('.card-title');
+        if (title) {
+          title.style.cursor = 'pointer';
+          title.title = 'Click to collapse/expand';
+          title.addEventListener('click', (e) => {
+            e.stopPropagation();
+            toggleCardCollapse(widget);
+          });
+        }
+      });
+    })();
+
+    function toggleCardCollapse(widget) {
+      const card = document.querySelector(`.card[data-widget="${widget}"]`);
+      if (!card) return;
+      card.classList.toggle('collapsed');
+      const collapsed = [...document.querySelectorAll('.card.collapsed')]
+        .map(c => c.getAttribute('data-widget')).filter(Boolean);
+      localStorage.setItem('dashboard-collapsed', JSON.stringify(collapsed));
+    }
+
+    // ── Keyboard shortcuts ──
+    document.addEventListener('keydown', (e) => {
+      // Ignore when typing in inputs
+      if (e.target.matches('input, textarea, select')) return;
+      const key = e.key.toLowerCase();
+
+      if (key === 'r') {
+        e.preventDefault();
+        fetchWeather(); fetchStocks(); fetchPower(); fetchSensors();
+        fetchHue(); fetchWaste(); fetchNews(); fetchTransit();
+        refreshMobilityData(true);
+        showToast('Refreshing all widgets');
+      } else if (key === 'd') {
+        e.preventDefault();
+        toggleTheme();
+      } else if (key === '?') {
+        e.preventDefault();
+        document.getElementById('kbd-help-overlay').classList.toggle('open');
+      } else if (key === 'escape') {
+        document.getElementById('kbd-help-overlay').classList.remove('open');
+      } else if (key >= '1' && key <= '9') {
+        const cards = document.querySelectorAll('.card[data-widget]');
+        const idx = parseInt(key) - 1;
+        if (idx < cards.length) {
+          e.preventDefault();
+          toggleCardCollapse(cards[idx].getAttribute('data-widget'));
+        }
+      }
+    });
 
     // ── Settings (per-widget popups, see Widget Settings section below) ──
 
@@ -1367,7 +2016,7 @@
       try {
         const loc = getWeather();
         document.querySelector('#weather-status').closest('.card').querySelector('.card-title').textContent = `Weather — ${loc.name}`;
-        const url = `https://api.open-meteo.com/v1/forecast?latitude=${loc.lat}&longitude=${loc.lon}&current=temperature_2m,apparent_temperature,weather_code,wind_speed_10m,precipitation,relative_humidity_2m&hourly=temperature_2m,weather_code,precipitation_probability&timezone=auto&forecast_days=1`;
+        const url = `https://api.open-meteo.com/v1/forecast?latitude=${loc.lat}&longitude=${loc.lon}&current=temperature_2m,apparent_temperature,weather_code,wind_speed_10m,precipitation,relative_humidity_2m&hourly=temperature_2m,weather_code,precipitation_probability&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_sum&timezone=auto&forecast_days=3`;
         const res = await fetch(url);
         const data = await res.json();
         const c = data.current;
@@ -1388,10 +2037,29 @@
           });
         }
 
+        // Build daily forecast strip (next 2 days, skip today)
+        const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+        let dailyHtml = '';
+        if (data.daily && data.daily.time) {
+          const items = [];
+          for (let d = 1; d < data.daily.time.length && d <= 2; d++) {
+            const dt = new Date(data.daily.time[d] + 'T12:00:00');
+            const dayName = dayNames[dt.getDay()];
+            const [, dIcon] = WMO_CODES[data.daily.weather_code[d]] || ['Unknown', '🌡'];
+            const hi = Math.round(data.daily.temperature_2m_max[d]);
+            const lo = Math.round(data.daily.temperature_2m_min[d]);
+            const rain = data.daily.precipitation_sum[d];
+            const rainStr = rain > 0 ? `<span class="daily-rain">${rain.toFixed(1)} mm</span>` : '';
+            items.push(`<div class="weather-daily-item"><span class="daily-day">${dayName}</span><span class="daily-icon">${dIcon}</span><span class="daily-temps"><span class="daily-hi">${hi}°</span> / ${lo}°</span>${rainStr}</div>`);
+          }
+          dailyHtml = `<div class="weather-daily-strip">${items.join('')}</div>`;
+        }
+
         document.getElementById('weather-content').innerHTML = `
           <div class="weather-main">
             <span class="weather-icon">${icon}</span>
             <span class="weather-temp">${Math.round(c.temperature_2m)}°</span>
+            ${dailyHtml}
           </div>
           <div class="weather-desc">${desc} · Feels like ${Math.round(c.apparent_temperature)}°</div>
           <div class="weather-details">
@@ -1412,7 +2080,7 @@
             <div class="weather-forecast-label">Temperature today</div>
             <canvas id="weather-temp-chart"></canvas>
             <div class="weather-precip-section">
-              <div class="weather-forecast-label">Precipitation chance</div>
+              <div class="weather-forecast-label">Precipitation chance · peak ${Math.max(...forecastData.filter(d => !d.isPast || d.isNow).map(d => d.precip))}% remaining</div>
               <canvas id="weather-precip-chart"></canvas>
             </div>
           </div>`;
@@ -1551,50 +2219,128 @@
       const styles = getComputedStyle(document.documentElement);
       const accent = styles.getPropertyValue('--accent').trim();
       const textSec = styles.getPropertyValue('--text-secondary').trim();
+      const textColor = styles.getPropertyValue('--text').trim();
 
-      const barW = w / data.length;
       const labelH = 12;
-      const chartH = h - labelH;
+      const pad = 10;
+      const chartH = h - labelH - pad;
+      const maxVal = Math.max(...data.map(d => d.precip), 10);
+      const getXp = (i) => (i / (data.length - 1)) * w;
+      const getYp = (v) => pad + chartH - (v / maxVal) * chartH;
 
-      data.forEach((d, i) => {
-        const barH = (d.precip / 100) * chartH;
-        const x = i * barW;
-        const y = chartH - barH;
+      // Find "now" index
+      const nowIdx = data.findIndex(d => d.isNow);
 
-        const isFuture = !d.isPast && !d.isNow;
-        if (isFuture) {
-          ctx.fillStyle = d.precip > 50 ? accent + '30' : accent + '18';
-        } else {
-          ctx.fillStyle = d.precip > 50 ? accent : accent + '50';
-        }
+      // Gradient fill under past line
+      if (nowIdx >= 0) {
+        const grad = ctx.createLinearGradient(0, 0, 0, pad + chartH);
+        grad.addColorStop(0, accent + '20');
+        grad.addColorStop(1, accent + '05');
         ctx.beginPath();
-        ctx.roundRect(x + 1, y, barW - 2, barH, [2, 2, 0, 0]);
+        ctx.moveTo(getXp(0), pad + chartH);
+        for (let i = 0; i <= nowIdx; i++) ctx.lineTo(getXp(i), getYp(data[i].precip));
+        ctx.lineTo(getXp(nowIdx), pad + chartH);
+        ctx.closePath();
+        ctx.fillStyle = grad;
         ctx.fill();
+      }
 
-        // Percentage on bars with significant chance
-        if (d.precip >= 30 && barH > 10) {
-          ctx.fillStyle = (!isFuture && d.precip > 50) ? '#fff' : styles.getPropertyValue('--text').trim() + (isFuture ? '60' : '');
-          ctx.font = '8px -apple-system, sans-serif';
-          ctx.textAlign = 'center';
-          ctx.fillText(d.precip + '%', x + barW / 2, y + 9);
+      // Past line (solid)
+      if (nowIdx >= 0) {
+        ctx.beginPath();
+        for (let i = 0; i <= nowIdx; i++) {
+          const x = getXp(i), y = getYp(data[i].precip);
+          i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
         }
+        ctx.strokeStyle = accent;
+        ctx.lineWidth = 1.5;
+        ctx.lineJoin = 'round';
+        ctx.stroke();
+      }
+
+      // Future line (dashed)
+      const futStart = Math.max(0, nowIdx);
+      if (futStart < data.length - 1) {
+        ctx.beginPath();
+        for (let i = futStart; i < data.length; i++) {
+          const x = getXp(i), y = getYp(data[i].precip);
+          i === futStart ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+        }
+        ctx.strokeStyle = accent + '50';
+        ctx.lineWidth = 1.5;
+        ctx.setLineDash([4, 3]);
+        ctx.lineJoin = 'round';
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
+
+      // Label current value with dot
+      if (nowIdx >= 0) {
+        const nx = getXp(nowIdx);
+        const ny = getYp(data[nowIdx].precip);
+        ctx.beginPath();
+        ctx.arc(nx, ny, 3, 0, Math.PI * 2);
+        ctx.fillStyle = accent;
+        ctx.fill();
+      }
+
+      // Label current + maximum + other peaks
+      ctx.font = '8px -apple-system, sans-serif';
+      ctx.textAlign = 'center';
+      const precipLabeled = [];
+      const minPrecipGap = w / 8;
+
+      // Find the overall maximum
+      let maxIdx = 0;
+      for (let i = 1; i < data.length; i++) {
+        if (data[i].precip > data[maxIdx].precip) maxIdx = i;
+      }
+
+      // Force-label current and maximum first
+      const forceLabels = [];
+      if (nowIdx >= 0) forceLabels.push({ i: nowIdx, force: true });
+      if (maxIdx !== nowIdx && data[maxIdx].precip >= 10) forceLabels.push({ i: maxIdx, force: true });
+
+      forceLabels.forEach(({ i: fi }) => {
+        const x = getXp(fi);
+        const y = getYp(data[fi].precip);
+        precipLabeled.push(x);
+        const isFut = !data[fi].isPast && !data[fi].isNow;
+        ctx.fillStyle = isFut ? textColor + '70' : textColor;
+        ctx.fillText(data[fi].precip + '%', x, Math.max(8, y - 5));
       });
+
+      // Then label other peaks
+      for (let i = 0; i < data.length; i++) {
+        const prev = i > 0 ? data[i-1].precip : data[i].precip;
+        const cur = data[i].precip;
+        const next = i < data.length - 1 ? data[i+1].precip : data[i].precip;
+        const isPeak = cur >= prev && cur >= next && (cur > prev || cur > next) && cur >= 10;
+        if (isPeak) {
+          const x = getXp(i);
+          const y = getYp(cur);
+          const tooClose = precipLabeled.some(lx => Math.abs(lx - x) < minPrecipGap);
+          if (tooClose) continue;
+          precipLabeled.push(x);
+          const isFut = !data[i].isPast && !data[i].isNow;
+          ctx.fillStyle = isFut ? textColor + '70' : textColor;
+          ctx.fillText(cur + '%', x, Math.max(8, y - 4));
+        }
+      }
 
       // Hour labels
       ctx.font = '9px -apple-system, sans-serif';
       ctx.textAlign = 'center';
-      data.forEach((d, i) => {
-        if (i % 4 === 0 || i === data.length - 1) {
-          ctx.fillStyle = d.isPast ? textSec : textSec + '60';
-          ctx.fillText(String(d.hour).padStart(2, '0'), i * barW + barW / 2, h - 1);
-        }
-      });
+      for (let i = 0; i < data.length; i += 4) {
+        ctx.fillStyle = data[i].isPast ? textSec : textSec + '60';
+        ctx.fillText(String(data[i].hour).padStart(2, '0'), getXp(i), h - 1);
+      }
 
       // Tooltip
       canvas.onmousemove = (e) => {
         const r = canvas.getBoundingClientRect();
         const mx = e.clientX - r.left;
-        const idx = Math.floor((mx / r.width) * data.length);
+        const idx = Math.round((mx / r.width) * (data.length - 1));
         const d = data[Math.max(0, Math.min(idx, data.length - 1))];
         const label = d.isNow ? 'Now' : String(d.hour).padStart(2, '0') + ':00';
         showTooltip(canvas, mx, e.clientY - r.top, [
@@ -1633,9 +2379,13 @@
       }
     }
 
+    // Previous CO2 value for ticker flash
+    let prevCO2Value = null;
+
     // ── Stocks ──
-    // Store chart data for tooltips
+    // Store chart data for tooltips and previous prices for flash animation
     const stockChartData = {};
+    const prevStockPrices = {};
 
     function drawChart(canvas, prices, isPositive, points) {
       const dpr = window.devicePixelRatio || 1;
@@ -1646,122 +2396,98 @@
       ctx.scale(dpr, dpr);
       const w = rect.width;
       const h = rect.height;
+      const n = prices.length;
 
-      if (!prices || prices.length < 2) return;
+      if (!prices || n < 2) return;
 
       const styles = getComputedStyle(document.documentElement);
       const textSecondary = styles.getPropertyValue('--text-secondary').trim();
       const borderColor = styles.getPropertyValue('--border').trim();
 
-      const hasTimestamps = points && points.length === prices.length;
+      const hasTimestamps = points && points.length === n;
       const labelH = hasTimestamps ? 18 : 0;
       const pad = 4;
-
-      // Calculate full time span from midnight of first day to midnight after last day
-      let totalSlots, getSlotX;
-      if (hasTimestamps) {
-        const firstTime = points[0].time;
-        const lastTime = points[points.length - 1].time;
-        const firstMidnight = new Date(firstTime);
-        firstMidnight.setHours(0, 0, 0, 0);
-        const lastMidnight = new Date(lastTime);
-        lastMidnight.setDate(lastMidnight.getDate() + 1);
-        lastMidnight.setHours(0, 0, 0, 0);
-        const totalMs = lastMidnight.getTime() - firstMidnight.getTime();
-        getSlotX = (time) => ((time - firstMidnight.getTime()) / totalMs) * w;
-      }
-
       const chartH = h - pad * 2 - labelH;
+
+      // Index-based x positioning (compresses overnight/weekend gaps)
+      const getX = (i) => (i / (n - 1)) * w;
 
       const min = Math.min(...prices);
       const max = Math.max(...prices);
       const range = max - min || 1;
+      const getY = (p) => pad + chartH - ((p - min) / range) * chartH;
 
       const color = isPositive
         ? styles.getPropertyValue('--positive').trim()
         : styles.getPropertyValue('--negative').trim();
 
-      // Find day boundaries for vertical separators
+      // Find day boundaries (where calendar date changes between consecutive points)
       const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-      const dayBoundaries = [];
+      const dayBoundaries = []; // { index, label }
       if (hasTimestamps) {
-        const firstTime = points[0].time;
-        const firstMidnight = new Date(firstTime);
-        firstMidnight.setHours(0, 0, 0, 0);
-        const lastTime = points[points.length - 1].time;
-        const lastMidnight = new Date(lastTime);
-        lastMidnight.setDate(lastMidnight.getDate() + 1);
-        lastMidnight.setHours(0, 0, 0, 0);
-
-        // Walk through each midnight
-        const d = new Date(firstMidnight);
-        while (d.getTime() <= lastMidnight.getTime()) {
-          dayBoundaries.push({ time: d.getTime(), label: dayNames[d.getDay()] });
-          d.setDate(d.getDate() + 1);
+        dayBoundaries.push({ index: 0, label: dayNames[new Date(points[0].time).getDay()] });
+        for (let i = 1; i < n; i++) {
+          const prevDate = new Date(points[i - 1].time).toDateString();
+          const curDate = new Date(points[i].time).toDateString();
+          if (curDate !== prevDate) {
+            dayBoundaries.push({ index: i, label: dayNames[new Date(points[i].time).getDay()] });
+          }
         }
       }
 
       // Draw day separator lines
-      if (dayBoundaries.length > 0 && getSlotX) {
+      if (dayBoundaries.length > 1) {
         ctx.strokeStyle = borderColor;
         ctx.lineWidth = 1;
         ctx.setLineDash([3, 3]);
-        dayBoundaries.forEach((db, di) => {
-          if (di === 0) return;
-          const x = Math.round(getSlotX(db.time)) + 0.5;
+        for (let di = 1; di < dayBoundaries.length; di++) {
+          const x = Math.round(getX(dayBoundaries[di].index)) + 0.5;
           if (x > 0 && x < w) {
             ctx.beginPath();
             ctx.moveTo(x, pad);
             ctx.lineTo(x, pad + chartH);
             ctx.stroke();
           }
-        });
+        }
         ctx.setLineDash([]);
       }
 
-      // Gradient fill (only under existing data)
+      // Gradient fill
       const grad = ctx.createLinearGradient(0, 0, 0, pad + chartH);
       grad.addColorStop(0, color + '30');
       grad.addColorStop(1, color + '05');
 
-      const lastPtX = hasTimestamps ? getSlotX(points[points.length - 1].time) : w;
-
       ctx.beginPath();
-      ctx.moveTo(hasTimestamps ? getSlotX(points[0].time) : 0, pad + chartH);
-      prices.forEach((p, i) => {
-        const x = hasTimestamps ? getSlotX(points[i].time) : (i / (prices.length - 1)) * w;
-        const y = pad + chartH - ((p - min) / range) * chartH;
-        ctx.lineTo(x, y);
-      });
-      ctx.lineTo(lastPtX, pad + chartH);
+      ctx.moveTo(getX(0), pad + chartH);
+      for (let i = 0; i < n; i++) ctx.lineTo(getX(i), getY(prices[i]));
+      ctx.lineTo(getX(n - 1), pad + chartH);
       ctx.closePath();
       ctx.fillStyle = grad;
       ctx.fill();
 
       // Line
       ctx.beginPath();
-      prices.forEach((p, i) => {
-        const x = hasTimestamps ? getSlotX(points[i].time) : (i / (prices.length - 1)) * w;
-        const y = pad + chartH - ((p - min) / range) * chartH;
-        if (i === 0) ctx.moveTo(x, y);
-        else ctx.lineTo(x, y);
-      });
+      for (let i = 0; i < n; i++) {
+        const x = getX(i), y = getY(prices[i]);
+        if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+      }
       ctx.strokeStyle = color;
       ctx.lineWidth = 1.5;
       ctx.lineJoin = 'round';
       ctx.stroke();
 
-      // Draw day labels
-      if (dayBoundaries.length > 1 && getSlotX) {
+      // Day labels centered in each day's section
+      if (dayBoundaries.length > 0) {
         ctx.fillStyle = textSecondary;
         ctx.font = '10px -apple-system, sans-serif';
         ctx.textAlign = 'center';
         const labelY = h - 3;
-
-        for (let di = 0; di < dayBoundaries.length - 1; di++) {
-          const startX = getSlotX(dayBoundaries[di].time);
-          const endX = getSlotX(dayBoundaries[di + 1].time);
-          ctx.fillText(dayBoundaries[di].label, (startX + endX) / 2, labelY);
+        for (let di = 0; di < dayBoundaries.length; di++) {
+          const startX = getX(dayBoundaries[di].index);
+          const endX = di < dayBoundaries.length - 1 ? getX(dayBoundaries[di + 1].index) : w;
+          if (endX - startX > 20) {
+            ctx.fillText(dayBoundaries[di].label, (startX + endX) / 2, labelY);
+          }
         }
       }
     }
@@ -1769,8 +2495,15 @@
     async function fetchStocks() {
       const stocks = getStocks();
       try {
+        // 7-day cutoff: midnight 7 days ago — all instruments start from the same anchor
+        const sevenDaysAgo = new Date();
+        sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+        sevenDaysAgo.setHours(0, 0, 0, 0);
+        const cutoff = sevenDaysAgo.getTime();
+
         const results = await Promise.all(stocks.map(async (s) => {
-          const yahooUrl = `https://query2.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(s.symbol)}?interval=15m&range=3d`;
+          // Use 1mo range with 30m interval to ensure we get 7+ days for all instruments
+          const yahooUrl = `https://query2.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(s.symbol)}?interval=30m&range=1mo`;
           const res = await fetch(`https://yahoopull.charles-rutherford93.workers.dev/?url=${encodeURIComponent(yahooUrl)}`);
           if (!res.ok) throw new Error(`HTTP ${res.status}`);
           const data = await res.json();
@@ -1778,21 +2511,47 @@
           const meta = result.meta;
           const price = meta.regularMarketPrice;
           const prev = meta.chartPreviousClose || meta.previousClose;
-          const change = price - prev;
-          const changePct = (change / prev) * 100;
           const rawCloses = result.indicators.quote[0].close;
           const timestamps = result.timestamp;
-          const points = [];
+
+          // Build all points, then filter to last 7 days from common anchor
+          const allPoints = [];
           rawCloses.forEach((c, i) => {
-            if (c != null) points.push({ value: c, time: timestamps[i] * 1000 });
+            if (c != null) allPoints.push({ value: c, time: timestamps[i] * 1000 });
           });
-          return { ...s, price, change, changePct, currency: meta.currency, closes: points.map(p => p.value), points };
+          const points = allPoints.filter(p => p.time >= cutoff);
+
+          // 1D change: vs previous close
+          const oneDayChange = price - prev;
+          const oneDayPct = (oneDayChange / prev) * 100;
+
+          // Intra-day: vs today's first data point
+          const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
+          const firstToday = points.find(p => p.time >= todayStart.getTime());
+          const intraDayRef = firstToday ? firstToday.value : prev;
+          const intraDayChange = price - intraDayRef;
+          const intraDayPct = (intraDayChange / intraDayRef) * 100;
+
+          // 7D change: vs first data point after the 7-day cutoff
+          const weekRef = points[0]?.value || prev;
+          const weekChange = price - weekRef;
+          const weekPct = (weekChange / weekRef) * 100;
+
+          return { ...s, price, currency: meta.currency, closes: points.map(p => p.value), points,
+            oneDayChange, oneDayPct, intraDayChange, intraDayPct, weekChange, weekPct };
         }));
 
         document.getElementById('stocks-content').innerHTML = '<div class="stocks-grid">' + results.map((s, i) => {
-          const sign = s.change >= 0 ? '+' : '';
-          const cls = s.change >= 0 ? 'positive' : 'negative';
           const priceStr = s.price.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+          const fmt = (v) => (v >= 0 ? '+' : '') + v.toFixed(2) + '%';
+          const cls = (v) => v >= 0 ? 'positive' : 'negative';
+          // Flash direction: compare to previous fetch
+          const prevPrice = prevStockPrices[s.symbol];
+          let flashClass = '';
+          if (prevPrice !== undefined && prevPrice !== s.price) {
+            flashClass = s.price > prevPrice ? 'flash-up' : 'flash-down';
+          }
+          prevStockPrices[s.symbol] = s.price;
           return `
             <div class="stock-card">
               <div class="stock-header">
@@ -1801,9 +2560,13 @@
                   <div class="stock-label">${s.symbol}</div>
                 </div>
                 <div class="stock-right">
-                  <div class="stock-price">${priceStr}</div>
-                  <div class="stock-change ${cls}">${sign}${s.change.toFixed(2)} (${sign}${s.changePct.toFixed(2)}%)</div>
+                  <div class="stock-price ${flashClass}" data-symbol="${s.symbol}">${priceStr}</div>
                 </div>
+              </div>
+              <div class="stock-changes">
+                <span class="stock-badge ${cls(s.intraDayPct)}" title="Change so far today">Today ${fmt(s.intraDayPct)}</span>
+                <span class="stock-badge ${cls(s.oneDayPct)}" title="Since previous close">1D ${fmt(s.oneDayPct)}</span>
+                <span class="stock-badge ${cls(s.weekPct)}" title="Change over last 7 days">7D ${fmt(s.weekPct)}</span>
               </div>
               <canvas class="stock-chart" id="chart-${i}"></canvas>
             </div>`;
@@ -1814,28 +2577,15 @@
           results.forEach((s, i) => {
             const canvas = document.getElementById(`chart-${i}`);
             if (!canvas) return;
-            drawChart(canvas, s.closes, s.change >= 0, s.points);
+            drawChart(canvas, s.closes, s.weekPct >= 0, s.points);
             stockChartData[i] = s.points;
 
             canvas.onmousemove = (e) => {
               const rect = canvas.getBoundingClientRect();
               const x = e.clientX - rect.left;
-              // Map x position back to time using same midnight-aligned scale
               const pts = s.points;
-              const firstMid = new Date(pts[0].time);
-              firstMid.setHours(0, 0, 0, 0);
-              const lastMid = new Date(pts[pts.length - 1].time);
-              lastMid.setDate(lastMid.getDate() + 1);
-              lastMid.setHours(0, 0, 0, 0);
-              const hoverTime = firstMid.getTime() + (x / rect.width) * (lastMid.getTime() - firstMid.getTime());
-              // Find closest point
-              let closest = 0;
-              let closestDist = Infinity;
-              pts.forEach((pt, idx) => {
-                const dist = Math.abs(pt.time - hoverTime);
-                if (dist < closestDist) { closestDist = dist; closest = idx; }
-              });
-              const pt = pts[closest];
+              const idx = Math.max(0, Math.min(Math.round((x / rect.width) * (pts.length - 1)), pts.length - 1));
+              const pt = pts[idx];
               if (!pt) return;
               const timeStr = new Date(pt.time).toLocaleString('nb-NO', {
                 day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit'
@@ -1864,18 +2614,37 @@
       origToggle();
       fetchStocks();
       fetchPower();
+      // Update map tile style for dark/light mode
+      if (mobilityMap) {
+        mobilityMap.eachLayer(l => { if (l instanceof L.TileLayer) mobilityMap.removeLayer(l); });
+        const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+        L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+          attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a>',
+          maxZoom: 19,
+          className: isDark ? 'map-tiles-dark' : ''
+        }).addTo(mobilityMap);
+        // Re-render all marker icons so ring color matches theme
+        mobilityMarkers.forEach(m => {
+          if (m._provName && m.setIcon) {
+            const color = m._provName === 'Bysykkel' ? BYSYKKEL_COLOR : (MOBILITY_PROVIDERS.find(p => p.name === m._provName)?.color);
+            if (color) m.setIcon(createScooterIcon(color, m._battery));
+          }
+        });
+      }
     };
 
     // ── Power prices ──
     function drawPowerChart(canvas, prices, currentHour) {
       const dpr = window.devicePixelRatio || 1;
-      const rect = canvas.getBoundingClientRect();
-      canvas.width = rect.width * dpr;
-      canvas.height = rect.height * dpr;
+      const wrap = canvas.parentElement;
+      const w = wrap.clientWidth;
+      const h = wrap.clientHeight;
+      canvas.style.width = w + 'px';
+      canvas.style.height = h + 'px';
+      canvas.width = w * dpr;
+      canvas.height = h * dpr;
       const ctx = canvas.getContext('2d');
       ctx.scale(dpr, dpr);
-      const w = rect.width;
-      const h = rect.height;
 
       if (!prices || prices.length < 2) return;
 
@@ -1884,9 +2653,9 @@
       const textSecondary = styles.getPropertyValue('--text-secondary').trim();
       const borderColor = styles.getPropertyValue('--border').trim();
 
-      const hasTomorrow = prices.some(p => !p.isToday);
-      const totalHours = hasTomorrow ? 48 : 24;
-      const labelH = 16;
+      const totalHours = prices.length;
+      const is48h = totalHours > 24;
+      const labelH = 28;
       const pad = 14;
       const chartH = h - labelH - pad;
 
@@ -1895,14 +2664,14 @@
       const max = Math.max(...values);
       const range = max - min || 1;
 
-      // X position: map to full 24h or 48h span
+      // X position: map to full span
       const getX = (i) => (i / totalHours) * w;
 
-      // Find the "now" index
-      const nowIdx = prices.findIndex(p => p.hour === currentHour && p.isToday);
+      // "now" index passed directly from fetchPower
+      const nowIdx = currentHour >= 0 && currentHour < prices.length ? currentHour : -1;
 
-      // Draw midnight separator if showing tomorrow
-      if (hasTomorrow) {
+      // Draw midnight separator if showing 48h
+      if (is48h) {
         const sepX = Math.round(getX(24)) + 0.5;
         ctx.strokeStyle = borderColor;
         ctx.lineWidth = 1;
@@ -2002,8 +2771,8 @@
 
       // Find daily highs and lows (always labeled)
       const mustLabel = new Set();
-      const todayCount = prices.filter(p => p.isToday).length;
-      [[0, todayCount], [todayCount, prices.length]].forEach(([start, end]) => {
+      const dayRanges = is48h ? [[0, 24], [24, prices.length]] : [[0, prices.length]];
+      dayRanges.forEach(([start, end]) => {
         if (start >= end) return;
         let hiIdx = start, loIdx = start;
         for (let k = start; k < end; k++) {
@@ -2040,7 +2809,7 @@
         }
         labeled.push(x);
 
-        const isFuture = !(prices[ci].isToday && ci <= currentHour);
+        const isFuture = ci > nowIdx;
         ctx.fillStyle = isFuture ? textColor + '80' : textColor;
         if (type === 'peak') {
           ctx.fillText(labelText, x, y - 5);
@@ -2050,25 +2819,32 @@
       });
 
       // X-axis labels
-      ctx.fillStyle = textSecondary;
       ctx.font = '9px -apple-system, sans-serif';
       ctx.textAlign = 'center';
       const labelY = h - 2;
-      const labelEvery = totalHours > 24 ? 6 : 4;
+      const labelEvery = is48h ? 6 : 4;
+
+      // Day name lookup for 48h view
+      const dayAbbr = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+      const now2 = new Date();
+      const hasYesterday = is48h && prices[0] && !prices[0].isToday;
+      const d0 = new Date(now2); d0.setDate(d0.getDate() + (hasYesterday ? -1 : 0)); d0.setHours(0,0,0,0);
+      const d1 = new Date(now2); d1.setDate(d1.getDate() + (hasYesterday ? 0 : 1)); d1.setHours(0,0,0,0);
+      const dayLabel0 = dayAbbr[d0.getDay()];
+      const dayLabel24 = dayAbbr[d1.getDay()];
 
       for (let hr = 0; hr < totalHours; hr += labelEvery) {
         const displayHour = hr % 24;
-        ctx.fillStyle = hr <= currentHour ? textSecondary : textSecondary + '60';
-        ctx.fillText(String(displayHour).padStart(2, '0'), getX(hr) + getX(1) / 2, labelY);
-      }
-
-      // Day labels
-      if (hasTomorrow) {
-        ctx.fillStyle = textSecondary;
-        ctx.font = '9px -apple-system, sans-serif';
-        ctx.textAlign = 'center';
-        ctx.fillText('Today', getX(12), labelY);
-        ctx.fillText('Tomorrow', getX(36), labelY);
+        const x = getX(hr) + getX(1) / 2;
+        ctx.fillStyle = hr <= nowIdx ? textSecondary : textSecondary + '60';
+        if (is48h && displayHour === 0) {
+          // Replace "00" with day name at midnight
+          if (hr === 0) ctx.textAlign = 'left';
+          ctx.fillText(hr === 0 ? dayLabel0 : dayLabel24, hr === 0 ? 0 : x, labelY);
+          if (hr === 0) ctx.textAlign = 'center';
+        } else {
+          ctx.fillText(String(displayHour).padStart(2, '0'), x, labelY);
+        }
       }
     }
 
@@ -2076,44 +2852,81 @@
       try {
         const now = new Date();
         const fmt = (d) => `${d.getFullYear()}/${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
-        const todayUrl = `https://www.hvakosterstrommen.no/api/v1/prices/${fmt(now)}_NO1.json`;
 
+        const yesterday = new Date(now);
+        yesterday.setDate(yesterday.getDate() - 1);
         const tomorrow = new Date(now);
         tomorrow.setDate(tomorrow.getDate() + 1);
-        const tomorrowUrl = `https://www.hvakosterstrommen.no/api/v1/prices/${fmt(tomorrow)}_NO1.json`;
 
-        const [todayRes, tomorrowRes] = await Promise.all([
+        const zone = getPowerZone();
+        const todayUrl = `https://www.hvakosterstrommen.no/api/v1/prices/${fmt(now)}_${zone}.json`;
+        const tomorrowUrl = `https://www.hvakosterstrommen.no/api/v1/prices/${fmt(tomorrow)}_${zone}.json`;
+        const yesterdayUrl = `https://www.hvakosterstrommen.no/api/v1/prices/${fmt(yesterday)}_${zone}.json`;
+
+        const [todayRes, tomorrowRes, yesterdayRes] = await Promise.all([
           fetch(todayUrl),
-          fetch(tomorrowUrl).catch(() => null)
+          fetch(tomorrowUrl).catch(() => null),
+          fetch(yesterdayUrl).catch(() => null)
         ]);
 
         const todayData = await todayRes.json();
         const currentHour = now.getHours();
 
-        let allPrices = todayData.map(p => ({
-          value: p.NOK_per_kWh * 100,
-          hour: new Date(p.time_start).getHours(),
-          isToday: true
-        }));
+        let allPrices = [];
+        let hasTmrw = tomorrowRes && tomorrowRes.ok;
+        let hasYest = false;
 
-        let tomorrowLabel = '';
-        if (tomorrowRes && tomorrowRes.ok) {
+        if (hasTmrw) {
+          // Today + Tomorrow
           const tomorrowData = await tomorrowRes.json();
-          allPrices = allPrices.concat(tomorrowData.map(p => ({
+          allPrices = todayData.map(p => ({
             value: p.NOK_per_kWh * 100,
             hour: new Date(p.time_start).getHours(),
-            isToday: false
+            day: 'first'
+          })).concat(tomorrowData.map(p => ({
+            value: p.NOK_per_kWh * 100,
+            hour: new Date(p.time_start).getHours(),
+            day: 'second'
           })));
-          tomorrowLabel = ' + tomorrow';
+        } else if (yesterdayRes && yesterdayRes.ok) {
+          // Yesterday + Today
+          hasYest = true;
+          const yesterdayData = await yesterdayRes.json();
+          allPrices = yesterdayData.map(p => ({
+            value: p.NOK_per_kWh * 100,
+            hour: new Date(p.time_start).getHours(),
+            day: 'first'
+          })).concat(todayData.map(p => ({
+            value: p.NOK_per_kWh * 100,
+            hour: new Date(p.time_start).getHours(),
+            day: 'second'
+          })));
+        } else {
+          // Just today
+          allPrices = todayData.map(p => ({
+            value: p.NOK_per_kWh * 100,
+            hour: new Date(p.time_start).getHours(),
+            day: 'first'
+          }));
         }
+
+        // Mark isToday for chart rendering (first day = past context, second = current focus or vice versa)
+        allPrices.forEach(p => {
+          if (hasTmrw) {
+            p.isToday = p.day === 'first';
+          } else if (hasYest) {
+            p.isToday = p.day === 'second';
+          } else {
+            p.isToday = true;
+          }
+        });
 
         const currentPrice = todayData[currentHour];
         const avgPrice = todayData.reduce((s, p) => s + p.NOK_per_kWh, 0) / todayData.length;
         const minPrice = Math.min(...todayData.map(p => p.NOK_per_kWh));
         const maxPrice = Math.max(...todayData.map(p => p.NOK_per_kWh));
 
-        const hasTmrw = allPrices.some(p => !p.isToday);
-        const titleSuffix = hasTmrw ? ' + tomorrow' : '';
+        const titleSuffix = hasTmrw ? ' + tomorrow' : (hasYest ? ' + yesterday' : '');
 
         document.getElementById('power-content').innerHTML = `
           <div class="power-current">
@@ -2121,21 +2934,35 @@
             <span class="power-unit">ore/kWh now</span>
           </div>
           <div class="power-label">Avg ${(avgPrice * 100).toFixed(1)} · Low ${(minPrice * 100).toFixed(1)} · High ${(maxPrice * 100).toFixed(1)} ore/kWh today${titleSuffix}</div>
-          <canvas class="power-chart" id="power-chart"></canvas>`;
+          <div class="power-chart-wrap"><canvas class="power-chart" id="power-chart"></canvas></div>`;
+
+        // Compute the "now" index within the 48h (or 24h) array
+        const chartCurrentHour = hasYest ? 24 + currentHour : currentHour;
 
         requestAnimationFrame(() => {
           const canvas = document.getElementById('power-chart');
           if (!canvas) return;
-          drawPowerChart(canvas, allPrices, currentHour);
+          drawPowerChart(canvas, allPrices, chartCurrentHour);
 
-          const totalHours = hasTmrw ? 48 : 24;
+          // Redraw on resize so chart fills wrapper without stretching
+          const wrap = canvas.parentElement;
+          if (wrap._resizeObs) wrap._resizeObs.disconnect();
+          wrap._resizeObs = new ResizeObserver(() => {
+            drawPowerChart(canvas, allPrices, chartCurrentHour);
+          });
+          wrap._resizeObs.observe(wrap);
+
+          const totalHours = allPrices.length;
           canvas.onmousemove = (e) => {
             const rect = canvas.getBoundingClientRect();
             const x = e.clientX - rect.left;
             const idx = Math.floor((x / rect.width) * totalHours);
             const pt = allPrices[Math.max(0, Math.min(idx, allPrices.length - 1))];
             if (!pt || idx >= allPrices.length) { hideTooltip(); return; }
-            const dayLabel = pt.isToday ? 'Today' : 'Tomorrow';
+            let dayLabel;
+            if (hasTmrw) dayLabel = pt.day === 'first' ? 'Today' : 'Tomorrow';
+            else if (hasYest) dayLabel = pt.day === 'first' ? 'Yesterday' : 'Today';
+            else dayLabel = 'Today';
             const timeStr = `${dayLabel} ${String(pt.hour).padStart(2, '0')}:00\u2013${String((pt.hour + 1) % 24).padStart(2, '0')}:00`;
             showTooltip(canvas, x, e.clientY - rect.top, [
               `<span class="chart-tooltip-value">${pt.value.toFixed(1)} ore/kWh</span>`,
@@ -2168,13 +2995,15 @@
 
     function drawCO2Chart(canvas, points) {
       const dpr = window.devicePixelRatio || 1;
-      const rect = canvas.getBoundingClientRect();
-      canvas.width = rect.width * dpr;
-      canvas.height = rect.height * dpr;
+      const wrap = canvas.parentElement;
+      const w = wrap.clientWidth;
+      const h = wrap.clientHeight;
+      canvas.style.width = w + 'px';
+      canvas.style.height = h + 'px';
+      canvas.width = w * dpr;
+      canvas.height = h * dpr;
       const ctx = canvas.getContext('2d');
       ctx.scale(dpr, dpr);
-      const w = rect.width;
-      const h = rect.height;
 
       if (!points || points.length < 2) return;
 
@@ -2187,12 +3016,13 @@
       const max = Math.max(...values, 1000);
       const range = max - min || 1;
       const labelH = 16;
-      const chartH = h - labelH - 4;
+      const pad = 12;
+      const chartH = h - labelH - pad;
 
-      // Map time axis: from midnight 2 days ago to midnight tonight
+      // Map time axis: from midnight yesterday to midnight tonight (48h)
       const now = new Date();
       const startMidnight = new Date(now);
-      startMidnight.setDate(startMidnight.getDate() - 2);
+      startMidnight.setDate(startMidnight.getDate() - 1);
       startMidnight.setHours(0, 0, 0, 0);
       const endMidnight = new Date(now);
       endMidnight.setDate(endMidnight.getDate() + 1);
@@ -2200,29 +3030,27 @@
       const totalMs = endMidnight.getTime() - startMidnight.getTime();
       const getX = (timeS) => ((timeS * 1000 - startMidnight.getTime()) / totalMs) * w;
 
-      // Draw midnight separators
+      // Draw midnight separator (today midnight)
       ctx.strokeStyle = borderColor;
       ctx.lineWidth = 1;
       ctx.setLineDash([3, 3]);
-      for (let d = 1; d <= 2; d++) {
-        const mid = new Date(startMidnight);
-        mid.setDate(mid.getDate() + d);
-        const sepX = Math.round(getX(mid.getTime() / 1000)) + 0.5;
-        if (sepX > 0 && sepX < w) {
-          ctx.beginPath();
-          ctx.moveTo(sepX, 4);
-          ctx.lineTo(sepX, 4 + chartH);
-          ctx.stroke();
-        }
+      const todayMidnight = new Date(startMidnight);
+      todayMidnight.setDate(todayMidnight.getDate() + 1);
+      const sepX = Math.round(getX(todayMidnight.getTime() / 1000)) + 0.5;
+      if (sepX > 0 && sepX < w) {
+        ctx.beginPath();
+        ctx.moveTo(sepX, pad);
+        ctx.lineTo(sepX, pad + chartH);
+        ctx.stroke();
       }
       ctx.setLineDash([]);
 
       // Draw threshold zones
-      const y800 = 4 + chartH - ((800 - min) / range) * chartH;
-      const y1200 = 4 + chartH - ((1200 - min) / range) * chartH;
+      const y800 = pad + chartH - ((800 - min) / range) * chartH;
+      const y1200 = pad + chartH - ((1200 - min) / range) * chartH;
 
       [y800, y1200].forEach(yLine => {
-        if (yLine > 0 && yLine < chartH + 4) {
+        if (yLine > 0 && yLine < chartH + pad) {
           ctx.strokeStyle = textSecondary + '30';
           ctx.lineWidth = 1;
           ctx.setLineDash([4, 4]);
@@ -2235,11 +3063,12 @@
       });
 
       // Draw line with color based on CO2 level
+      const getY = (val) => pad + chartH - ((val - min) / range) * chartH;
       for (let i = 1; i < points.length; i++) {
         const x0 = getX(points[i-1].time);
-        const y0 = 4 + chartH - ((points[i-1].value - min) / range) * chartH;
+        const y0 = getY(points[i-1].value);
         const x1 = getX(points[i].time);
-        const y1 = 4 + chartH - ((points[i].value - min) / range) * chartH;
+        const y1 = getY(points[i].value);
         ctx.beginPath();
         ctx.moveTo(x0, y0);
         ctx.lineTo(x1, y1);
@@ -2249,22 +3078,112 @@
         ctx.stroke();
       }
 
-      // X-axis day labels
-      ctx.fillStyle = textSecondary;
-      ctx.font = '9px -apple-system, sans-serif';
+      // Current value dot (last data point)
+      const lastPt = points[points.length - 1];
+      const lastX = getX(lastPt.time);
+      const lastY = getY(lastPt.value);
+      ctx.beginPath();
+      ctx.arc(lastX, lastY, 3, 0, Math.PI * 2);
+      ctx.fillStyle = getCO2Color(lastPt.value);
+      ctx.fill();
+
+      // Label peaks and troughs
+      const textColor = styles.getPropertyValue('--text').trim();
+      ctx.font = '8px -apple-system, sans-serif';
+      ctx.textAlign = 'center';
+
+      // Find overall max and min indices
+      let co2MaxIdx = 0, co2MinIdx = 0;
+      for (let i = 1; i < points.length; i++) {
+        if (points[i].value > points[co2MaxIdx].value) co2MaxIdx = i;
+        if (points[i].value < points[co2MinIdx].value) co2MinIdx = i;
+      }
+
+      // Detect local peaks/troughs
+      const co2Candidates = [];
+      for (let i = 1; i < points.length - 1; i++) {
+        const prev = points[i-1].value, cur = points[i].value, next = points[i+1].value;
+        if (cur > prev && cur > next) co2Candidates.push({ i, type: 'peak', val: cur });
+        else if (cur < prev && cur < next) co2Candidates.push({ i, type: 'trough', val: cur });
+      }
+
+      // Ensure overall max, min, and current are in candidates
+      const co2MustLabel = new Set();
+      const co2CurIdx = points.length - 1;
+      if (!co2Candidates.some(c => c.i === co2MaxIdx)) {
+        co2Candidates.push({ i: co2MaxIdx, type: 'peak', val: points[co2MaxIdx].value });
+      }
+      co2MustLabel.add(co2MaxIdx);
+      if (!co2Candidates.some(c => c.i === co2MinIdx)) {
+        co2Candidates.push({ i: co2MinIdx, type: 'trough', val: points[co2MinIdx].value });
+      }
+      co2MustLabel.add(co2MinIdx);
+      if (!co2Candidates.some(c => c.i === co2CurIdx)) {
+        const curVal = points[co2CurIdx].value;
+        const prevVal = co2CurIdx > 0 ? points[co2CurIdx - 1].value : curVal;
+        const curType = curVal >= prevVal ? 'peak' : 'trough';
+        co2Candidates.push({ i: co2CurIdx, type: curType, val: curVal });
+      }
+      co2MustLabel.add(co2CurIdx);
+
+      // Sort: forced labels first, then by index
+      co2Candidates.sort((a, b) => {
+        const ap = co2MustLabel.has(a.i) ? 0 : 1;
+        const bp = co2MustLabel.has(b.i) ? 0 : 1;
+        return ap - bp || a.i - b.i;
+      });
+
+      const co2Labeled = [];
+      const minGapCO2 = w / 8;
+      co2Candidates.forEach(({ i: ci, type, val }) => {
+        const x = getX(points[ci].time);
+        const y = getY(val);
+        if (!co2MustLabel.has(ci)) {
+          const tooClose = co2Labeled.some(lx => Math.abs(lx - x) < minGapCO2);
+          if (tooClose) return;
+        }
+        co2Labeled.push(x);
+        ctx.fillStyle = textColor + 'B0';
+        if (type === 'peak') {
+          ctx.fillText(Math.round(val), x, Math.max(8, y - 4));
+        } else {
+          ctx.fillText(Math.round(val), x, Math.min(pad + chartH - 2, y + 10));
+        }
+      });
+
+      // X-axis: hour markers every 6 hours with day names at midnight
+      ctx.font = '8px -apple-system, sans-serif';
       ctx.textAlign = 'center';
       const labelY = h - 2;
 
-      const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-      for (let d = 0; d < 3; d++) {
-        const dayStart = new Date(startMidnight);
-        dayStart.setDate(dayStart.getDate() + d);
-        const dayEnd = new Date(dayStart);
-        dayEnd.setDate(dayEnd.getDate() + 1);
-        const x0 = Math.max(0, getX(dayStart.getTime() / 1000));
-        const x1 = Math.min(w, getX(dayEnd.getTime() / 1000));
-        const label = d === 2 ? 'Today' : (d === 1 ? 'Yesterday' : dayNames[dayStart.getDay()]);
-        ctx.fillText(label, (x0 + x1) / 2, labelY);
+      const co2DayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+      const dayLabels = [co2DayNames[startMidnight.getDay()], co2DayNames[todayMidnight.getDay()]];
+      for (let d = 0; d < 2; d++) {
+        for (let hr = 0; hr < 24; hr += 6) {
+          const tick = new Date(startMidnight);
+          tick.setDate(tick.getDate() + d);
+          tick.setHours(hr, 0, 0, 0);
+          const tx = getX(tick.getTime() / 1000);
+          if (tx < 0 || tx > w) continue;
+          // Tick mark
+          ctx.strokeStyle = textSecondary + '60';
+          ctx.lineWidth = 1;
+          ctx.setLineDash([]);
+          ctx.beginPath();
+          ctx.moveTo(Math.round(tx) + 0.5, pad + chartH - 3);
+          ctx.lineTo(Math.round(tx) + 0.5, pad + chartH + 2);
+          ctx.stroke();
+          // Label: day name at midnight, hour otherwise
+          if (hr === 0) {
+            ctx.fillStyle = textSecondary;
+            ctx.textAlign = d === 0 ? 'left' : 'center';
+            ctx.fillText(dayLabels[d], tx, labelY);
+            ctx.textAlign = 'center';
+          } else {
+            ctx.fillStyle = textSecondary + '99';
+            ctx.fillText(String(hr).padStart(2, '0'), tx, labelY);
+          }
+        }
       }
     }
 
@@ -2308,10 +3227,22 @@
         });
 
         let co2ChartHtml = '';
+        // Find current CO2 for ticker (use first indoor sensor with CO2)
+        const currentCO2 = cards.find(c => c.co2 !== undefined)?.co2;
         if (co2Sources.length > 0) {
+          let co2Flash = '';
+          if (currentCO2 !== undefined && prevCO2Value !== null && currentCO2 !== prevCO2Value) {
+            co2Flash = currentCO2 > prevCO2Value ? 'flash-up' : 'flash-down';
+          }
+          if (currentCO2 !== undefined) prevCO2Value = currentCO2;
+          const co2Color = currentCO2 !== undefined ? getCO2Color(currentCO2) : 'var(--text-secondary)';
+          const co2Label = currentCO2 < 800 ? 'Good' : (currentCO2 < 1200 ? 'Moderate' : 'High');
           co2ChartHtml = '<div class="co2-chart-container">' +
-            '<div class="co2-chart-label">CO2 last 48 hours</div>' +
-            co2Sources.map((s, i) => `<canvas class="co2-chart" id="co2-chart-${i}" title="${s.name}"></canvas>`).join('') +
+            '<div class="co2-chart-label" style="display:flex;justify-content:space-between;align-items:center;">' +
+              '<span>CO2 yesterday + today</span>' +
+              (currentCO2 !== undefined ? `<span class="co2-ticker ${co2Flash}" style="text-align:right;"><span style="font-weight:600;color:${co2Color};">${currentCO2} ppm</span><br><span style="font-size:0.7rem;color:${co2Color};opacity:0.8;">${co2Label}</span></span>` : '') +
+            '</div>' +
+            co2Sources.map((s, i) => `<div class="co2-chart-wrap"><canvas class="co2-chart" id="co2-chart-${i}" title="${s.name}"></canvas></div>`).join('') +
             '</div>';
         }
 
@@ -2338,10 +3269,10 @@
         // Fetch CO2 history for each source
         co2Sources.forEach(async (src, i) => {
           try {
-            const midnightTwoDaysAgo = new Date();
-            midnightTwoDaysAgo.setDate(midnightTwoDaysAgo.getDate() - 2);
-            midnightTwoDaysAgo.setHours(0, 0, 0, 0);
-            const dateBegin = Math.floor(midnightTwoDaysAgo.getTime() / 1000);
+            const midnightYesterday = new Date();
+            midnightYesterday.setDate(midnightYesterday.getDate() - 1);
+            midnightYesterday.setHours(0, 0, 0, 0);
+            const dateBegin = Math.floor(midnightYesterday.getTime() / 1000);
             let measureUrl = `https://yahoopull.charles-rutherford93.workers.dev/netatmo/measure?device_id=${encodeURIComponent(src.deviceId)}&type=CO2&date_begin=${dateBegin}`;
             if (src.moduleId) measureUrl += `&module_id=${encodeURIComponent(src.moduleId)}`;
             const mRes = await fetch(measureUrl);
@@ -2362,11 +3293,29 @@
               if (canvas && points.length > 1) {
                 drawCO2Chart(canvas, points);
 
+                // Redraw on resize so chart fills wrapper without stretching
+                const wrap = canvas.parentElement;
+                if (wrap._resizeObs) wrap._resizeObs.disconnect();
+                wrap._resizeObs = new ResizeObserver(() => {
+                  drawCO2Chart(canvas, points);
+                });
+                wrap._resizeObs.observe(wrap);
+
                 canvas.onmousemove = (e) => {
                   const rect = canvas.getBoundingClientRect();
                   const x = e.clientX - rect.left;
-                  const idx = Math.round((x / rect.width) * (points.length - 1));
-                  const pt = points[Math.max(0, Math.min(idx, points.length - 1))];
+                  // Time-based lookup: reverse the getX mapping (yesterday midnight to tonight midnight)
+                  const now = new Date();
+                  const sm = new Date(now); sm.setDate(sm.getDate() - 1); sm.setHours(0,0,0,0);
+                  const em = new Date(now); em.setDate(em.getDate() + 1); em.setHours(0,0,0,0);
+                  const hoverTimeS = sm.getTime() / 1000 + (x / rect.width) * ((em.getTime() - sm.getTime()) / 1000);
+                  // Find closest point by time
+                  let closest = 0, bestDist = Infinity;
+                  for (let pi = 0; pi < points.length; pi++) {
+                    const dist = Math.abs(points[pi].time - hoverTimeS);
+                    if (dist < bestDist) { bestDist = dist; closest = pi; }
+                  }
+                  const pt = points[closest];
                   if (!pt) return;
                   const timeStr = new Date(pt.time * 1000).toLocaleTimeString('nb-NO', { hour: '2-digit', minute: '2-digit' });
                   const co2Label = pt.value < 800 ? 'Good' : (pt.value < 1200 ? 'Moderate' : 'High');
@@ -2471,6 +3420,849 @@
     fetchHue();
     setInterval(fetchHue, 60 * 1000);
 
+    // ── Waste collection ──
+    const WASTE_ICONS = {
+      'Restavfall': '🗑️', 'Rest-/matavfall': '🗑️', 'Matavfall': '🍎',
+      'Papir': '📄', 'Papp/papir': '📄', 'Plastemballasje': '♻️',
+      'Glass- og metallemballasje': '🫙', 'Glass/Metall': '🫙',
+      'Tekstiler': '👕', 'Hageavfall': '🌿', 'Trevirke': '🪵',
+      'Farlig avfall': '⚠️', 'Spesialavfall': '⚠️',
+      'Drikkekartonger': '🥛', 'Juletrær': '🎄'
+    };
+
+    function getWasteIcon(name) {
+      for (const [key, icon] of Object.entries(WASTE_ICONS)) {
+        if (name.toLowerCase().includes(key.toLowerCase())) return icon;
+      }
+      return '🗑️';
+    }
+
+    async function fetchWaste() {
+      try {
+        const wasteCfg = getWaste();
+        const WORKER = 'https://yahoopull.charles-rutherford93.workers.dev';
+        if (!wasteCfg.gatekode) {
+          document.getElementById('waste-content').innerHTML = '<div class="error">No address set. <a href="#" onclick="openWidgetSettings(\'waste\');return false;" style="color:var(--accent)">Set your address</a></div>';
+          return;
+        }
+
+        const res = await fetch(`${WORKER}/waste/calendar?kommunenr=${wasteCfg.kommunenr}&gatekode=${wasteCfg.gatekode}&gatenavn=${encodeURIComponent(wasteCfg.gatenavn || '')}&husnr=${wasteCfg.husnr || '1'}`);
+        const data = await res.json();
+
+        const now = new Date();
+        now.setHours(0, 0, 0, 0);
+        const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+        const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+        // Collect all dates per fraction
+        const upcoming = [];
+        const past = [];
+        const isOslo = wasteCfg.kommunenr === '0301' || wasteCfg.kommunenr === '301';
+
+        if (isOslo) {
+          const results = data?.data?.result || [];
+          const seenNext = new Map();
+          const seenPast = new Map();
+          results.forEach(r => {
+            (r.HentePunkts || []).forEach(hp => {
+              (hp.Tjenester || []).forEach(t => {
+                const name = t.Fraksjon?.Tekst || 'Unknown';
+                const dateStr = t.TommeDato;
+                if (!dateStr) return;
+                const parts = dateStr.split('.');
+                const d = new Date(parseInt(parts[2]), parseInt(parts[1]) - 1, parseInt(parts[0]));
+                d.setHours(0, 0, 0, 0);
+                const diffDays = Math.round((d - now) / 86400000);
+                const entry = { name, date: d, diffDays, freq: t.Hyppighet?.Tekst || '' };
+                if (d >= now) {
+                  if (!seenNext.has(name) || diffDays < seenNext.get(name).diffDays) {
+                    seenNext.set(name, entry);
+                  }
+                } else {
+                  if (!seenPast.has(name) || diffDays > seenPast.get(name).diffDays) {
+                    seenPast.set(name, entry);
+                  }
+                }
+              });
+            });
+          });
+          upcoming.push(...seenNext.values());
+          past.push(...seenPast.values());
+          // If API only returns future dates, estimate last pickup from frequency
+          if (past.length === 0) {
+            upcoming.forEach(u => {
+              const freq = (u.freq || '').toLowerCase();
+              let intervalDays = 14; // default biweekly
+              if (freq.includes('uke') || freq.includes('weekly')) intervalDays = 7;
+              if (freq.includes('4 uke') || freq.includes('monthly') || freq.includes('måned')) intervalDays = 28;
+              const pastDate = new Date(u.date);
+              pastDate.setDate(pastDate.getDate() - intervalDays);
+              pastDate.setHours(0, 0, 0, 0);
+              if (pastDate < now) {
+                past.push({ name: u.name, date: pastDate, diffDays: Math.round((pastDate - now) / 86400000) });
+              }
+            });
+          }
+        } else {
+          if (!data || !Array.isArray(data) || data.length === 0) {
+            document.getElementById('waste-content').innerHTML = '<div class="error">No collection data found for this address.</div>';
+            return;
+          }
+          data.forEach(fraction => {
+            const name = fraction.Fraksjon || fraction.FraksjonNavn || 'Unknown';
+            const dates = fraction.Tommedatoer || [];
+            let foundNext = false;
+            let lastPast = null;
+            for (const dateStr of dates) {
+              const d = new Date(dateStr);
+              d.setHours(0, 0, 0, 0);
+              const diffDays = Math.round((d - now) / 86400000);
+              if (d >= now && !foundNext) {
+                upcoming.push({ name, date: d, diffDays });
+                foundNext = true;
+              } else if (d < now) {
+                if (!lastPast || d > lastPast.date) {
+                  lastPast = { name, date: d, diffDays };
+                }
+              }
+            }
+            if (lastPast) past.push(lastPast);
+          });
+          // If no past dates in data, estimate from spacing between dates
+          if (past.length === 0 && upcoming.length > 0) {
+            data.forEach(fraction => {
+              const name = fraction.Fraksjon || fraction.FraksjonNavn || 'Unknown';
+              const dates = (fraction.Tommedatoer || []).map(ds => { const d = new Date(ds); d.setHours(0,0,0,0); return d; }).sort((a,b) => a-b);
+              const futureDates = dates.filter(d => d >= now);
+              if (futureDates.length >= 2) {
+                const interval = Math.round((futureDates[1] - futureDates[0]) / 86400000);
+                const pastDate = new Date(futureDates[0]);
+                pastDate.setDate(pastDate.getDate() - interval);
+                if (pastDate < now) {
+                  past.push({ name, date: pastDate, diffDays: Math.round((pastDate - now) / 86400000) });
+                }
+              }
+            });
+          }
+        }
+
+        upcoming.sort((a, b) => a.diffDays - b.diffDays);
+        past.sort((a, b) => a.diffDays - b.diffDays); // most recent first (closest to 0)
+
+        if (upcoming.length === 0 && past.length === 0) {
+          document.getElementById('waste-content').innerHTML = '<div class="error">No collection data found.</div>';
+          return;
+        }
+
+        function renderWasteItem(u, isPast) {
+          const pastClass = isPast ? ' waste-past' : '';
+          let countdown, countdownClass = '';
+          if (isPast) {
+            const ago = Math.abs(u.diffDays);
+            if (ago === 0) { countdown = 'Today'; }
+            else if (ago === 1) { countdown = 'Yesterday'; }
+            else { countdown = `${ago}d ago`; }
+          } else {
+            if (u.diffDays === 0) { countdown = 'Today'; countdownClass = 'today'; }
+            else if (u.diffDays === 1) { countdown = 'Tomorrow'; countdownClass = 'tomorrow'; }
+            else if (u.diffDays < 7) { countdown = dayNames[u.date.getDay()]; }
+            else { countdown = `${u.diffDays}d`; }
+          }
+          const dateStr = `${u.date.getDate()} ${monthNames[u.date.getMonth()]}`;
+          return `<div class="waste-item${pastClass}">
+            <span class="waste-icon">${getWasteIcon(u.name)}</span>
+            <div class="waste-info">
+              <div class="waste-name">${u.name}</div>
+              <div class="waste-date">${dateStr}</div>
+            </div>
+            <span class="waste-countdown ${countdownClass}">${countdown}</span>
+          </div>`;
+        }
+
+        // Past pickups on top, then upcoming
+        const html = past.map(u => renderWasteItem(u, true)).join('')
+          + upcoming.map(u => renderWasteItem(u, false)).join('');
+
+        document.getElementById('waste-content').innerHTML = html;
+        document.getElementById('waste-status').textContent = 'Updated ' + new Date().toLocaleTimeString('nb-NO', { hour: '2-digit', minute: '2-digit' });
+      } catch (e) {
+        document.getElementById('waste-content').innerHTML = '<div class="error">Could not load waste schedule.</div>';
+      }
+    }
+    fetchWaste();
+    setInterval(fetchWaste, 6 * 60 * 60 * 1000); // Refresh every 6 hours
+
+    // ── Mobility (scooters & bikes) ──
+    let mobilityMap = null;
+    let mobilityMarkers = [];
+    let mobilityLocationMarker = null;
+    let mobilityCenter = null; // { lat, lon, name }
+    let mobilitySearchTimeout = null;
+    let mobilityRouteLayer = null;
+    let mobilityAllScooters = []; // cached for zoom fitting
+    let mobilityAllBikeStations = []; // cached for legend recounts
+    let mobilityRefreshing = false;
+    let mobilityInitialLoad = true;
+    const mobilityHidden = new Set(); // provider names toggled off
+
+    const MOBILITY_PROVIDERS = [
+      { id: 'voioslo', name: 'Voi', color: '#f46c63', type: 'scooter' },
+      { id: 'boltoslo', name: 'Bolt', color: '#34d399', type: 'scooter' },
+      { id: 'rydeoslo', name: 'Ryde', color: '#a78bfa', type: 'scooter' }
+    ];
+    const BYSYKKEL_COLOR = '#f59e0b';
+
+    function distanceKm(lat1, lon1, lat2, lon2) {
+      const R = 6371;
+      const dLat = (lat2 - lat1) * Math.PI / 180;
+      const dLon = (lon2 - lon1) * Math.PI / 180;
+      const a = Math.sin(dLat / 2) ** 2 + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLon / 2) ** 2;
+      return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    }
+
+    function getMobilityAddress() {
+      // Check saved mobility location first
+      const cfg = loadConfig();
+      if (cfg?.mobility?.lat && cfg?.mobility?.lon) {
+        return { name: cfg.mobility.name || 'Saved location', lat: cfg.mobility.lat, lon: cfg.mobility.lon };
+      }
+      // Fall back to waste address, then weather, then default
+      const wasteCfg = getWaste();
+      if (wasteCfg && wasteCfg.address && wasteCfg.lat && wasteCfg.lon) {
+        return { name: wasteCfg.address, lat: wasteCfg.lat, lon: wasteCfg.lon };
+      }
+      const weatherCfg = getWeather();
+      if (weatherCfg && weatherCfg.name !== 'Bestum') {
+        return { name: weatherCfg.name, lat: weatherCfg.lat, lon: weatherCfg.lon };
+      }
+      return { name: 'Bestumveien 33', lat: 59.92180, lon: 10.65830 };
+    }
+
+    function getMobilityMaxDistance() {
+      const cfg = loadConfig();
+      return cfg?.mobility?.maxDistKm ?? 1;
+    }
+
+    function saveMobilityMaxDistance(km) {
+      const cfg = loadConfig() || {};
+      if (!cfg.mobility) cfg.mobility = {};
+      cfg.mobility.maxDistKm = km;
+      localStorage.setItem('dashboard-config', JSON.stringify(cfg));
+    }
+
+    function saveMobilityAddress(lat, lon, name) {
+      const cfg = loadConfig() || {};
+      if (!cfg.mobility) cfg.mobility = {};
+      cfg.mobility.lat = lat;
+      cfg.mobility.lon = lon;
+      cfg.mobility.name = name;
+      localStorage.setItem('dashboard-config', JSON.stringify(cfg));
+    }
+
+    function initMobilityUI() {
+      const loc = getMobilityAddress();
+      mobilityCenter = { lat: loc.lat, lon: loc.lon, name: loc.name };
+      document.getElementById('mobility-content').innerHTML = `
+        <div class="mobility-controls">
+          <div class="mobility-search-wrap">
+            <input type="text" id="mobility-search" class="mobility-search" placeholder="Search location..." value="${loc.name}" oninput="onMobilitySearch(this.value)" autocomplete="off" />
+            <div class="mobility-search-results" id="mobility-search-results"></div>
+          </div>
+          <button class="mobility-btn" onclick="mobilityUseGPS()" title="Use my location">&#9737;</button>
+          <button class="mobility-btn" onclick="refreshMobilityData(true)" title="Refresh">&#8635;</button>
+        </div>
+        <div class="mobility-map-wrap">
+          <div id="mobility-map" class="mobility-map"></div>
+          <div id="mobility-walk-overlay" class="mobility-walk-overlay" style="display:none;"></div>
+          <div class="mobility-map-nav" id="mobility-map-nav">
+            <button class="mobility-nav-btn" onclick="mobilityMap.zoomIn()" title="Zoom in">+</button>
+            <button class="mobility-nav-btn" onclick="mobilityMap.zoomOut()" title="Zoom out">&minus;</button>
+            <div style="height:4px;"></div>
+            <button class="mobility-nav-btn" onclick="mobilityMap.panBy([0,-80])" title="Pan up">&#9650;</button>
+            <div style="display:flex;gap:2px;">
+              <button class="mobility-nav-btn" onclick="mobilityMap.panBy([-80,0])" title="Pan left">&#9664;</button>
+              <button class="mobility-nav-btn" onclick="mobilityMap.panBy([80,0])" title="Pan right">&#9654;</button>
+            </div>
+            <button class="mobility-nav-btn" onclick="mobilityMap.panBy([0,80])" title="Pan down">&#9660;</button>
+          </div>
+        </div>
+        <div class="mobility-legend" id="mobility-legend"></div>`;
+      const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+      mobilityMap = L.map('mobility-map', { zoomControl: false, attributionControl: true }).setView([loc.lat, loc.lon], 16);
+      L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a>',
+        maxZoom: 19,
+        className: isDark ? 'map-tiles-dark' : ''
+      }).addTo(mobilityMap);
+      mobilityLocationMarker = L.circleMarker([loc.lat, loc.lon], { radius: 7, fillColor: '#3b82f6', fillOpacity: 0.9, color: '#fff', weight: 2 })
+        .bindPopup(loc.name).addTo(mobilityMap);
+      setTimeout(() => mobilityMap.invalidateSize(), 200);
+
+      // Update legend counts when user zooms or pans
+      mobilityMap.on('moveend', updateMobilityLegend);
+
+      // Prevent nav buttons from triggering map drag
+      const navEl = document.getElementById('mobility-map-nav');
+      if (navEl) L.DomEvent.disableClickPropagation(navEl);
+
+      // Prevent card drag-to-reorder from hijacking map interactions
+      const mobilityCard = document.querySelector('.card[data-widget="mobility"]');
+      const mobilityContent = document.getElementById('mobility-content');
+      if (mobilityCard && mobilityContent) {
+        mobilityContent.addEventListener('mousedown', () => {
+          mobilityCard.setAttribute('draggable', 'false');
+        });
+        mobilityContent.addEventListener('mouseup', () => {
+          mobilityCard.setAttribute('draggable', 'true');
+        });
+        mobilityContent.addEventListener('mouseleave', () => {
+          mobilityCard.setAttribute('draggable', 'true');
+        });
+        // Also handle touch
+        mobilityContent.addEventListener('touchstart', () => {
+          mobilityCard.setAttribute('draggable', 'false');
+        }, { passive: true });
+        mobilityContent.addEventListener('touchend', () => {
+          mobilityCard.setAttribute('draggable', 'true');
+        });
+      }
+
+    }
+
+    function setMobilityCenter(lat, lon, name) {
+      mobilityCenter = { lat, lon, name };
+      saveMobilityAddress(lat, lon, name);
+      if (mobilityMap) {
+        mobilityMap.setView([lat, lon], 16);
+        if (mobilityLocationMarker) mobilityLocationMarker.remove();
+        mobilityLocationMarker = L.circleMarker([lat, lon], { radius: 7, fillColor: '#3b82f6', fillOpacity: 0.9, color: '#fff', weight: 2 })
+          .bindPopup(name).addTo(mobilityMap);
+      }
+      const input = document.getElementById('mobility-search');
+      if (input) input.value = name;
+      mobilityInitialLoad = true; // re-fit when address changes
+      refreshMobilityData();
+    }
+
+    function mobilityUseGPS() {
+      if (!navigator.geolocation) {
+        showToast('Geolocation not supported by your browser');
+        return;
+      }
+      const btn = event.currentTarget;
+      btn.textContent = '...';
+      let gotCoarse = false;
+      // Fast coarse position first
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          gotCoarse = true;
+          btn.textContent = '\u2739';
+          setMobilityCenter(pos.coords.latitude, pos.coords.longitude, 'My location');
+          // Then refine with high accuracy in background
+          navigator.geolocation.getCurrentPosition(
+            (fine) => {
+              const d = distanceKm(pos.coords.latitude, pos.coords.longitude, fine.coords.latitude, fine.coords.longitude);
+              if (d > 0.05) { // only update if >50m difference
+                setMobilityCenter(fine.coords.latitude, fine.coords.longitude, 'My location');
+              }
+            },
+            () => {}, // ignore errors on refinement
+            { enableHighAccuracy: true, timeout: 10000 }
+          );
+        },
+        (err) => {
+          // Coarse failed, try high accuracy as fallback
+          if (!gotCoarse) {
+            navigator.geolocation.getCurrentPosition(
+              (pos) => {
+                btn.textContent = '\u2739';
+                setMobilityCenter(pos.coords.latitude, pos.coords.longitude, 'My location');
+              },
+              () => {
+                btn.textContent = '\u2739';
+                showToast('Location access denied');
+              },
+              { enableHighAccuracy: true, timeout: 10000 }
+            );
+          }
+        },
+        { enableHighAccuracy: false, timeout: 3000, maximumAge: 60000 }
+      );
+    }
+
+    function onMobilitySearch(query) {
+      clearTimeout(mobilitySearchTimeout);
+      const container = document.getElementById('mobility-search-results');
+      if (query.length < 2) { container.style.display = 'none'; return; }
+      mobilitySearchTimeout = setTimeout(async () => {
+        try {
+          // Use Geonorge for Norwegian address search first, fall back to Open-Meteo
+          const geoRes = await fetch(`https://yahoopull.charles-rutherford93.workers.dev/?url=${encodeURIComponent(`https://ws.geonorge.no/adresser/v1/sok?sok=${encodeURIComponent(query)}&treffPerSide=5&asciiKompatibel=true`)}`);
+          const geoData = await geoRes.json();
+          const addresses = geoData?.adresser || [];
+          if (addresses.length > 0) {
+            container.innerHTML = addresses.map((a, i) => {
+              const pt = a.representasjonspunkt || {};
+              return `<div class="mobility-search-result" onclick="selectMobilityGeoResult(${i})">${a.adressetekst}<span style="color:var(--text-secondary);margin-left:4px;font-size:0.7rem;">${a.kommunenavn || ''}</span></div>`;
+            }).join('');
+            container._geoResults = addresses;
+            container._results = null;
+          } else {
+            // Fallback to Open-Meteo for broader search
+            const res = await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(query)}&count=5&language=en&format=json`);
+            const data = await res.json();
+            const results = data.results || [];
+            if (results.length === 0) {
+              container.innerHTML = '<div class="mobility-search-result" style="cursor:default;color:var(--text-secondary)">No results</div>';
+            } else {
+              container.innerHTML = results.map((r, i) =>
+                `<div class="mobility-search-result" onclick="selectMobilityResult(${i})">${r.name}<span style="color:var(--text-secondary);margin-left:4px;font-size:0.7rem;">${[r.admin1, r.country].filter(Boolean).join(', ')}</span></div>`
+              ).join('');
+              container._results = results;
+              container._geoResults = null;
+            }
+          }
+          container.style.display = 'block';
+        } catch { container.style.display = 'none'; }
+      }, 300);
+    }
+
+    function selectMobilityGeoResult(idx) {
+      const container = document.getElementById('mobility-search-results');
+      const a = container._geoResults?.[idx];
+      if (!a) return;
+      container.style.display = 'none';
+      const pt = a.representasjonspunkt || {};
+      if (pt.lat && pt.lon) {
+        setMobilityCenter(pt.lat, pt.lon, a.adressetekst);
+      }
+    }
+
+    function selectMobilityResult(idx) {
+      const container = document.getElementById('mobility-search-results');
+      const r = container._results?.[idx];
+      if (!r) return;
+      container.style.display = 'none';
+      setMobilityCenter(r.latitude, r.longitude, r.name);
+    }
+
+    async function fetchWalkingRoute(fromLat, fromLon, toLat, toLon) {
+      // Use FOSSGIS OSRM foot server (dedicated pedestrian profile, handles street crossings properly)
+      try {
+        const url = `https://routing.openstreetmap.de/routed-foot/route/v1/driving/${fromLon},${fromLat};${toLon},${toLat}?overview=full&geometries=geojson`;
+        const res = await fetch(url);
+        const data = await res.json();
+        if (data.code === 'Ok' && data.routes && data.routes.length > 0) {
+          const route = data.routes[0];
+          const distanceM = Math.round(route.distance);
+          const durationMin = Math.round(route.duration / 60);
+          const coords = route.geometry.coordinates.map(c => [c[1], c[0]]);
+          return { coords, durationMin, distanceM };
+        }
+      } catch {}
+      // Fallback to Valhalla if FOSSGIS is down
+      try {
+        const params = JSON.stringify({
+          locations: [{ lat: fromLat, lon: fromLon }, { lat: toLat, lon: toLon }],
+          costing: 'pedestrian',
+          units: 'km'
+        });
+        const url = `https://valhalla1.openstreetmap.de/route?json=${encodeURIComponent(params)}`;
+        const res = await fetch(url);
+        const data = await res.json();
+        if (data.trip && data.trip.legs && data.trip.legs.length > 0) {
+          const leg = data.trip.legs[0];
+          const durationMin = Math.round(leg.summary.time / 60);
+          const distanceM = Math.round(leg.summary.length * 1000);
+          const coords = decodePolyline(leg.shape, 6);
+          return { coords, durationMin, distanceM };
+        }
+      } catch {}
+      return null;
+    }
+
+    function decodePolyline(encoded, precision) {
+      const factor = Math.pow(10, precision || 5);
+      const coords = [];
+      let lat = 0, lng = 0, idx = 0;
+      while (idx < encoded.length) {
+        let b, shift = 0, result = 0;
+        do { b = encoded.charCodeAt(idx++) - 63; result |= (b & 0x1f) << shift; shift += 5; } while (b >= 0x20);
+        lat += (result & 1) ? ~(result >> 1) : (result >> 1);
+        shift = 0; result = 0;
+        do { b = encoded.charCodeAt(idx++) - 63; result |= (b & 0x1f) << shift; shift += 5; } while (b >= 0x20);
+        lng += (result & 1) ? ~(result >> 1) : (result >> 1);
+        coords.push([lat / factor, lng / factor]);
+      }
+      return coords;
+    }
+
+    async function routeToMarker(marker) {
+      if (!mobilityCenter) return;
+      const ll = marker.getLatLng();
+      const name = marker._provName || '';
+      // Clear old route
+      if (mobilityRouteLayer) { mobilityRouteLayer.remove(); mobilityRouteLayer = null; }
+      const walkOverlay = document.getElementById('mobility-walk-overlay');
+      if (walkOverlay) {
+        walkOverlay.innerHTML = `&#128694; ${name}<br><em>Routing...</em>`;
+        walkOverlay.style.display = 'block';
+      }
+      const infoStr = marker._provName === 'Bysykkel'
+        ? `<br>&#128690; ${marker._bikes != null ? marker._bikes : '?'}/${marker._docks != null ? marker._bikes + marker._docks : '?'}`
+        : `<br>&#128267; ${marker._battery != null ? marker._battery + '%' : 'n/a'}`;
+      const route = await fetchWalkingRoute(mobilityCenter.lat, mobilityCenter.lon, ll.lat, ll.lng);
+      if (route) {
+        mobilityRouteLayer = L.polyline(route.coords, {
+          color: '#3b82f6', weight: 3, opacity: 0.7, dashArray: '8 6'
+        }).addTo(mobilityMap);
+        const distStr = route.distanceM >= 1000 ? `${(route.distanceM / 1000).toFixed(1)} km` : `${route.distanceM} m`;
+        if (walkOverlay) {
+          walkOverlay.innerHTML = `&#128694; ${name}<br><strong>${route.durationMin} min</strong> · ${distStr}${infoStr}`;
+        }
+      } else if (walkOverlay) {
+        const dist = distanceKm(mobilityCenter.lat, mobilityCenter.lon, ll.lat, ll.lng);
+        const walkMin = Math.round(dist * 1000 / 80);
+        const distStr = dist >= 1 ? `${dist.toFixed(1)} km` : `${Math.round(dist * 1000)} m`;
+        walkOverlay.innerHTML = `&#128694; ${name}<br><strong>~${walkMin} min</strong> · ${distStr}${infoStr}`;
+      }
+    }
+
+    function updateMobilityLegend() {
+      if (!mobilityMap || !mobilityCenter) return;
+      const maxDist = getMobilityMaxDistance();
+      const viewBounds = mobilityMap.getBounds();
+      // Count visible on map (for display count)
+      const viewCounts = {};
+      mobilityAllScooters.forEach(v => {
+        if (viewBounds.contains([v.lat, v.lon])) {
+          viewCounts[v.provider.name] = (viewCounts[v.provider.name] || 0) + 1;
+        }
+      });
+      const viewBikeCount = mobilityAllBikeStations.filter(s => viewBounds.contains([s.lat, s.lon])).length;
+      // Check which providers have any device within max walking distance (for legend inclusion)
+      const inRange = {};
+      mobilityAllScooters.forEach(v => {
+        if (!inRange[v.provider.name] && distanceKm(mobilityCenter.lat, mobilityCenter.lon, v.lat, v.lon) <= maxDist) {
+          inRange[v.provider.name] = true;
+        }
+      });
+      const legendParts = MOBILITY_PROVIDERS
+        .filter(p => inRange[p.name])
+        .map(p => {
+          const off = mobilityHidden.has(p.name) ? ' disabled' : '';
+          const cnt = viewCounts[p.name] || 0;
+          return `<span class="mobility-legend-item${off}" onclick="toggleMobilityProvider('${p.name}')" title="Click to toggle"><span class="mobility-legend-dot" style="background:${p.color}"></span>${p.name} (${cnt})</span>`;
+        });
+      // Bysykkel always shown in legend (useful at any distance)
+      if (mobilityAllBikeStations.length > 0) {
+        const off = mobilityHidden.has('Bysykkel') ? ' disabled' : '';
+        legendParts.push(`<span class="mobility-legend-item${off}" onclick="toggleMobilityProvider('Bysykkel')" title="Click to toggle"><span class="mobility-legend-dot" style="background:${BYSYKKEL_COLOR}"></span>Bysykkel (${viewBikeCount} stations)</span>`);
+      }
+      const el = document.getElementById('mobility-legend');
+      if (el) el.innerHTML = legendParts.join('');
+    }
+
+    // Create an SVG scooter marker with battery ring
+    function createScooterIcon(color, batteryPct) {
+      const size = 14;
+      const r = 5;       // inner filled circle radius
+      const R = 6.5;     // ring radius
+      const cx = size / 2;
+      const cy = size / 2;
+      const circumference = 2 * Math.PI * R;
+      const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+      const ringColor = isDark ? '#e0e0e0' : '#222';
+      const ringBgColor = isDark ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.12)';
+      const pct = batteryPct != null ? Math.max(0, Math.min(100, batteryPct)) : null;
+      let ringSvg = `<circle cx="${cx}" cy="${cy}" r="${R}" fill="none" stroke="${ringBgColor}" stroke-width="1.5"/>`;
+      if (pct != null) {
+        const dashLen = (pct / 100) * circumference;
+        ringSvg += `<circle cx="${cx}" cy="${cy}" r="${R}" fill="none" stroke="${ringColor}" stroke-width="1.5" stroke-dasharray="${dashLen} ${circumference}" stroke-linecap="round" transform="rotate(-90 ${cx} ${cy})"/>`;
+      }
+      const svg = `<svg width="${size}" height="${size}" xmlns="http://www.w3.org/2000/svg">` +
+        ringSvg +
+        `<circle cx="${cx}" cy="${cy}" r="${r}" fill="${color}" fill-opacity="0.85"/>` +
+        `</svg>`;
+      return L.divIcon({
+        html: svg,
+        className: 'mobility-scooter-icon',
+        iconSize: [size, size],
+        iconAnchor: [cx, cy],
+        popupAnchor: [0, -cx]
+      });
+    }
+
+    // Find the actual closest scooter/bike by walking distance among the 5 Euclidean-nearest
+    // candidates is an array of { lat, lon, name } objects
+    async function findNearestByWalking(candidates) {
+      if (!mobilityCenter || candidates.length === 0) return null;
+      const sorted = [...candidates].sort((a, b) =>
+        distanceKm(mobilityCenter.lat, mobilityCenter.lon, a.lat, a.lon) -
+        distanceKm(mobilityCenter.lat, mobilityCenter.lon, b.lat, b.lon)
+      );
+      const top5 = sorted.slice(0, 5);
+      if (top5.length === 1) {
+        const route = await fetchWalkingRoute(mobilityCenter.lat, mobilityCenter.lon, top5[0].lat, top5[0].lon);
+        return { candidate: top5[0], route };
+      }
+      const routes = await Promise.all(top5.map(c =>
+        fetchWalkingRoute(mobilityCenter.lat, mobilityCenter.lon, c.lat, c.lon)
+      ));
+      let best = null;
+      routes.forEach((route, i) => {
+        if (route && (!best || route.distanceM < best.route.distanceM)) {
+          best = { candidate: top5[i], route };
+        }
+      });
+      // Fallback to Euclidean nearest if all routes failed
+      if (!best) return { candidate: top5[0], route: null };
+      return best;
+    }
+
+    // Show walking route to nearest visible scooter/bike, using walking distance comparison
+    async function showNearestWalkRoute() {
+      if (mobilityRouteLayer) { mobilityRouteLayer.remove(); mobilityRouteLayer = null; }
+      const walkOverlay = document.getElementById('mobility-walk-overlay');
+      if (!mobilityCenter) { if (walkOverlay) walkOverlay.style.display = 'none'; return; }
+
+      const visible = mobilityMarkers.filter(m => m._provName && !mobilityHidden.has(m._provName));
+      if (visible.length === 0) { if (walkOverlay) walkOverlay.style.display = 'none'; return; }
+
+      const candidates = visible.map(m => {
+        const ll = m.getLatLng();
+        return { lat: ll.lat, lon: ll.lng, name: m._provName, battery: m._battery, bikes: m._bikes, docks: m._docks };
+      });
+
+      if (walkOverlay) { walkOverlay.innerHTML = `&#128694; Routing...`; walkOverlay.style.display = 'block'; }
+
+      const result = await findNearestByWalking(candidates);
+      if (!result) { if (walkOverlay) walkOverlay.style.display = 'none'; return; }
+
+      const { candidate, route } = result;
+      const infoStr = candidate.name === 'Bysykkel'
+        ? `<br>&#128690; ${candidate.bikes != null ? candidate.bikes : '?'}/${candidate.bikes != null && candidate.docks != null ? candidate.bikes + candidate.docks : '?'}`
+        : `<br>&#128267; ${candidate.battery != null ? candidate.battery + '%' : 'n/a'}`;
+      if (route) {
+        mobilityRouteLayer = L.polyline(route.coords, {
+          color: '#3b82f6', weight: 3, opacity: 0.7, dashArray: '8 6'
+        }).addTo(mobilityMap);
+        const distStr = route.distanceM >= 1000 ? `${(route.distanceM / 1000).toFixed(1)} km` : `${route.distanceM} m`;
+        if (walkOverlay) {
+          walkOverlay.innerHTML = `&#128694; ${candidate.name}<br><strong>${route.durationMin} min</strong> · ${distStr}${infoStr}`;
+        }
+      } else if (walkOverlay) {
+        const dist = distanceKm(mobilityCenter.lat, mobilityCenter.lon, candidate.lat, candidate.lon);
+        const walkMin = Math.round(dist * 1000 / 80);
+        const distStr = dist >= 1 ? `${dist.toFixed(1)} km` : `${Math.round(dist * 1000)} m`;
+        walkOverlay.innerHTML = `&#128694; ${candidate.name}<br><strong>~${walkMin} min</strong> · ${distStr}${infoStr}`;
+      }
+    }
+
+    function toggleMobilityProvider(name) {
+      const wasHidden = mobilityHidden.has(name);
+      if (wasHidden) {
+        mobilityHidden.delete(name);
+      } else {
+        mobilityHidden.add(name);
+      }
+
+      // Update legend item styles immediately
+      document.querySelectorAll('.mobility-legend-item').forEach(el => {
+        const text = el.textContent;
+        if (text.startsWith(name)) {
+          el.classList.toggle('disabled', !wasHidden);
+        }
+      });
+
+      // Toggle markers on/off without full refresh
+      mobilityMarkers.forEach(m => {
+        if (m._provName === name) {
+          if (wasHidden) {
+            m.addTo(mobilityMap);
+            // Glow effect on re-added markers
+            const el = m.getElement();
+            if (el) {
+              el.classList.add('mobility-marker-glow');
+              setTimeout(() => {
+                el.classList.add('mobility-marker-glow-fade');
+                setTimeout(() => {
+                  el.classList.remove('mobility-marker-glow', 'mobility-marker-glow-fade');
+                }, 1500);
+              }, 50);
+            }
+          } else {
+            m.remove();
+          }
+        }
+      });
+
+      // If toggling ON and no devices from this provider are in view, zoom to show nearest one
+      if (wasHidden && mobilityCenter) {
+        const viewBounds = mobilityMap.getBounds();
+        const visibleFromProvider = mobilityMarkers.filter(m => m._provName === name && viewBounds.contains(m.getLatLng()));
+        if (visibleFromProvider.length === 0) {
+          // Find nearest device from this provider in all cached data
+          let nearestLL = null;
+          let nearestDist = Infinity;
+          if (name === 'Bysykkel') {
+            mobilityAllBikeStations.forEach(s => {
+              const d = distanceKm(mobilityCenter.lat, mobilityCenter.lon, s.lat, s.lon);
+              if (d < nearestDist) { nearestDist = d; nearestLL = [s.lat, s.lon]; }
+            });
+          } else {
+            mobilityAllScooters.filter(s => s.provider.name === name).forEach(s => {
+              const d = distanceKm(mobilityCenter.lat, mobilityCenter.lon, s.lat, s.lon);
+              if (d < nearestDist) { nearestDist = d; nearestLL = [s.lat, s.lon]; }
+            });
+          }
+          if (nearestLL) {
+            mobilityMap.fitBounds(L.latLngBounds([
+              [mobilityCenter.lat, mobilityCenter.lon], nearestLL
+            ]).pad(0.2), { maxZoom: 17 });
+          }
+        }
+      }
+
+      // Update legend counts after toggle
+      updateMobilityLegend();
+
+      // Update walk route (only considers visible scooters)
+      showNearestWalkRoute();
+    }
+
+    async function refreshMobilityData(manual) {
+      if (!mobilityMap || !mobilityCenter) return;
+      // Reset provider toggles only on manual refresh (unless disabled in settings)
+      if (manual) {
+        const cfg = loadConfig();
+        if (cfg?.mobility?.resetProvidersOnRefresh !== false) {
+          mobilityHidden.clear();
+        }
+      }
+      const loc = mobilityCenter;
+      const maxDist = getMobilityMaxDistance();
+      const skipFit = !mobilityInitialLoad;
+      mobilityInitialLoad = false;
+      // Fetch a bit beyond max walking distance so we have data for zoom-to-nearest
+      await refreshMobilityDataForArea(loc.lat, loc.lon, maxDist * 3, skipFit);
+    }
+
+    async function refreshMobilityDataForArea(centerLat, centerLon, radiusKm, skipAutoFit) {
+      if (!mobilityMap || mobilityRefreshing) return;
+      mobilityRefreshing = true;
+
+      // Clear old vehicle/station markers and route (keep location marker)
+      mobilityMarkers.forEach(m => m.remove());
+      mobilityMarkers = [];
+      if (mobilityRouteLayer) { mobilityRouteLayer.remove(); mobilityRouteLayer = null; }
+
+      try {
+        // Fetch scooters from all providers
+        const scooterResults = await Promise.all(MOBILITY_PROVIDERS.map(async (prov) => {
+          try {
+            const res = await fetch(`https://api.entur.io/mobility/v2/gbfs/v2/${prov.id}/free_bike_status`);
+            const data = await res.json();
+            const bikes = data?.data?.bikes || [];
+            return bikes
+              .filter(b => !b.is_reserved && !b.is_disabled)
+              .filter(b => distanceKm(centerLat, centerLon, b.lat, b.lon) <= radiusKm)
+              .map(b => ({ ...b, provider: prov }));
+          } catch { return []; }
+        }));
+
+        // Fetch city bikes (stations)
+        let bikeStations = [];
+        try {
+          const [infoRes, statusRes] = await Promise.all([
+            fetch('https://api.entur.io/mobility/v2/gbfs/v2/oslobysykkel/station_information'),
+            fetch('https://api.entur.io/mobility/v2/gbfs/v2/oslobysykkel/station_status')
+          ]);
+          const infoData = await infoRes.json();
+          const statusData = await statusRes.json();
+          const statusMap = {};
+          (statusData?.data?.stations || []).forEach(s => { statusMap[s.station_id] = s; });
+          bikeStations = (infoData?.data?.stations || [])
+            .map(s => ({ ...s, status: statusMap[s.station_id] || {} }));
+        } catch {}
+
+        const allScooters = scooterResults.flat();
+        mobilityAllScooters = allScooters;
+        mobilityAllBikeStations = bikeStations;
+
+        // Auto-zoom: fit bounds to show user location + nearest ~5 scooters
+        if (!skipAutoFit && mobilityCenter && allScooters.length > 0) {
+          const sorted = [...allScooters].sort((a, b) =>
+            distanceKm(mobilityCenter.lat, mobilityCenter.lon, a.lat, a.lon) -
+            distanceKm(mobilityCenter.lat, mobilityCenter.lon, b.lat, b.lon)
+          );
+          const nearest = sorted.slice(0, 5);
+          const boundsPoints = [[mobilityCenter.lat, mobilityCenter.lon], ...nearest.map(s => [s.lat, s.lon])];
+          mobilityMap.fitBounds(L.latLngBounds(boundsPoints).pad(0.15), { maxZoom: 17 });
+        }
+
+        // Filter to only what's visible in the current map view
+        const viewBounds = mobilityMap.getBounds();
+        const visibleScooters = allScooters.filter(v => viewBounds.contains([v.lat, v.lon]));
+        // Bysykkel: create markers for ALL stations (not just in view) so they appear when panning
+        const visibleBikes = bikeStations;
+
+        // Create markers for ALL visible vehicles; only add non-hidden ones to the map
+        visibleScooters.forEach(v => {
+          const prov = v.provider;
+          const hidden = mobilityHidden.has(prov.name);
+          const battery = v.current_fuel_percent != null ? Math.round(v.current_fuel_percent * 100) : null;
+          const rangeKm = v.current_range_meters != null ? (v.current_range_meters / 1000).toFixed(1) : null;
+          const icon = createScooterIcon(prov.color, battery);
+          const marker = L.marker([v.lat, v.lon], { icon })
+            .bindPopup(`<strong>${prov.name}</strong>${battery != null ? `<br>Battery: ${battery}%` : ''}${rangeKm ? `<br>Range: ${rangeKm} km` : ''}`);
+          marker.on('click', () => routeToMarker(marker));
+          if (!hidden) marker.addTo(mobilityMap);
+          marker._provName = prov.name;
+          marker._battery = battery;
+          mobilityMarkers.push(marker);
+        });
+
+        // Create bike station markers (add to map only if not hidden)
+        visibleBikes.forEach(s => {
+          const avail = s.status.num_bikes_available || 0;
+          const docks = s.status.num_docks_available || 0;
+          const total = avail + docks;
+          const fillPct = total > 0 ? Math.round((avail / total) * 100) : null;
+          const icon = createScooterIcon(BYSYKKEL_COLOR, fillPct);
+          const marker = L.marker([s.lat, s.lon], { icon })
+            .bindPopup(`<strong>${s.name}</strong><br>${avail} bikes · ${docks} docks`);
+          marker.on('click', () => routeToMarker(marker));
+          if (!mobilityHidden.has('Bysykkel')) marker.addTo(mobilityMap);
+          marker._provName = 'Bysykkel';
+          marker._battery = fillPct;
+          marker._bikes = avail;
+          marker._docks = docks;
+          mobilityMarkers.push(marker);
+        });
+
+        // Walking route to nearest visible scooter (by actual walking distance)
+        await showNearestWalkRoute();
+
+        // Legend — uses shared function with max-distance filtering
+        updateMobilityLegend();
+        document.getElementById('mobility-status').textContent = 'Updated ' + new Date().toLocaleTimeString('nb-NO', { hour: '2-digit', minute: '2-digit' });
+        // Ensure tiles render correctly after layout changes
+        mobilityMap.invalidateSize();
+      } catch (e) {
+        showToast('Could not refresh mobility data');
+      } finally {
+        mobilityRefreshing = false;
+      }
+    }
+
+    async function fetchMobility() {
+      if (!mobilityMap) initMobilityUI();
+      refreshMobilityData();
+    }
+    fetchMobility();
+    setInterval(refreshMobilityData, 30 * 1000);
+
     // ── News (RSS) ──
     const PROXY = 'https://yahoopull.charles-rutherford93.workers.dev/?url=';
     let newsCache = {};
@@ -2480,11 +4272,20 @@
       const parser = new DOMParser();
       const doc = parser.parseFromString(xml, 'text/xml');
       const items = doc.querySelectorAll('item');
-      return Array.from(items).slice(0, 10).map(item => {
-        const title = item.querySelector('title')?.textContent || '';
+      return Array.from(items).slice(0, 20).map(item => {
+        let title = item.querySelector('title')?.textContent || '';
         const link = item.querySelector('link')?.textContent || '';
         const pubDate = item.querySelector('pubDate')?.textContent || '';
         const desc = item.querySelector('description')?.textContent || '';
+
+        // Extract source (Google News includes <source> tag)
+        const sourceEl = item.querySelector('source');
+        let source = sourceEl ? sourceEl.textContent : '';
+
+        // Google News appends " - SourceName" to title; strip it if source is known
+        if (source && title.endsWith(' - ' + source)) {
+          title = title.slice(0, -(source.length + 3));
+        }
 
         // Try to extract image from media:content, media:thumbnail, or enclosure
         let img = '';
@@ -2505,8 +4306,26 @@
           else timeAgo = `${Math.floor(diff / 1440)}d ago`;
         }
 
-        return { title, link, img, timeAgo };
+        return { title, link, img, timeAgo, source };
       });
+    }
+
+    // Deduplicate articles by title similarity (Jaccard on word sets)
+    function dedupeArticles(items) {
+      const normalize = (t) => t.toLowerCase().replace(/[^\w\s]/g, '').split(/\s+/).filter(w => w.length > 2);
+      const kept = [];
+      for (const item of items) {
+        const words = new Set(normalize(item.title));
+        let isDupe = false;
+        for (const existing of kept) {
+          const ew = new Set(normalize(existing.title));
+          const intersection = [...words].filter(w => ew.has(w)).length;
+          const union = new Set([...words, ...ew]).size;
+          if (union > 0 && intersection / union > 0.45) { isDupe = true; break; }
+        }
+        if (!isDupe) kept.push(item);
+      }
+      return kept.slice(0, 12);
     }
 
     function renderNews(items) {
@@ -2518,7 +4337,7 @@
         <a class="news-item" href="${item.link}" target="_blank" rel="noopener">
           <div class="news-item-text">
             <div class="news-item-title">${item.title}</div>
-            <div class="news-item-meta">${item.timeAgo}</div>
+            <div class="news-item-meta">${item.source ? item.source + ' · ' : ''}${item.timeAgo}</div>
           </div>
           ${item.img ? `<img class="news-item-img" src="${item.img}" alt="" loading="lazy" onerror="this.style.display='none'">` : ''}
         </a>`).join('') + '</div>';
@@ -2531,12 +4350,15 @@
       ).join('');
     }
 
+    function feedKey(feed) { return feed.type === 'search' ? 'search:' + feed.query : feed.url; }
+
     function switchTab(idx) {
       activeTab = idx;
       renderTabs();
       const feeds = getFeeds();
-      if (newsCache[feeds[idx].url]) {
-        renderNews(newsCache[feeds[idx].url]);
+      const key = feedKey(feeds[idx]);
+      if (newsCache[key]) {
+        renderNews(newsCache[key]);
       } else {
         document.getElementById('news-content').innerHTML = '<div class="loading">Loading...</div>';
         fetchFeed(feeds[idx]);
@@ -2544,16 +4366,26 @@
     }
 
     async function fetchFeed(feed) {
+      const key = feedKey(feed);
       try {
-        const res = await fetch(PROXY + encodeURIComponent(feed.url));
-        const xml = await res.text();
-        const items = parseRSS(xml);
-        newsCache[feed.url] = items;
-        if (getFeeds()[activeTab]?.url === feed.url) {
+        let items;
+        if (feed.type === 'search') {
+          // Google News RSS search with deduplication
+          const gnUrl = `https://news.google.com/rss/search?q=${encodeURIComponent('"' + feed.query + '"')}&hl=en&gl=US&ceid=US:en`;
+          const res = await fetch(PROXY + encodeURIComponent(gnUrl));
+          const xml = await res.text();
+          items = dedupeArticles(parseRSS(xml));
+        } else {
+          const res = await fetch(PROXY + encodeURIComponent(feed.url));
+          const xml = await res.text();
+          items = parseRSS(xml).slice(0, 10);
+        }
+        newsCache[key] = items;
+        if (feedKey(getFeeds()[activeTab]) === key) {
           renderNews(items);
         }
       } catch (e) {
-        if (getFeeds()[activeTab]?.url === feed.url) {
+        if (feedKey(getFeeds()[activeTab]) === key) {
           document.getElementById('news-content').innerHTML = `<div class="error">Could not load ${feed.name} feed</div>`;
         }
       }
@@ -2573,10 +4405,16 @@
     const ENTUR_QUERY = `
       query ($id: String!, $n: Int!) {
         stopPlace(id: $id) {
+          id
           name
           estimatedCalls(numberOfDepartures: $n) {
             expectedDepartureTime
             destinationDisplay { frontText }
+            quay {
+              id
+              description
+              publicCode
+            }
             serviceJourney {
               line {
                 publicCode
@@ -2626,30 +4464,83 @@
               'Content-Type': 'application/json',
               'ET-Client-Name': 'crild-dashboard'
             },
-            body: JSON.stringify({ query: ENTUR_QUERY, variables: { id: stopId, n: 6 } })
+            body: JSON.stringify({ query: ENTUR_QUERY, variables: { id: stopId, n: 20 } })
           });
           const data = await res.json();
           return data.data.stopPlace;
         }));
 
-        document.getElementById('transit-content').innerHTML = '<div class="stops-grid">' + results.filter(Boolean).map(stop => {
-          const departures = stop.estimatedCalls.map(call => {
-            const line = call.serviceJourney.line;
-            const time = formatMinutes(call.expectedDepartureTime);
-            const color = getLineColor(line.publicCode, line.transportMode);
-            return `
-              <div class="departure-item">
-                <span class="departure-line" style="background:${color}">${line.publicCode}</span>
-                <span class="departure-dest">${call.destinationDisplay.frontText}</span>
-                <span class="departure-time ${time.soon ? 'soon' : ''}">${time.text}</span>
-              </div>`;
+        // Load saved ordering
+        const cfg = loadConfig() || {};
+        const stopOrder = cfg.transitStopOrder || null;
+        const quayOrder = cfg.transitQuayOrder || {};
+
+        // Sort stops by saved order if available
+        let orderedResults = results.filter(Boolean);
+        if (stopOrder) {
+          orderedResults.sort((a, b) => {
+            const ai = stopOrder.indexOf(a.id || a.name);
+            const bi = stopOrder.indexOf(b.id || b.name);
+            if (ai === -1 && bi === -1) return 0;
+            if (ai === -1) return 1;
+            if (bi === -1) return -1;
+            return ai - bi;
+          });
+        }
+
+        document.getElementById('transit-content').innerHTML = '<div class="stops-grid">' + orderedResults.map((stop, si) => {
+          // Group departures by quay (direction/platform)
+          const quayGroups = {};
+          stop.estimatedCalls.forEach(call => {
+            const quayId = call.quay?.id || 'unknown';
+            const quayDesc = call.quay?.description || call.quay?.publicCode || '';
+            if (!quayGroups[quayId]) quayGroups[quayId] = { desc: quayDesc, calls: [] };
+            if (quayGroups[quayId].calls.length < 4) {
+              quayGroups[quayId].calls.push(call);
+            }
+          });
+
+          let quayKeys = Object.keys(quayGroups);
+          // Sort quays by saved order if available
+          const savedQuayOrder = quayOrder[stop.id || stop.name];
+          if (savedQuayOrder) {
+            quayKeys.sort((a, b) => {
+              const ai = savedQuayOrder.indexOf(a);
+              const bi = savedQuayOrder.indexOf(b);
+              if (ai === -1 && bi === -1) return 0;
+              if (ai === -1) return 1;
+              if (bi === -1) return -1;
+              return ai - bi;
+            });
+          }
+
+          const sections = quayKeys.map(qId => {
+            const group = quayGroups[qId];
+            const dirLabel = group.desc ? `<div class="departure-direction">${group.desc}</div>` : '';
+            const deps = group.calls.map(call => {
+              const line = call.serviceJourney.line;
+              const time = formatMinutes(call.expectedDepartureTime);
+              const color = getLineColor(line.publicCode, line.transportMode);
+              return `
+                <div class="departure-item">
+                  <span class="departure-line" style="background:${color}">${line.publicCode}</span>
+                  <span class="departure-dest">${call.destinationDisplay.frontText}</span>
+                  <span class="departure-time ${time.soon ? 'soon' : ''}">${time.text}</span>
+                </div>`;
+            }).join('');
+            return `<div class="departure-group" data-quay="${qId}">${dirLabel}${deps}</div>`;
           }).join('');
+
+          const stopKey = stop.id || stop.name;
           return `
-            <div class="stop-section">
-              <div class="stop-name">${stop.name}</div>
-              ${departures}
+            <div class="stop-section" data-stop="${stopKey}" draggable="true">
+              <div class="stop-name" style="cursor:grab;">${stop.name}</div>
+              ${sections}
             </div>`;
         }).join('') + '</div>';
+
+        // Setup drag-and-drop for stops and quay groups
+        setupTransitDragDrop();
         document.getElementById('transit-status').textContent = 'Updated ' + new Date().toLocaleTimeString('nb-NO', { hour: '2-digit', minute: '2-digit' });
       } catch (e) {
         document.getElementById('transit-content').innerHTML = `<div class="error">Could not load departures</div>`;
@@ -2657,6 +4548,136 @@
     }
     fetchTransit();
     setInterval(fetchTransit, 30 * 1000);
+
+    function setupTransitDragDrop() {
+      const grid = document.querySelector('.stops-grid');
+      if (!grid) return;
+      let draggedEl = null;
+      let dragType = null; // 'stop' or 'quay'
+
+      function clearIndicators() {
+        grid.querySelectorAll('.drag-above,.drag-below').forEach(el => {
+          el.classList.remove('drag-above', 'drag-below');
+        });
+      }
+
+      function getDropPosition(e, el) {
+        const rect = el.getBoundingClientRect();
+        return (e.clientY < rect.top + rect.height / 2) ? 'above' : 'below';
+      }
+
+      // Stop-level drag (handle = stop-name)
+      grid.querySelectorAll('.stop-section').forEach(section => {
+        const handle = section.querySelector('.stop-name');
+        handle.addEventListener('mousedown', (e) => {
+          if (e.target.closest('.departure-direction')) return;
+          section.setAttribute('draggable', 'true');
+        });
+        handle.addEventListener('mouseup', () => section.setAttribute('draggable', 'false'));
+
+        section.addEventListener('dragstart', (e) => {
+          if (dragType === 'quay') return;
+          draggedEl = section;
+          dragType = 'stop';
+          section.style.opacity = '0.4';
+          e.dataTransfer.effectAllowed = 'move';
+        });
+        section.addEventListener('dragend', () => {
+          section.style.opacity = '';
+          section.setAttribute('draggable', 'false');
+          clearIndicators();
+          draggedEl = null;
+          dragType = null;
+        });
+        section.addEventListener('dragover', (e) => {
+          if (dragType !== 'stop' || draggedEl === section) return;
+          e.preventDefault();
+          e.dataTransfer.dropEffect = 'move';
+          clearIndicators();
+          section.classList.add(getDropPosition(e, section) === 'above' ? 'drag-above' : 'drag-below');
+        });
+        section.addEventListener('dragleave', () => {
+          section.classList.remove('drag-above', 'drag-below');
+        });
+        section.addEventListener('drop', (e) => {
+          e.preventDefault();
+          clearIndicators();
+          if (dragType !== 'stop' || !draggedEl || draggedEl === section) return;
+          if (getDropPosition(e, section) === 'above') section.before(draggedEl);
+          else section.after(draggedEl);
+          saveTransitOrder();
+        });
+      });
+
+      // Quay-level drag (entire group is the handle)
+      grid.querySelectorAll('.departure-group').forEach(group => {
+        group.style.cursor = 'grab';
+
+        group.addEventListener('mousedown', (e) => {
+          group.setAttribute('draggable', 'true');
+          // Prevent the stop-section from becoming draggable
+          const section = group.closest('.stop-section');
+          if (section) section.setAttribute('draggable', 'false');
+          e.stopPropagation();
+        });
+        group.addEventListener('mouseup', () => {
+          group.setAttribute('draggable', 'false');
+        });
+
+        group.addEventListener('dragstart', (e) => {
+          draggedEl = group;
+          dragType = 'quay';
+          group.style.opacity = '0.4';
+          e.dataTransfer.effectAllowed = 'move';
+          e.stopPropagation();
+        });
+        group.addEventListener('dragend', () => {
+          group.style.opacity = '';
+          group.setAttribute('draggable', 'false');
+          clearIndicators();
+          draggedEl = null;
+          dragType = null;
+        });
+        group.addEventListener('dragover', (e) => {
+          if (dragType !== 'quay' || draggedEl === group) return;
+          if (draggedEl.closest('.stop-section') !== group.closest('.stop-section')) return;
+          e.preventDefault();
+          e.stopPropagation();
+          e.dataTransfer.dropEffect = 'move';
+          clearIndicators();
+          group.classList.add(getDropPosition(e, group) === 'above' ? 'drag-above' : 'drag-below');
+        });
+        group.addEventListener('dragleave', () => {
+          group.classList.remove('drag-above', 'drag-below');
+        });
+        group.addEventListener('drop', (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          clearIndicators();
+          if (dragType !== 'quay' || !draggedEl || draggedEl === group) return;
+          if (draggedEl.closest('.stop-section') !== group.closest('.stop-section')) return;
+          if (getDropPosition(e, group) === 'above') group.before(draggedEl);
+          else group.after(draggedEl);
+          saveTransitOrder();
+        });
+      });
+    }
+
+    function saveTransitOrder() {
+      const cfg = loadConfig() || {};
+      // Save stop order
+      const stops = Array.from(document.querySelectorAll('.stop-section[data-stop]'));
+      cfg.transitStopOrder = stops.map(s => s.dataset.stop);
+      // Save quay order per stop
+      cfg.transitQuayOrder = {};
+      stops.forEach(s => {
+        const quays = Array.from(s.querySelectorAll('.departure-group[data-quay]'));
+        if (quays.length > 1) {
+          cfg.transitQuayOrder[s.dataset.stop] = quays.map(q => q.dataset.quay);
+        }
+      });
+      localStorage.setItem('dashboard-config', JSON.stringify(cfg));
+    }
 
     // ── Toast Notification ──
     function showToast(message, duration = 2000) {
@@ -2691,6 +4712,8 @@
         case 'news': return getNewsSettingsHTML();
         case 'transit': return getTransitSettingsHTML();
         case 'hue': return getHueSettingsHTML();
+        case 'waste': return getWasteSettingsHTML();
+        case 'mobility': return getMobilitySettingsHTML();
         default: return '<p>No settings available.</p>';
       }
     }
@@ -2710,6 +4733,10 @@
         <div id="wp-weather-selected" style="font-size:0.85rem;color:var(--text-secondary);margin-bottom:12px;">
           Current: <strong>${loc.name}</strong> (${loc.lat.toFixed(2)}, ${loc.lon.toFixed(2)})
         </div>
+        <label style="display:flex;align-items:center;gap:8px;margin-bottom:12px;cursor:pointer;">
+          <input type="checkbox" id="wp-weather-sync" checked style="width:auto;margin:0;">
+          <span style="font-size:0.85rem;">Update waste &amp; power zone to match</span>
+        </label>
         <div class="widget-popup-actions">
           <button class="btn" onclick="resetWidget('weather')" style="margin-right:auto;font-size:0.78rem;color:var(--text-secondary);">Reset to default</button>
           <button class="btn" onclick="closeWidgetPopup()">Cancel</button>
@@ -2766,7 +4793,6 @@
       if (selectedWeatherResult) {
         cfg.weather = selectedWeatherResult;
       } else {
-        // Geocode the typed name if it differs
         const name = document.getElementById('wp-weather-search').value.trim();
         if (name && name !== getWeather().name) {
           try {
@@ -2786,11 +4812,34 @@
       if (!cfg.stops) cfg.stops = getStops();
       if (!cfg.stocks) cfg.stocks = getStocks();
       if (!cfg.feeds) cfg.feeds = getFeeds();
+
+      // Sync to other widgets if checked
+      const sync = document.getElementById('wp-weather-sync')?.checked;
+      if (sync && cfg.weather) {
+        try {
+          const WORKER = 'https://yahoopull.charles-rutherford93.workers.dev';
+          const addrRes = await fetch(`${WORKER}/?url=${encodeURIComponent(`https://ws.geonorge.no/adresser/v1/punktsok?lat=${cfg.weather.lat}&lon=${cfg.weather.lon}&radius=500&treffPerSide=1`)}`);
+          const addrData = await addrRes.json();
+          const a = addrData?.adresser?.[0];
+          if (a) {
+            cfg.waste = {
+              address: a.adressetekst,
+              kommunenr: a.kommunenummer,
+              gatekode: a.adressekode,
+              gatenavn: a.adressenavn,
+              husnr: String(a.nummer)
+            };
+            cfg.powerZone = zoneFromKommunenr(a.kommunenummer);
+          }
+        } catch (e) { /* sync failed silently, weather still saved */ }
+      }
+
       localStorage.setItem('dashboard-config', JSON.stringify(cfg));
       selectedWeatherResult = null;
       closeWidgetPopup();
-      showToast('Weather location updated');
+      showToast(sync ? 'Location updated for all widgets' : 'Weather location updated');
       fetchWeather();
+      if (sync) { fetchWaste(); fetchPower(); }
     }
 
     // ── Stocks Settings ──
@@ -2986,7 +5035,7 @@
 
     function getNewsSettingsHTML() {
       currentFeedsSelection = [...getFeeds()];
-      const activeUrls = currentFeedsSelection.map(f => f.url);
+      const activeUrls = currentFeedsSelection.filter(f => f.url).map(f => f.url);
 
       return `
         <h3>News Feeds</h3>
@@ -2998,7 +5047,12 @@
         <div class="preset-chips" id="wp-feed-presets">
           ${FEED_PRESETS.map(p => `<button class="preset-chip ${activeUrls.includes(p.url) ? 'active' : ''}" data-url="${p.url}" data-name="${p.name}" onclick="toggleFeedPreset(this)">${p.name}</button>`).join('')}
         </div>
-        <label style="margin-top:12px;">Or add a custom feed</label>
+        <label style="margin-top:12px;">Add a news search (aggregates Google News)</label>
+        <div style="display:flex;gap:8px;margin-bottom:8px;">
+          <input id="wp-feed-query" placeholder="Search term, e.g. Hawk Infinity" style="margin-bottom:0;flex:1;" onkeydown="if(event.key==='Enter')addSearchFeed()" />
+          <button class="btn" onclick="addSearchFeed()" style="white-space:nowrap;">Add</button>
+        </div>
+        <label>Or add a custom RSS feed</label>
         <div style="display:flex;gap:8px;margin-bottom:4px;">
           <input id="wp-feed-name" placeholder="Name" style="margin-bottom:0;width:120px;" />
           <input id="wp-feed-url" placeholder="RSS feed URL" style="margin-bottom:0;flex:1;" onkeydown="if(event.key==='Enter')addCustomFeed()" />
@@ -3015,14 +5069,14 @@
       if (currentFeedsSelection.length === 0) return '<span style="color:var(--text-secondary);font-size:0.85rem;">No feeds selected</span>';
       return currentFeedsSelection.map((f, i) => `
         <span class="tag-item">
-          ${f.name}
+          ${f.type === 'search' ? '&#128269; ' : ''}${f.name}
           <button class="tag-remove" onclick="removeFeed(${i})">&times;</button>
         </span>`).join('');
     }
 
     function updateFeedTags() {
       document.getElementById('wp-feeds-tags').innerHTML = renderFeedTags();
-      const activeUrls = currentFeedsSelection.map(f => f.url);
+      const activeUrls = currentFeedsSelection.filter(f => f.url).map(f => f.url);
       document.querySelectorAll('#wp-feed-presets .preset-chip').forEach(chip => {
         chip.classList.toggle('active', activeUrls.includes(chip.dataset.url));
       });
@@ -3042,6 +5096,16 @@
 
     function removeFeed(idx) {
       currentFeedsSelection.splice(idx, 1);
+      updateFeedTags();
+    }
+
+    function addSearchFeed() {
+      const input = document.getElementById('wp-feed-query');
+      const query = input.value.trim();
+      if (!query) return;
+      if (currentFeedsSelection.find(f => f.type === 'search' && f.query === query)) return;
+      currentFeedsSelection.push({ name: query, type: 'search', query });
+      input.value = '';
       updateFeedTags();
     }
 
@@ -3262,6 +5326,137 @@
       closeWidgetPopup();
       showToast('Hue scenes updated');
       fetchHue();
+    }
+
+    // ── Waste Settings ──
+    let wasteSearchTimeout = null;
+    let wasteSelectedAddress = null;
+
+    function getWasteSettingsHTML() {
+      const wasteCfg = getWaste();
+      wasteSelectedAddress = wasteCfg.gatekode ? wasteCfg : null;
+      return `
+        <h3>Waste Collection</h3>
+        <label>Search address</label>
+        <input type="text" id="wp-waste-search" value="${wasteCfg.address || ''}" placeholder="Start typing your address..." oninput="searchWasteAddress(this.value)" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:8px;font-size:0.9rem;background:var(--bg);color:var(--text);margin-bottom:4px;">
+        <div id="wp-waste-results" style="max-height:200px;overflow-y:auto;border:1px solid var(--border);border-radius:8px;display:none;"></div>
+        <div id="wp-waste-selected" style="font-size:0.8rem;color:var(--positive);margin-top:4px;">${wasteSelectedAddress ? '&#10003; ' + wasteCfg.address : ''}</div>
+        <label style="display:flex;align-items:center;gap:8px;margin-top:8px;margin-bottom:12px;cursor:pointer;">
+          <input type="checkbox" id="wp-waste-sync" checked style="width:auto;margin:0;">
+          <span style="font-size:0.85rem;">Update weather &amp; power zone to match</span>
+        </label>
+        <div class="widget-popup-actions">
+          <button class="btn" onclick="closeWidgetPopup()">Cancel</button>
+          <button class="btn btn-primary" onclick="saveWasteSettings()">Save</button>
+        </div>`;
+    }
+
+    function searchWasteAddress(query) {
+      clearTimeout(wasteSearchTimeout);
+      if (query.length < 3) {
+        document.getElementById('wp-waste-results').style.display = 'none';
+        return;
+      }
+      wasteSearchTimeout = setTimeout(async () => {
+        try {
+          const WORKER = 'https://yahoopull.charles-rutherford93.workers.dev';
+          const res = await fetch(`${WORKER}/?url=${encodeURIComponent(`https://ws.geonorge.no/adresser/v1/sok?sok=${encodeURIComponent(query)}&treffPerSide=8`)}`);
+          const data = await res.json();
+          const container = document.getElementById('wp-waste-results');
+          if (!data.adresser || data.adresser.length === 0) {
+            container.innerHTML = '<div style="padding:8px;color:var(--text-secondary);font-size:0.85rem;">No addresses found</div>';
+            container.style.display = 'block';
+            return;
+          }
+          container.innerHTML = data.adresser.map((a, i) => {
+            const display = `${a.adressetekst}, ${a.kommunenavn}`;
+            return `<div style="padding:8px;border-bottom:1px solid var(--border);cursor:pointer;font-size:0.85rem;" onmouseover="this.style.background='var(--border)'" onmouseout="this.style.background=''" onclick="selectWasteAddress(${i})" data-addr='${JSON.stringify({ address: a.adressetekst, kommunenr: a.kommunenummer, gatekode: a.adressekode, husnr: String(a.nummer), display }).replace(/'/g, "&#39;")}'>${display}</div>`;
+          }).join('');
+          container.style.display = 'block';
+          // Store addresses for selection
+          container._addresses = data.adresser;
+        } catch (e) {
+          document.getElementById('wp-waste-results').innerHTML = '<div style="padding:8px;color:var(--negative);font-size:0.85rem;">Search failed</div>';
+          document.getElementById('wp-waste-results').style.display = 'block';
+        }
+      }, 300);
+    }
+
+    function selectWasteAddress(idx) {
+      const container = document.getElementById('wp-waste-results');
+      const addrs = container._addresses;
+      if (!addrs || !addrs[idx]) return;
+      const a = addrs[idx];
+      const pt = a.representasjonspunkt || {};
+      wasteSelectedAddress = {
+        address: a.adressetekst,
+        kommunenr: a.kommunenummer,
+        gatekode: a.adressekode,
+        gatenavn: a.adressenavn,
+        husnr: String(a.nummer),
+        lat: pt.lat,
+        lon: pt.lon
+      };
+      document.getElementById('wp-waste-search').value = a.adressetekst;
+      document.getElementById('wp-waste-selected').innerHTML = '&#10003; ' + a.adressetekst + ', ' + a.kommunenavn;
+      container.style.display = 'none';
+    }
+
+    function saveWasteSettings() {
+      if (!wasteSelectedAddress) {
+        showToast('Please select an address from the search results');
+        return;
+      }
+      const cfg = loadConfig() || {};
+      cfg.waste = wasteSelectedAddress;
+
+      // Sync to other widgets if checked
+      const sync = document.getElementById('wp-waste-sync')?.checked;
+      if (sync && wasteSelectedAddress.lat && wasteSelectedAddress.lon) {
+        const name = wasteSelectedAddress.gatenavn || wasteSelectedAddress.address || 'Home';
+        cfg.weather = { name, lat: wasteSelectedAddress.lat, lon: wasteSelectedAddress.lon };
+        cfg.powerZone = zoneFromKommunenr(wasteSelectedAddress.kommunenr);
+      }
+
+      localStorage.setItem('dashboard-config', JSON.stringify(cfg));
+      closeWidgetPopup();
+      showToast(sync ? 'Location updated for all widgets' : 'Waste address updated');
+      fetchWaste();
+      if (sync) { fetchWeather(); fetchPower(); }
+    }
+
+    // ── Mobility Settings ──
+    function getMobilitySettingsHTML() {
+      const maxDist = getMobilityMaxDistance();
+      const cfg = loadConfig();
+      const resetOn = cfg?.mobility?.resetProvidersOnRefresh !== false;
+      return `
+        <h3>Mobility Settings</h3>
+        <label>Max walking distance (km)</label>
+        <input type="number" id="wp-mobility-maxdist" value="${maxDist}" min="0.1" max="10" step="0.1" />
+        <p class="hint">Providers with no devices within this distance won't appear in the legend.</p>
+        <label style="display:flex;align-items:center;gap:8px;margin-bottom:12px;cursor:pointer;">
+          <input type="checkbox" id="wp-mobility-reset" ${resetOn ? 'checked' : ''} style="width:auto;margin:0;">
+          <span style="font-size:0.85rem;">Show all providers on refresh</span>
+        </label>
+        <div class="widget-popup-actions">
+          <button class="btn" onclick="closeWidgetPopup()">Cancel</button>
+          <button class="btn btn-primary" onclick="saveMobilitySettings()">Save</button>
+        </div>`;
+    }
+
+    function saveMobilitySettings() {
+      const val = parseFloat(document.getElementById('wp-mobility-maxdist').value);
+      if (!val || val <= 0) { showToast('Please enter a valid distance'); return; }
+      const resetOn = document.getElementById('wp-mobility-reset').checked;
+      const cfg = loadConfig() || {};
+      if (!cfg.mobility) cfg.mobility = {};
+      cfg.mobility.maxDistKm = val;
+      cfg.mobility.resetProvidersOnRefresh = resetOn;
+      localStorage.setItem('dashboard-config', JSON.stringify(cfg));
+      closeWidgetPopup();
+      showToast('Mobility settings updated');
+      refreshMobilityData();
     }
 
     // Load scenes list when Hue settings open
@@ -3508,6 +5703,9 @@
     });
 
     // ── Layout Settings ──
+    const ALL_WIDGETS = ['weather', 'sensors', 'hue', 'stocks', 'power', 'news', 'transit', 'waste', 'mobility'];
+    const WIDGET_LABELS = { weather: 'Weather', sensors: 'Home sensors', hue: 'Lights', stocks: 'Markets', power: 'Power price', news: 'News', transit: 'Departures', waste: 'Waste collection', mobility: 'Nearby mobility' };
+
     function getLayoutConfig() {
       const saved = localStorage.getItem('dashboard-layout');
       if (saved) return JSON.parse(saved);
@@ -3535,6 +5733,16 @@
       // Width
       container.classList.remove('width-narrow', 'width-default', 'width-wide', 'width-full');
       container.classList.add('width-' + cfg.width);
+
+      // Widget visibility
+      const hidden = cfg.hiddenWidgets || [];
+      grid.querySelectorAll('.card[data-widget]').forEach(card => {
+        card.style.display = hidden.includes(card.dataset.widget) ? 'none' : '';
+      });
+      // Fix Leaflet map size when mobility widget becomes visible
+      if (mobilityMap && !hidden.includes('mobility')) {
+        setTimeout(() => mobilityMap.invalidateSize(), 100);
+      }
     }
 
     function openLayoutSettings() {
@@ -3585,6 +5793,16 @@
           </div>
         </div>
 
+        <div class="layout-option-group">
+          <label>Widgets</label>
+          <div style="display:flex;flex-wrap:wrap;gap:6px;">
+            ${ALL_WIDGETS.map(w => {
+              const hidden = (cfg.hiddenWidgets || []).includes(w);
+              return `<button class="layout-choice${hidden ? '' : ' selected'}" onclick="toggleWidget('${w}', this)" style="font-size:0.75rem;padding:6px 12px;">${WIDGET_LABELS[w]}</button>`;
+            }).join('')}
+          </div>
+        </div>
+
         <div class="widget-popup-actions">
           <button class="btn" onclick="resetLayout()" style="margin-right:auto;font-size:0.78rem;color:var(--text-secondary);">Reset to default</button>
           <button class="btn" onclick="closeWidgetPopup()">Close</button>
@@ -3606,6 +5824,26 @@
       btn.classList.add('selected');
     }
 
+    function toggleWidget(widget, btn) {
+      const cfg = getLayoutConfig();
+      cfg.hiddenWidgets = cfg.hiddenWidgets || [];
+      const idx = cfg.hiddenWidgets.indexOf(widget);
+      if (idx >= 0) {
+        cfg.hiddenWidgets.splice(idx, 1);
+        btn.classList.add('selected');
+      } else {
+        cfg.hiddenWidgets.push(widget);
+        btn.classList.remove('selected');
+        // Remove from collapsed state when hidden
+        const collapsed = JSON.parse(localStorage.getItem('dashboard-collapsed') || '[]');
+        const ci = collapsed.indexOf(widget);
+        if (ci >= 0) { collapsed.splice(ci, 1); localStorage.setItem('dashboard-collapsed', JSON.stringify(collapsed)); }
+      }
+      saveLayoutConfig(cfg);
+      applyLayoutConfig();
+      applyAdaptiveLayout();
+    }
+
     function resetLayout() {
       localStorage.removeItem('dashboard-layout');
       applyLayoutConfig();
@@ -3622,8 +5860,8 @@
       const grid = document.querySelector('.grid');
       if (!grid) return;
       const cards = Array.from(grid.querySelectorAll('.card[data-widget]'));
-      const smallWidgets = new Set(['clock', 'weather', 'sensors', 'hue', 'power']);
-      const mediumWidgets = new Set(['stocks', 'news', 'transit']);
+      const smallWidgets = new Set(['clock', 'weather', 'sensors', 'hue', 'power', 'waste']);
+      const mediumWidgets = new Set(['stocks', 'news', 'transit', 'mobility']);
       const layoutCfg = getLayoutConfig();
       const cols = layoutCfg.columns;
 

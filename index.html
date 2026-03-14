@@ -5342,20 +5342,51 @@
     async function findNearestStopsByWalking(lat, lon, count) {
       try {
         // Fetch more candidates than needed, then rank by walking distance
-        const res = await fetch(`https://api.entur.io/geocoder/v1/reverse?point.lat=${lat}&point.lon=${lon}&layers=venue&size=8&boundary.circle.radius=2`, {
+        const res = await fetch(`https://api.entur.io/geocoder/v1/reverse?point.lat=${lat}&point.lon=${lon}&layers=venue&size=10&boundary.circle.radius=2`, {
           headers: { 'ET-Client-Name': 'crild-dashboard' }
         });
         const data = await res.json();
         const features = (data.features || []).filter(f => f.properties.id.startsWith('NSR:StopPlace:'));
         if (features.length === 0) return [];
-        // Get walking distance to each candidate in parallel
-        const routes = await Promise.all(features.map(async f => {
+        // Get walking distance + lines served for each candidate in parallel
+        const candidates = await Promise.all(features.map(async f => {
           const [fLon, fLat] = f.geometry.coordinates;
-          const route = await fetchWalkingRoute(lat, lon, fLat, fLon);
-          return { id: f.properties.id, name: f.properties.name, walkDist: route ? route.distanceM : Infinity };
+          const [route, linesRes] = await Promise.all([
+            fetchWalkingRoute(lat, lon, fLat, fLon),
+            fetch('https://api.entur.io/journey-planner/v3/graphql', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', 'ET-Client-Name': 'crild-dashboard' },
+              body: JSON.stringify({ query: `query($id:String!){stopPlace(id:$id){estimatedCalls(numberOfDepartures:20){serviceJourney{line{publicCode transportMode}}}}}`, variables: { id: f.properties.id } })
+            }).then(r => r.json()).catch(() => null)
+          ]);
+          const lines = new Set();
+          (linesRes?.data?.stopPlace?.estimatedCalls || []).forEach(c => {
+            const l = c.serviceJourney?.line;
+            if (l?.publicCode) lines.add(l.publicCode);
+          });
+          return { id: f.properties.id, name: f.properties.name, walkDist: route ? route.distanceM : Infinity, lines };
         }));
-        routes.sort((a, b) => a.walkDist - b.walkDist);
-        return routes.slice(0, count || 2);
+        candidates.sort((a, b) => a.walkDist - b.walkDist);
+        // Pick first stop, then find next stop that adds unique lines
+        const picked = [candidates[0]];
+        const coveredLines = new Set(candidates[0].lines);
+        for (let i = 1; i < candidates.length && picked.length < (count || 2); i++) {
+          const c = candidates[i];
+          // Check if this stop has at least one line not already covered
+          const hasUnique = [...c.lines].some(l => !coveredLines.has(l));
+          if (hasUnique) {
+            picked.push(c);
+            c.lines.forEach(l => coveredLines.add(l));
+          }
+        }
+        // If we couldn't find enough diverse stops, fill with closest remaining
+        if (picked.length < (count || 2)) {
+          for (const c of candidates) {
+            if (picked.length >= (count || 2)) break;
+            if (!picked.find(p => p.id === c.id)) picked.push(c);
+          }
+        }
+        return picked;
       } catch (e) { return []; }
     }
 

@@ -26,13 +26,18 @@ async function handleRequest(request) {
   var url = new URL(request.url);
   var path = url.pathname;
 
+  // Handle CORS preflight first (before any auth check)
+  if (request.method === "OPTIONS") {
+    return new Response(null, {headers: {"Access-Control-Allow-Origin": "*", "Access-Control-Allow-Methods": "GET,POST,OPTIONS", "Access-Control-Allow-Headers": "Content-Type,X-Dashboard-Token"}});
+  }
+
   // Protected endpoints: netatmo and hue
   if (path.startsWith("/netatmo") || path.startsWith("/hue") || path.startsWith("/auth/") || path.startsWith("/callback/")) {
     // Allow callbacks (they come from OAuth providers, not the dashboard)
     if (!path.startsWith("/callback/")) {
       if (!checkDashboardToken(request)) {
         return new Response(JSON.stringify({error: "Unauthorized"}), {
-          status: 403,
+          status: 401,
           headers: {"Content-Type": "application/json", "Access-Control-Allow-Origin": "*"}
         });
       }
@@ -296,10 +301,6 @@ async function handleRequest(request) {
       return new Response(JSON.stringify({error: "Config not found"}), {status: 404, headers: {"Content-Type": "application/json", "Access-Control-Allow-Origin": "*"}});
     }
     return new Response(configData, {headers: {"Content-Type": "application/json", "Access-Control-Allow-Origin": "*"}});
-  }
-
-  if (request.method === "OPTIONS") {
-    return new Response(null, {headers: {"Access-Control-Allow-Origin": "*", "Access-Control-Allow-Methods": "GET,POST,OPTIONS", "Access-Control-Allow-Headers": "Content-Type,X-Dashboard-Token"}});
   }
 
   var target = url.searchParams.get("url");

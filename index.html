@@ -3234,7 +3234,7 @@
     async function fetchSensors() {
       try {
         const res = await workerFetch('/netatmo/data');
-        if (res.status === 401) {
+        if (res.status === 401 || res.status === 403) {
           document.getElementById('sensors-content').innerHTML = `<div style="color:var(--text-secondary);font-size:0.85rem;line-height:1.5;">Requires Netatmo authorization.<br>Dashboard owner: <a href="${workerAuthUrl('/auth/netatmo')}" target="_blank" style="color:var(--accent)">authorize here</a></div>`;
           return;
         }
@@ -3392,7 +3392,7 @@
     async function fetchHue() {
       try {
         const res = await workerFetch('/hue/groups');
-        if (res.status === 401) {
+        if (res.status === 401 || res.status === 403) {
           document.getElementById('hue-content').innerHTML = `<div style="color:var(--text-secondary);font-size:0.85rem;line-height:1.5;">Requires Hue authorization.<br>Dashboard owner: <a href="${workerAuthUrl('/auth/hue')}" target="_blank" style="color:var(--accent)">authorize here</a></div>`;
           return;
         }

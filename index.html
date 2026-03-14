@@ -50,6 +50,8 @@
       justify-content: space-between;
       align-items: center;
       margin-bottom: 24px;
+      flex-wrap: wrap;
+      gap: 8px;
     }
 
     header h1 {
@@ -76,8 +78,22 @@
 
     .grid {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+      grid-template-columns: repeat(2, 1fr);
       gap: 16px;
+    }
+
+    /* Adaptive layout spans assigned by JS */
+    .card.span-full { grid-column: 1 / -1; }
+    .card.span-half { grid-column: span 1; }
+
+    @media (max-width: 700px) {
+      .grid {
+        grid-template-columns: 1fr;
+      }
+      .card.span-full,
+      .card.span-half {
+        grid-column: 1 / -1;
+      }
     }
 
     .card {
@@ -86,7 +102,19 @@
       border-radius: var(--radius);
       padding: 20px;
       box-shadow: var(--shadow);
-      transition: background 0.3s, border-color 0.3s;
+      position: relative;
+    }
+
+    .card:hover {
+      box-shadow: 0 2px 8px rgba(0,0,0,0.12);
+    }
+
+    [data-theme="dark"] .card:hover {
+      box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+    }
+
+    .card {
+      transition: background 0.3s, border-color 0.3s, box-shadow 0.2s, transform 0.25s ease, opacity 0.25s ease;
     }
 
     .card-header {
@@ -94,6 +122,21 @@
       justify-content: space-between;
       align-items: center;
       margin-bottom: 16px;
+      cursor: grab;
+    }
+
+    .card-header:active {
+      cursor: grabbing;
+    }
+
+    .card.dragging {
+      opacity: 0.4;
+      transform: scale(0.97);
+    }
+
+    .card.drag-over {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 2px var(--accent), var(--shadow);
     }
 
     .card-title {
@@ -107,20 +150,6 @@
     .card-status {
       font-size: 0.7rem;
       color: var(--text-secondary);
-    }
-
-    /* Clock */
-    .clock-time {
-      font-size: 3.5rem;
-      font-weight: 300;
-      letter-spacing: -0.02em;
-      font-variant-numeric: tabular-nums;
-    }
-
-    .clock-date {
-      font-size: 1rem;
-      color: var(--text-secondary);
-      margin-top: 4px;
     }
 
     /* Weather */
@@ -272,7 +301,7 @@
 
     .stock-chart {
       width: 100%;
-      height: 120px;
+      height: 140px;
       display: block;
       cursor: crosshair;
     }
@@ -297,6 +326,156 @@
     .chart-tooltip-time {
       color: var(--text-secondary);
       font-size: 0.75rem;
+    }
+
+    /* News */
+    .news-tabs {
+      display: flex;
+      gap: 4px;
+      margin-bottom: 14px;
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 8px;
+    }
+
+    .news-tab {
+      background: none;
+      border: none;
+      color: var(--text-secondary);
+      font-size: 0.8rem;
+      font-weight: 600;
+      padding: 4px 12px;
+      border-radius: 12px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .news-tab.active {
+      background: var(--accent);
+      color: #fff;
+    }
+
+    .news-item {
+      display: flex;
+      gap: 12px;
+      padding: 10px 0;
+      border-bottom: 1px solid var(--border);
+      text-decoration: none;
+      color: var(--text);
+      transition: opacity 0.2s;
+    }
+
+    .news-item:last-child {
+      border-bottom: none;
+      padding-bottom: 0;
+    }
+
+    .news-item:hover {
+      opacity: 0.7;
+    }
+
+    .news-item-text {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .news-item-title {
+      font-size: 0.9rem;
+      font-weight: 500;
+      line-height: 1.3;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+
+    .news-item-meta {
+      font-size: 0.7rem;
+      color: var(--text-secondary);
+      margin-top: 3px;
+    }
+
+    .news-item-img {
+      width: 64px;
+      height: 48px;
+      border-radius: 6px;
+      object-fit: cover;
+      flex-shrink: 0;
+    }
+
+    .news-list {
+      max-height: 400px;
+      overflow-y: auto;
+      scrollbar-width: thin;
+    }
+
+    .news-list::-webkit-scrollbar {
+      width: 4px;
+    }
+
+    .news-list::-webkit-scrollbar-thumb {
+      background: var(--border);
+      border-radius: 2px;
+    }
+
+    /* Sensors */
+    .sensors-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+      gap: 10px;
+    }
+
+    .sensor-card {
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 14px;
+      text-align: center;
+    }
+
+    .sensor-name {
+      font-size: 0.75rem;
+      color: var(--text-secondary);
+      font-weight: 500;
+      margin-bottom: 6px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .sensor-value {
+      font-size: 1.8rem;
+      font-weight: 300;
+      letter-spacing: -0.02em;
+    }
+
+    .sensor-unit {
+      font-size: 0.75rem;
+      color: var(--text-secondary);
+    }
+
+    .sensor-detail {
+      font-size: 0.7rem;
+      color: var(--text-secondary);
+      margin-top: 4px;
+    }
+
+    .co2-chart-container {
+      margin-top: 12px;
+      padding-top: 10px;
+      border-top: 1px solid var(--border);
+    }
+
+    .co2-chart-label {
+      font-size: 0.75rem;
+      font-weight: 500;
+      color: var(--text-secondary);
+      margin-bottom: 6px;
+    }
+
+    .co2-chart {
+      width: 100%;
+      height: 80px;
+      display: block;
+      cursor: crosshair;
     }
 
     /* Power prices */
@@ -406,90 +585,29 @@
       margin-bottom: 0;
     }
 
-    /* Settings panel */
-    .settings-btn {
-      background: var(--bg-card);
-      border: 1px solid var(--border);
-      color: var(--text);
-      padding: 8px 16px;
-      border-radius: 20px;
-      cursor: pointer;
-      font-size: 0.85rem;
-      font-weight: 500;
-      transition: all 0.2s;
-      margin-right: 8px;
-    }
-
-    .settings-btn:hover {
-      border-color: var(--accent);
-    }
-
-    .settings-overlay {
-      display: none;
+    /* Toast notification */
+    .toast {
       position: fixed;
-      inset: 0;
-      background: rgba(0,0,0,0.5);
-      z-index: 100;
-      align-items: center;
-      justify-content: center;
-    }
-
-    .settings-overlay.open {
-      display: flex;
-    }
-
-    .settings-panel {
+      bottom: 24px;
+      left: 50%;
+      transform: translateX(-50%) translateY(80px);
       background: var(--bg-card);
       border: 1px solid var(--border);
-      border-radius: var(--radius);
-      padding: 24px;
-      width: 90%;
-      max-width: 500px;
-      max-height: 80vh;
-      overflow-y: auto;
-    }
-
-    .settings-panel h2 {
-      font-size: 1.2rem;
-      margin-bottom: 16px;
-    }
-
-    .settings-panel label {
-      display: block;
+      color: var(--text);
+      padding: 10px 20px;
+      border-radius: 12px;
       font-size: 0.85rem;
       font-weight: 500;
-      margin-bottom: 4px;
-      color: var(--text-secondary);
+      box-shadow: 0 4px 16px rgba(0,0,0,0.15);
+      z-index: 500;
+      transition: transform 0.3s ease, opacity 0.3s ease;
+      opacity: 0;
+      pointer-events: none;
     }
 
-    .settings-panel input {
-      width: 100%;
-      padding: 10px 12px;
-      border: 1px solid var(--border);
-      border-radius: 10px;
-      background: var(--bg);
-      color: var(--text);
-      font-size: 0.9rem;
-      margin-bottom: 12px;
-    }
-
-    .settings-panel input:focus {
-      outline: none;
-      border-color: var(--accent);
-    }
-
-    .settings-panel .hint {
-      font-size: 0.75rem;
-      color: var(--text-secondary);
-      margin-top: -8px;
-      margin-bottom: 12px;
-    }
-
-    .settings-actions {
-      display: flex;
-      gap: 8px;
-      justify-content: flex-end;
-      margin-top: 8px;
+    .toast.visible {
+      transform: translateX(-50%) translateY(0);
+      opacity: 1;
     }
 
     .btn {
@@ -522,50 +640,381 @@
       font-size: 0.85rem;
     }
 
+    /* Inline widget edit button */
+    .card-edit-btn {
+      background: none;
+      border: none;
+      color: var(--text-secondary);
+      cursor: pointer;
+      padding: 4px 8px;
+      border-radius: 8px;
+      font-size: 0.8rem;
+      transition: all 0.2s;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      opacity: 0;
+      white-space: nowrap;
+    }
+
+    .card-edit-btn .edit-label {
+      font-size: 0.72rem;
+      font-weight: 500;
+      letter-spacing: 0.02em;
+    }
+
+    .card:hover .card-edit-btn,
+    .card-edit-btn:focus {
+      opacity: 1;
+    }
+
+    .card-edit-btn:hover {
+      background: var(--border);
+      color: var(--text);
+    }
+
+    @media (max-width: 500px) {
+      .card-edit-btn .edit-label {
+        display: none;
+      }
+    }
+
+    .card-header-right {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    /* Widget popup settings */
+    .widget-popup-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.45);
+      z-index: 200;
+      align-items: center;
+      justify-content: center;
+      animation: fadeIn 0.15s ease;
+    }
+
+    .widget-popup-overlay.open {
+      display: flex;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; }
+      to { opacity: 1; }
+    }
+
+    @keyframes slideUp {
+      from { transform: translateY(16px); opacity: 0; }
+      to { transform: translateY(0); opacity: 1; }
+    }
+
+    .widget-popup {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 24px;
+      width: 90%;
+      max-width: 480px;
+      max-height: 80vh;
+      overflow-y: auto;
+      animation: slideUp 0.2s ease;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.2);
+      scrollbar-width: thin;
+    }
+
+    .widget-popup::-webkit-scrollbar {
+      width: 4px;
+    }
+
+    .widget-popup::-webkit-scrollbar-thumb {
+      background: var(--border);
+      border-radius: 2px;
+    }
+
+    .widget-popup h3 {
+      font-size: 1.1rem;
+      font-weight: 600;
+      margin-bottom: 16px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .widget-popup label {
+      display: block;
+      font-size: 0.85rem;
+      font-weight: 500;
+      margin-bottom: 4px;
+      color: var(--text-secondary);
+    }
+
+    .widget-popup input, .widget-popup select {
+      width: 100%;
+      padding: 10px 12px;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: var(--bg);
+      color: var(--text);
+      font-size: 0.9rem;
+      margin-bottom: 12px;
+      transition: border-color 0.2s;
+    }
+
+    .widget-popup input:focus, .widget-popup select:focus {
+      outline: none;
+      border-color: var(--accent);
+    }
+
+    .widget-popup .hint {
+      font-size: 0.75rem;
+      color: var(--text-secondary);
+      margin-top: -8px;
+      margin-bottom: 12px;
+    }
+
+    .widget-popup-actions {
+      display: flex;
+      gap: 8px;
+      justify-content: flex-end;
+      margin-top: 16px;
+      padding-top: 12px;
+      border-top: 1px solid var(--border);
+    }
+
+    /* Preset chips */
+    .preset-chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-bottom: 12px;
+    }
+
+    .preset-chip {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 5px 12px;
+      border-radius: 16px;
+      font-size: 0.78rem;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.2s;
+      white-space: nowrap;
+    }
+
+    .preset-chip:hover {
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+
+    .preset-chip.active {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: #fff;
+    }
+
+    /* Tag list for removable items */
+    .tag-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-bottom: 12px;
+    }
+
+    .tag-item {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      padding: 5px 10px;
+      border-radius: 16px;
+      font-size: 0.8rem;
+      font-weight: 500;
+    }
+
+    .tag-remove {
+      background: none;
+      border: none;
+      color: var(--text-secondary);
+      cursor: pointer;
+      font-size: 1rem;
+      line-height: 1;
+      padding: 0 2px;
+      transition: color 0.2s;
+    }
+
+    .tag-remove:hover {
+      color: var(--negative);
+    }
+
+    /* Search results dropdown */
+    .search-results {
+      position: absolute;
+      top: 100%;
+      left: 0;
+      right: 0;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      max-height: 200px;
+      overflow-y: auto;
+      z-index: 300;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.15);
+      display: none;
+    }
+
+    .search-results.visible {
+      display: block;
+    }
+
+    .search-result-item {
+      padding: 10px 12px;
+      cursor: pointer;
+      font-size: 0.85rem;
+      border-bottom: 1px solid var(--border);
+      transition: background 0.15s;
+    }
+
+    .search-result-item:last-child {
+      border-bottom: none;
+    }
+
+    .search-result-item:hover {
+      background: var(--bg);
+    }
+
+    .search-result-item .result-name {
+      font-weight: 500;
+    }
+
+    .search-result-item .result-detail {
+      font-size: 0.75rem;
+      color: var(--text-secondary);
+      margin-top: 2px;
+    }
+
+    .search-wrapper {
+      position: relative;
+    }
+
     @media (max-width: 400px) {
       .container { padding: 16px 12px; }
       .clock-time { font-size: 2.5rem; }
       .weather-temp { font-size: 2rem; }
       .grid { grid-template-columns: 1fr; }
     }
+
+    /* Touch devices: always show edit buttons */
+    @media (hover: none) {
+      .card-edit-btn {
+        opacity: 0.7;
+      }
+    }
+
+    /* Mobile popup adjustments */
+    @media (max-width: 500px) {
+      .widget-popup {
+        width: 95%;
+        padding: 20px 16px;
+        max-height: 85vh;
+      }
+
+      .widget-popup h3 {
+        font-size: 1rem;
+      }
+
+      .preset-chips {
+        gap: 5px;
+      }
+
+      .preset-chip {
+        padding: 4px 10px;
+        font-size: 0.75rem;
+      }
+
+      .tag-item {
+        font-size: 0.75rem;
+        padding: 4px 8px;
+      }
+    }
+
+    /* Smooth scrollbar for search results */
+    .search-results {
+      scrollbar-width: thin;
+    }
+
+    .search-results::-webkit-scrollbar {
+      width: 4px;
+    }
+
+    .search-results::-webkit-scrollbar-thumb {
+      background: var(--border);
+      border-radius: 2px;
+    }
+
+    /* Button hover states */
+    .btn:hover {
+      border-color: var(--accent);
+    }
+
+    .btn-primary:hover {
+      opacity: 0.9;
+      box-shadow: 0 2px 8px rgba(0,113,227,0.3);
+    }
   </style>
 </head>
 <body>
   <div class="container">
     <header>
-      <h1>Dashboard</h1>
       <div>
-        <button class="settings-btn" onclick="openSettings()">Settings</button>
-        <button class="theme-toggle" onclick="toggleTheme()">Light</button>
+        <h1 style="display:inline;">Dashboard</h1>
+        <span class="clock-time" id="clock-time" style="font-size:1.5rem;font-weight:300;margin-left:12px;font-variant-numeric:tabular-nums;letter-spacing:-0.02em;">--:--:--</span>
+        <span class="clock-date" id="clock-date" style="font-size:0.85rem;color:var(--text-secondary);margin-left:8px;"></span>
+      </div>
+      <div style="display:flex;gap:8px;">
+        <button class="theme-toggle" onclick="openSharePanel()">Share</button>
+        <button class="theme-toggle" id="theme-btn" onclick="toggleTheme()">Light</button>
       </div>
     </header>
 
     <div class="grid">
-      <!-- Clock -->
-      <div class="card">
-        <div class="card-header">
-          <span class="card-title">Clock</span>
-        </div>
-        <div class="clock-time" id="clock-time">--:--:--</div>
-        <div class="clock-date" id="clock-date"></div>
-      </div>
-
       <!-- Weather -->
-      <div class="card">
+      <div class="card card-narrow" data-widget="weather">
         <div class="card-header">
           <span class="card-title">Weather</span>
-          <span class="card-status" id="weather-status"></span>
+          <div class="card-header-right">
+            <span class="card-status" id="weather-status"></span>
+            <button class="card-edit-btn" onclick="openWidgetSettings('weather')" title="Edit weather settings">&#9998;<span class="edit-label">Edit</span></button>
+          </div>
         </div>
         <div id="weather-content">
           <div class="loading">Loading weather...</div>
         </div>
       </div>
 
+      <!-- Sensors -->
+      <div class="card card-narrow" data-widget="sensors">
+        <div class="card-header">
+          <span class="card-title">Home</span>
+          <span class="card-status" id="sensors-status"></span>
+        </div>
+        <div id="sensors-content">
+          <div class="loading">Loading sensors...</div>
+        </div>
+      </div>
+
       <!-- Stocks -->
-      <div class="card" style="grid-column: 1 / -1;">
+      <div class="card card-wide" data-widget="stocks">
         <div class="card-header">
           <span class="card-title">Markets</span>
-          <span class="card-status" id="stocks-status"></span>
+          <div class="card-header-right">
+            <span class="card-status" id="stocks-status"></span>
+            <button class="card-edit-btn" onclick="openWidgetSettings('stocks')" title="Edit market settings">&#9998;<span class="edit-label">Edit</span></button>
+          </div>
         </div>
         <div id="stocks-content">
           <div class="loading">Loading markets...</div>
@@ -573,7 +1022,7 @@
       </div>
 
       <!-- Power prices -->
-      <div class="card" style="grid-column: 1 / -1;">
+      <div class="card card-wide" data-widget="power">
         <div class="card-header">
           <span class="card-title" id="power-title">Power price &mdash; Oslo</span>
           <span class="card-status" id="power-status"></span>
@@ -583,11 +1032,29 @@
         </div>
       </div>
 
+      <!-- News -->
+      <div class="card card-wide" data-widget="news">
+        <div class="card-header">
+          <span class="card-title">News</span>
+          <div class="card-header-right">
+            <span class="card-status" id="news-status"></span>
+            <button class="card-edit-btn" onclick="openWidgetSettings('news')" title="Edit news feeds">&#9998;<span class="edit-label">Edit</span></button>
+          </div>
+        </div>
+        <div id="news-tabs" class="news-tabs"></div>
+        <div id="news-content">
+          <div class="loading">Loading news...</div>
+        </div>
+      </div>
+
       <!-- Transit -->
-      <div class="card" style="grid-column: 1 / -1;">
+      <div class="card card-wide" data-widget="transit">
         <div class="card-header">
           <span class="card-title">Departures</span>
-          <span class="card-status" id="transit-status"></span>
+          <div class="card-header-right">
+            <span class="card-status" id="transit-status"></span>
+            <button class="card-edit-btn" onclick="openWidgetSettings('transit')" title="Edit transit stops">&#9998;<span class="edit-label">Edit</span></button>
+          </div>
         </div>
         <div id="transit-content">
           <div class="loading">Loading departures...</div>
@@ -596,28 +1063,55 @@
     </div>
   </div>
 
-  <!-- Settings overlay -->
-  <div class="settings-overlay" id="settings-overlay" onclick="closeSettings(event)">
-    <div class="settings-panel" onclick="event.stopPropagation()">
-      <h2>Settings</h2>
-      <label for="setting-weather">Weather location</label>
-      <input id="setting-weather" placeholder="e.g. Bestum, Oslo" />
-      <p class="hint">Place name — coordinates are looked up automatically.</p>
+  <!-- Widget settings popup -->
+  <div class="widget-popup-overlay" id="widget-popup-overlay" onclick="closeWidgetPopup(event)">
+    <div class="widget-popup" id="widget-popup" onclick="event.stopPropagation()">
+      <!-- Content dynamically injected -->
+    </div>
+  </div>
 
-      <label for="setting-stops">Ruter stop IDs (comma-separated)</label>
-      <input id="setting-stops" placeholder="e.g. NSR:StopPlace:58366, NSR:StopPlace:6075" />
-      <p class="hint">Find IDs at <a href="https://stoppested.entur.org" target="_blank" style="color:var(--accent)">stoppested.entur.org</a></p>
+  <!-- Share popup -->
+  <div class="widget-popup-overlay" id="share-overlay" onclick="closeSharePanel(event)">
+    <div class="widget-popup" onclick="event.stopPropagation()" style="max-width:440px;">
+      <h3>Share & Save</h3>
 
-      <label for="setting-stocks">Stock symbols (comma-separated)</label>
-      <input id="setting-stocks" placeholder="e.g. ^GSPC, OSEBX.OL" />
-      <p class="hint">Yahoo Finance symbols. Use .OL suffix for Oslo stocks.</p>
+      <label>Save your setup to the cloud</label>
+      <p class="hint">Get a link you can use on any device or share with others.</p>
+      <button class="btn btn-primary" onclick="saveConfigToCloud()" id="share-save-btn" style="width:100%;margin-bottom:16px;">Generate share link</button>
+      <div id="share-link-result" style="display:none;margin-bottom:16px;">
+        <label>Your link</label>
+        <div style="display:flex;gap:8px;">
+          <input id="share-link-input" readonly style="margin-bottom:0;flex:1;font-size:0.8rem;" />
+          <button class="btn" onclick="copyShareLink()">Copy</button>
+        </div>
+      </div>
 
-      <div class="settings-actions">
-        <button class="btn" onclick="closeSettings()">Cancel</button>
-        <button class="btn btn-primary" onclick="saveSettings()">Save</button>
+      <div style="border-top:1px solid var(--border);padding-top:14px;margin-top:4px;">
+        <label>Load a saved setup</label>
+        <div style="display:flex;gap:8px;">
+          <input id="share-load-code" placeholder="Paste code or link" style="margin-bottom:0;flex:1;" onkeydown="if(event.key==='Enter')loadConfigFromCloud()" />
+          <button class="btn" onclick="loadConfigFromCloud()">Load</button>
+        </div>
+        <div id="share-load-result" class="hint" style="margin-top:6px;"></div>
+      </div>
+
+      <div style="border-top:1px solid var(--border);padding-top:14px;margin-top:14px;">
+        <label>Export / Import JSON</label>
+        <div style="display:flex;gap:8px;margin-top:4px;">
+          <button class="btn" onclick="exportConfig()" style="flex:1;">Export JSON</button>
+          <button class="btn" onclick="document.getElementById('import-file').click()" style="flex:1;">Import JSON</button>
+          <input type="file" id="import-file" accept=".json" style="display:none;" onchange="importConfig(event)" />
+        </div>
+      </div>
+
+      <div class="widget-popup-actions">
+        <button class="btn" onclick="closeSharePanel()">Close</button>
       </div>
     </div>
   </div>
+
+  <!-- Toast notification -->
+  <div class="toast" id="toast"></div>
 
   <script>
     // ── Config with defaults ──
@@ -627,7 +1121,12 @@
         { symbol: '^GSPC', label: 'S&P 500' },
         { symbol: 'OSEBX.OL', label: 'OSEBX' }
       ],
-      weather: { name: 'Bestum', lat: 59.9205, lon: 10.6646 }
+      weather: { name: 'Bestum', lat: 59.9205, lon: 10.6646 },
+      feeds: [
+        { name: 'BBC', url: 'https://feeds.bbci.co.uk/news/world/rss.xml' },
+        { name: 'NRK', url: 'https://www.nrk.no/toppsaker.rss' },
+        { name: 'Tech', url: 'https://feeds.arstechnica.com/arstechnica/index' }
+      ]
     };
 
     function loadConfig() {
@@ -651,10 +1150,15 @@
       return cfg?.weather ?? DEFAULTS.weather;
     }
 
+    function getFeeds() {
+      const cfg = loadConfig();
+      return cfg?.feeds ?? DEFAULTS.feeds;
+    }
+
     // ── Theme ──
     function toggleTheme() {
       const html = document.documentElement;
-      const btn = document.querySelector('.theme-toggle');
+      const btn = document.getElementById('theme-btn');
       if (html.getAttribute('data-theme') === 'dark') {
         html.setAttribute('data-theme', 'light');
         btn.textContent = 'Dark';
@@ -669,57 +1173,10 @@
     (function initTheme() {
       const saved = localStorage.getItem('dashboard-theme') || 'dark';
       document.documentElement.setAttribute('data-theme', saved);
-      document.querySelector('.theme-toggle').textContent = saved === 'dark' ? 'Light' : 'Dark';
+      document.getElementById('theme-btn').textContent = saved === 'dark' ? 'Light' : 'Dark';
     })();
 
-    // ── Settings ──
-    function openSettings() {
-      document.getElementById('setting-weather').value = getWeather().name;
-      document.getElementById('setting-stops').value = getStops().join(', ');
-      document.getElementById('setting-stocks').value = getStocks().map(s => s.symbol).join(', ');
-      document.getElementById('settings-overlay').classList.add('open');
-    }
-
-    function closeSettings(e) {
-      if (e && e.target !== document.getElementById('settings-overlay')) return;
-      document.getElementById('settings-overlay').classList.remove('open');
-    }
-
-    async function saveSettings() {
-      const weatherName = document.getElementById('setting-weather').value.trim();
-      const stopsRaw = document.getElementById('setting-stops').value;
-      const stocksRaw = document.getElementById('setting-stocks').value;
-
-      const stops = stopsRaw.split(',').map(s => s.trim()).filter(Boolean);
-      const stocks = stocksRaw.split(',').map(s => {
-        const sym = s.trim();
-        const knownLabels = {
-          '^GSPC': 'S&P 500', 'OSEBX.OL': 'OSEBX', '^DJI': 'Dow Jones',
-          '^IXIC': 'NASDAQ', '^FTSE': 'FTSE 100', 'EURUSD=X': 'EUR/USD',
-          'USDNOK=X': 'USD/NOK', 'BTC-USD': 'Bitcoin'
-        };
-        return { symbol: sym, label: knownLabels[sym] || sym };
-      }).filter(s => s.symbol);
-
-      // Geocode weather location
-      let weather = getWeather();
-      if (weatherName && weatherName !== weather.name) {
-        try {
-          const geoRes = await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(weatherName)}&count=1&language=en&format=json`);
-          const geoData = await geoRes.json();
-          if (geoData.results && geoData.results.length > 0) {
-            const r = geoData.results[0];
-            weather = { name: r.name, lat: r.latitude, lon: r.longitude };
-          }
-        } catch (e) { /* keep existing coords */ }
-      }
-
-      localStorage.setItem('dashboard-config', JSON.stringify({ stops, stocks, weather }));
-      document.getElementById('settings-overlay').classList.remove('open');
-      fetchWeather();
-      fetchStocks();
-      fetchTransit();
-    }
+    // ── Settings (per-widget popups, see Widget Settings section below) ──
 
     // ── Clock ──
     function updateClock() {
@@ -845,7 +1302,7 @@
     // Store chart data for tooltips
     const stockChartData = {};
 
-    function drawChart(canvas, prices, isPositive) {
+    function drawChart(canvas, prices, isPositive, points) {
       const dpr = window.devicePixelRatio || 1;
       const rect = canvas.getBoundingClientRect();
       canvas.width = rect.width * dpr;
@@ -857,31 +1314,69 @@
 
       if (!prices || prices.length < 2) return;
 
+      const styles = getComputedStyle(document.documentElement);
+      const textSecondary = styles.getPropertyValue('--text-secondary').trim();
+      const borderColor = styles.getPropertyValue('--border').trim();
+
+      // Reserve space for day labels if we have timestamp data
+      const hasTimestamps = points && points.length === prices.length;
+      const labelH = hasTimestamps ? 18 : 0;
+      const pad = 4;
+      const chartH = h - pad * 2 - labelH;
+      const stepX = w / (prices.length - 1);
+
       const min = Math.min(...prices);
       const max = Math.max(...prices);
       const range = max - min || 1;
-      const pad = 4;
-      const chartH = h - pad * 2;
-      const stepX = w / (prices.length - 1);
 
       const color = isPositive
-        ? getComputedStyle(document.documentElement).getPropertyValue('--positive').trim()
-        : getComputedStyle(document.documentElement).getPropertyValue('--negative').trim();
+        ? styles.getPropertyValue('--positive').trim()
+        : styles.getPropertyValue('--negative').trim();
+
+      // Find day boundaries for vertical separators
+      const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+      const dayBoundaries = []; // { index, label }
+      if (hasTimestamps) {
+        let lastDay = -1;
+        points.forEach((pt, i) => {
+          const d = new Date(pt.time);
+          const day = d.getDay();
+          if (day !== lastDay) {
+            dayBoundaries.push({ index: i, label: dayNames[day] });
+            lastDay = day;
+          }
+        });
+      }
+
+      // Draw day separator lines
+      if (dayBoundaries.length > 0) {
+        ctx.strokeStyle = borderColor;
+        ctx.lineWidth = 1;
+        ctx.setLineDash([3, 3]);
+        dayBoundaries.forEach((db, di) => {
+          if (di === 0) return; // skip first boundary (left edge)
+          const x = Math.round(db.index * stepX) + 0.5;
+          ctx.beginPath();
+          ctx.moveTo(x, pad);
+          ctx.lineTo(x, pad + chartH);
+          ctx.stroke();
+        });
+        ctx.setLineDash([]);
+      }
 
       // Gradient fill
-      const grad = ctx.createLinearGradient(0, 0, 0, h);
+      const grad = ctx.createLinearGradient(0, 0, 0, pad + chartH);
       grad.addColorStop(0, color + '30');
       grad.addColorStop(1, color + '05');
 
       ctx.beginPath();
-      ctx.moveTo(0, h);
+      ctx.moveTo(0, pad + chartH);
       prices.forEach((p, i) => {
         const x = i * stepX;
         const y = pad + chartH - ((p - min) / range) * chartH;
-        if (i === 0) ctx.lineTo(x, y);
-        else ctx.lineTo(x, y);
+        ctx.lineTo(x, y);
       });
-      ctx.lineTo(w, h);
+      ctx.lineTo(w, pad + chartH);
       ctx.closePath();
       ctx.fillStyle = grad;
       ctx.fill();
@@ -898,6 +1393,24 @@
       ctx.lineWidth = 1.5;
       ctx.lineJoin = 'round';
       ctx.stroke();
+
+      // Draw day labels
+      if (dayBoundaries.length > 0) {
+        ctx.fillStyle = textSecondary;
+        ctx.font = '10px -apple-system, sans-serif';
+        ctx.textAlign = 'center';
+        const labelY = h - 3;
+
+        dayBoundaries.forEach((db, di) => {
+          // Label centered between this boundary and the next
+          const startX = db.index * stepX;
+          const endX = (di < dayBoundaries.length - 1)
+            ? dayBoundaries[di + 1].index * stepX
+            : w;
+          const centerX = (startX + endX) / 2;
+          ctx.fillText(db.label, centerX, labelY);
+        });
+      }
     }
 
     async function fetchStocks() {
@@ -948,7 +1461,7 @@
           results.forEach((s, i) => {
             const canvas = document.getElementById(`chart-${i}`);
             if (!canvas) return;
-            drawChart(canvas, s.closes, s.change >= 0);
+            drawChart(canvas, s.closes, s.change >= 0, s.points);
             stockChartData[i] = s.points;
 
             canvas.onmousemove = (e) => {
@@ -1124,6 +1637,312 @@
     fetchPower();
     setInterval(fetchPower, 15 * 60 * 1000);
 
+    // ── Sensors (Netatmo) ──
+    function getCO2Class(co2) {
+      if (co2 < 800) return 'positive';
+      if (co2 < 1200) return '';
+      return 'negative';
+    }
+
+    function getCO2Color(co2) {
+      if (co2 < 800) return getComputedStyle(document.documentElement).getPropertyValue('--positive').trim();
+      if (co2 < 1200) return getComputedStyle(document.documentElement).getPropertyValue('--accent').trim();
+      return getComputedStyle(document.documentElement).getPropertyValue('--negative').trim();
+    }
+
+    function drawCO2Chart(canvas, points) {
+      const dpr = window.devicePixelRatio || 1;
+      const rect = canvas.getBoundingClientRect();
+      canvas.width = rect.width * dpr;
+      canvas.height = rect.height * dpr;
+      const ctx = canvas.getContext('2d');
+      ctx.scale(dpr, dpr);
+      const w = rect.width;
+      const h = rect.height;
+
+      if (!points || points.length < 2) return;
+
+      const values = points.map(p => p.value);
+      const min = Math.min(...values, 400);
+      const max = Math.max(...values, 1000);
+      const range = max - min || 1;
+      const labelH = 16;
+      const chartH = h - labelH - 4;
+      const stepX = w / (points.length - 1);
+
+      const textSecondary = getComputedStyle(document.documentElement).getPropertyValue('--text-secondary').trim();
+
+      // Draw threshold zones
+      const y800 = 4 + chartH - ((800 - min) / range) * chartH;
+      const y1200 = 4 + chartH - ((1200 - min) / range) * chartH;
+
+      if (y800 > 0 && y800 < chartH + 4) {
+        ctx.strokeStyle = textSecondary + '30';
+        ctx.lineWidth = 1;
+        ctx.setLineDash([4, 4]);
+        ctx.beginPath();
+        ctx.moveTo(0, y800);
+        ctx.lineTo(w, y800);
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
+
+      if (y1200 > 0 && y1200 < chartH + 4) {
+        ctx.strokeStyle = textSecondary + '30';
+        ctx.lineWidth = 1;
+        ctx.setLineDash([4, 4]);
+        ctx.beginPath();
+        ctx.moveTo(0, y1200);
+        ctx.lineTo(w, y1200);
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
+
+      // Draw line with color gradient based on CO2 level
+      for (let i = 1; i < points.length; i++) {
+        const x0 = (i - 1) * stepX;
+        const y0 = 4 + chartH - ((points[i-1].value - min) / range) * chartH;
+        const x1 = i * stepX;
+        const y1 = 4 + chartH - ((points[i].value - min) / range) * chartH;
+        ctx.beginPath();
+        ctx.moveTo(x0, y0);
+        ctx.lineTo(x1, y1);
+        ctx.strokeStyle = getCO2Color(points[i].value);
+        ctx.lineWidth = 1.5;
+        ctx.lineJoin = 'round';
+        ctx.stroke();
+      }
+
+      // X-axis time labels
+      ctx.fillStyle = textSecondary;
+      ctx.font = '10px -apple-system, sans-serif';
+      ctx.textAlign = 'center';
+      const labelY = h - 2;
+      const hoursShown = (points[points.length - 1].time - points[0].time) / 3600000;
+      const labelEvery = Math.max(1, Math.floor(points.length / 6));
+      points.forEach((p, i) => {
+        if (i % labelEvery === 0 || i === points.length - 1) {
+          const x = i * stepX;
+          const timeStr = new Date(p.time * 1000).toLocaleTimeString('nb-NO', { hour: '2-digit', minute: '2-digit' });
+          ctx.fillText(timeStr, x, labelY);
+        }
+      });
+    }
+
+    async function fetchSensors() {
+      try {
+        const res = await fetch('https://yahoopull.charles-rutherford93.workers.dev/netatmo/data');
+        if (res.status === 401) {
+          document.getElementById('sensors-content').innerHTML = '<div class="error">Netatmo not authorized. <a href="https://yahoopull.charles-rutherford93.workers.dev/auth/netatmo" target="_blank" style="color:var(--accent)">Authorize here</a></div>';
+          return;
+        }
+        const data = await res.json();
+        const devices = data.body.devices;
+        const cards = [];
+        const co2Sources = [];
+
+        devices.forEach(device => {
+          const d = device.dashboard_data;
+          if (d) {
+            cards.push({ name: device.module_name || device.station_name, temp: d.Temperature, humidity: d.Humidity, co2: d.CO2, type: 'indoor' });
+            if (d.CO2 !== undefined) {
+              co2Sources.push({ deviceId: device._id, moduleId: null, name: device.module_name || device.station_name });
+            }
+          }
+          if (device.modules) {
+            device.modules.forEach(mod => {
+              const m = mod.dashboard_data;
+              if (!m) return;
+              const card = { name: mod.module_name, type: mod.type };
+              if (m.Temperature !== undefined) card.temp = m.Temperature;
+              if (m.Humidity !== undefined) card.humidity = m.Humidity;
+              if (m.CO2 !== undefined) {
+                card.co2 = m.CO2;
+                co2Sources.push({ deviceId: device._id, moduleId: mod._id, name: mod.module_name });
+              }
+              if (m.Pressure !== undefined) card.pressure = m.Pressure;
+              if (m.Rain !== undefined) card.rain = m.Rain;
+              if (m.WindStrength !== undefined) card.wind = m.WindStrength;
+              cards.push(card);
+            });
+          }
+        });
+
+        let co2ChartHtml = '';
+        if (co2Sources.length > 0) {
+          co2ChartHtml = '<div class="co2-chart-container">' +
+            '<div class="co2-chart-label">CO2 last 48 hours</div>' +
+            co2Sources.map((s, i) => `<canvas class="co2-chart" id="co2-chart-${i}" title="${s.name}"></canvas>`).join('') +
+            '</div>';
+        }
+
+        document.getElementById('sensors-content').innerHTML = '<div class="sensors-grid">' + cards.map(c => {
+          let details = [];
+          if (c.humidity !== undefined) details.push(c.humidity + '% humidity');
+          if (c.co2 !== undefined) {
+            var co2Label = c.co2 < 800 ? 'Good' : (c.co2 < 1200 ? 'Moderate' : 'High');
+            details.push('<span class="stock-change ' + getCO2Class(c.co2) + '">' + c.co2 + ' ppm · ' + co2Label + '</span>');
+          }
+          if (c.pressure !== undefined) details.push(c.pressure + ' hPa');
+          if (c.rain !== undefined) details.push(c.rain + ' mm rain');
+          if (c.wind !== undefined) details.push(c.wind + ' km/h wind');
+
+          return '<div class="sensor-card">' +
+            '<div class="sensor-name">' + c.name + '</div>' +
+            (c.temp !== undefined ? '<div class="sensor-value">' + c.temp.toFixed(1) + '<span class="sensor-unit">&deg;C</span></div>' : '') +
+            '<div class="sensor-detail">' + details.join(' &middot; ') + '</div>' +
+            '</div>';
+        }).join('') + '</div>' + co2ChartHtml;
+
+        document.getElementById('sensors-status').textContent = 'Updated ' + new Date().toLocaleTimeString('nb-NO', { hour: '2-digit', minute: '2-digit' });
+
+        // Fetch CO2 history for each source
+        co2Sources.forEach(async (src, i) => {
+          try {
+            const dateBegin = Math.floor(Date.now() / 1000) - 172800;
+            let measureUrl = `https://yahoopull.charles-rutherford93.workers.dev/netatmo/measure?device_id=${encodeURIComponent(src.deviceId)}&type=CO2&date_begin=${dateBegin}`;
+            if (src.moduleId) measureUrl += `&module_id=${encodeURIComponent(src.moduleId)}`;
+            const mRes = await fetch(measureUrl);
+            const mData = await mRes.json();
+            const body = mData.body;
+            if (!body) return;
+
+            const points = [];
+            for (const [timestamp, values] of Object.entries(body)) {
+              if (values[0] !== null) {
+                points.push({ time: Number(timestamp), value: values[0] });
+              }
+            }
+            points.sort((a, b) => a.time - b.time);
+
+            requestAnimationFrame(() => {
+              const canvas = document.getElementById(`co2-chart-${i}`);
+              if (canvas && points.length > 1) {
+                drawCO2Chart(canvas, points);
+
+                canvas.onmousemove = (e) => {
+                  const rect = canvas.getBoundingClientRect();
+                  const x = e.clientX - rect.left;
+                  const idx = Math.round((x / rect.width) * (points.length - 1));
+                  const pt = points[Math.max(0, Math.min(idx, points.length - 1))];
+                  if (!pt) return;
+                  const timeStr = new Date(pt.time * 1000).toLocaleTimeString('nb-NO', { hour: '2-digit', minute: '2-digit' });
+                  const co2Label = pt.value < 800 ? 'Good' : (pt.value < 1200 ? 'Moderate' : 'High');
+                  showTooltip(canvas, x, e.clientY - rect.top, [
+                    `<span class="chart-tooltip-value">${Math.round(pt.value)} ppm · ${co2Label}</span>`,
+                    `<span class="chart-tooltip-time">${src.name} · ${timeStr}</span>`
+                  ]);
+                };
+                canvas.onmouseleave = hideTooltip;
+              }
+            });
+          } catch (e) {}
+        });
+      } catch (e) {
+        document.getElementById('sensors-content').innerHTML = '<div class="error">Could not load sensor data</div>';
+      }
+    }
+    fetchSensors();
+    setInterval(fetchSensors, 5 * 60 * 1000);
+
+    // ── News (RSS) ──
+    const PROXY = 'https://yahoopull.charles-rutherford93.workers.dev/?url=';
+    let newsCache = {};
+    let activeTab = 0;
+
+    function parseRSS(xml) {
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(xml, 'text/xml');
+      const items = doc.querySelectorAll('item');
+      return Array.from(items).slice(0, 10).map(item => {
+        const title = item.querySelector('title')?.textContent || '';
+        const link = item.querySelector('link')?.textContent || '';
+        const pubDate = item.querySelector('pubDate')?.textContent || '';
+        const desc = item.querySelector('description')?.textContent || '';
+
+        // Try to extract image from media:content, media:thumbnail, or enclosure
+        let img = '';
+        const mediaNS = item.getElementsByTagNameNS('http://search.yahoo.com/mrss/', 'content');
+        const mediaThumbnail = item.getElementsByTagNameNS('http://search.yahoo.com/mrss/', 'thumbnail');
+        const enclosure = item.querySelector('enclosure[type^="image"]');
+        if (mediaThumbnail.length > 0) img = mediaThumbnail[0].getAttribute('url');
+        else if (mediaNS.length > 0 && (mediaNS[0].getAttribute('medium') === 'image' || mediaNS[0].getAttribute('type')?.startsWith('image'))) img = mediaNS[0].getAttribute('url');
+        else if (enclosure) img = enclosure.getAttribute('url');
+
+        // Format time
+        let timeAgo = '';
+        if (pubDate) {
+          const diff = Math.round((Date.now() - new Date(pubDate).getTime()) / 60000);
+          if (diff < 1) timeAgo = 'Just now';
+          else if (diff < 60) timeAgo = `${diff}m ago`;
+          else if (diff < 1440) timeAgo = `${Math.floor(diff / 60)}h ago`;
+          else timeAgo = `${Math.floor(diff / 1440)}d ago`;
+        }
+
+        return { title, link, img, timeAgo };
+      });
+    }
+
+    function renderNews(items) {
+      if (!items || items.length === 0) {
+        document.getElementById('news-content').innerHTML = '<div class="loading">No articles found</div>';
+        return;
+      }
+      document.getElementById('news-content').innerHTML = '<div class="news-list">' + items.map(item => `
+        <a class="news-item" href="${item.link}" target="_blank" rel="noopener">
+          <div class="news-item-text">
+            <div class="news-item-title">${item.title}</div>
+            <div class="news-item-meta">${item.timeAgo}</div>
+          </div>
+          ${item.img ? `<img class="news-item-img" src="${item.img}" alt="" loading="lazy" onerror="this.style.display='none'">` : ''}
+        </a>`).join('') + '</div>';
+    }
+
+    function renderTabs() {
+      const feeds = getFeeds();
+      document.getElementById('news-tabs').innerHTML = feeds.map((f, i) =>
+        `<button class="news-tab ${i === activeTab ? 'active' : ''}" onclick="switchTab(${i})">${f.name}</button>`
+      ).join('');
+    }
+
+    function switchTab(idx) {
+      activeTab = idx;
+      renderTabs();
+      const feeds = getFeeds();
+      if (newsCache[feeds[idx].url]) {
+        renderNews(newsCache[feeds[idx].url]);
+      } else {
+        document.getElementById('news-content').innerHTML = '<div class="loading">Loading...</div>';
+        fetchFeed(feeds[idx]);
+      }
+    }
+
+    async function fetchFeed(feed) {
+      try {
+        const res = await fetch(PROXY + encodeURIComponent(feed.url));
+        const xml = await res.text();
+        const items = parseRSS(xml);
+        newsCache[feed.url] = items;
+        if (getFeeds()[activeTab]?.url === feed.url) {
+          renderNews(items);
+        }
+      } catch (e) {
+        if (getFeeds()[activeTab]?.url === feed.url) {
+          document.getElementById('news-content').innerHTML = `<div class="error">Could not load ${feed.name} feed</div>`;
+        }
+      }
+    }
+
+    async function fetchNews() {
+      newsCache = {};
+      const feeds = getFeeds();
+      renderTabs();
+      await Promise.all(feeds.map(f => fetchFeed(f)));
+      document.getElementById('news-status').textContent = 'Updated ' + new Date().toLocaleTimeString('nb-NO', { hour: '2-digit', minute: '2-digit' });
+    }
+    fetchNews();
+    setInterval(fetchNews, 10 * 60 * 1000);
+
     // ── Transit (Entur) ──
     const ENTUR_QUERY = `
       query ($id: String!, $n: Int!) {
@@ -1212,6 +2031,919 @@
     }
     fetchTransit();
     setInterval(fetchTransit, 30 * 1000);
+
+    // ── Toast Notification ──
+    function showToast(message, duration = 2000) {
+      const toast = document.getElementById('toast');
+      toast.textContent = message;
+      toast.classList.add('visible');
+      setTimeout(() => toast.classList.remove('visible'), duration);
+    }
+
+    // ── Widget Settings Popups ──
+    function openWidgetSettings(widget) {
+      const popup = document.getElementById('widget-popup');
+      const overlay = document.getElementById('widget-popup-overlay');
+      popup.innerHTML = getWidgetSettingsHTML(widget);
+      overlay.classList.add('open');
+      // Focus first input
+      setTimeout(() => {
+        const firstInput = popup.querySelector('input');
+        if (firstInput) firstInput.focus();
+      }, 100);
+    }
+
+    function closeWidgetPopup(e) {
+      if (e && e.target && e.target !== document.getElementById('widget-popup-overlay')) return;
+      document.getElementById('widget-popup-overlay').classList.remove('open');
+    }
+
+    function getWidgetSettingsHTML(widget) {
+      switch (widget) {
+        case 'weather': return getWeatherSettingsHTML();
+        case 'stocks': return getStocksSettingsHTML();
+        case 'news': return getNewsSettingsHTML();
+        case 'transit': return getTransitSettingsHTML();
+        default: return '<p>No settings available.</p>';
+      }
+    }
+
+    // ── Weather Settings ──
+    let weatherSearchTimeout = null;
+    function getWeatherSettingsHTML() {
+      const loc = getWeather();
+      return `
+        <h3>Weather Location</h3>
+        <label>Search for a place</label>
+        <div class="search-wrapper">
+          <input id="wp-weather-search" placeholder="Type a city or place name..." value="${loc.name}" oninput="onWeatherSearch(this.value)" onkeydown="if(event.key==='Enter'){event.preventDefault();selectFirstWeatherResult();}" autocomplete="off" />
+          <div class="search-results" id="wp-weather-results"></div>
+        </div>
+        <p class="hint">Start typing to search. Select a result to update the location.</p>
+        <div id="wp-weather-selected" style="font-size:0.85rem;color:var(--text-secondary);margin-bottom:12px;">
+          Current: <strong>${loc.name}</strong> (${loc.lat.toFixed(2)}, ${loc.lon.toFixed(2)})
+        </div>
+        <div class="widget-popup-actions">
+          <button class="btn" onclick="resetWidget('weather')" style="margin-right:auto;font-size:0.78rem;color:var(--text-secondary);">Reset to default</button>
+          <button class="btn" onclick="closeWidgetPopup()">Cancel</button>
+          <button class="btn btn-primary" onclick="saveWeatherSettings()">Save</button>
+        </div>`;
+    }
+
+    let selectedWeatherResult = null;
+    function onWeatherSearch(query) {
+      clearTimeout(weatherSearchTimeout);
+      if (query.length < 2) {
+        document.getElementById('wp-weather-results').classList.remove('visible');
+        return;
+      }
+      weatherSearchTimeout = setTimeout(async () => {
+        try {
+          const res = await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(query)}&count=5&language=en&format=json`);
+          const data = await res.json();
+          const results = data.results || [];
+          const container = document.getElementById('wp-weather-results');
+          if (results.length === 0) {
+            container.innerHTML = '<div class="search-result-item"><span class="result-name">No results found</span></div>';
+          } else {
+            container.innerHTML = results.map((r, i) => `
+              <div class="search-result-item" onclick="selectWeatherResult(${i})">
+                <div class="result-name">${r.name}</div>
+                <div class="result-detail">${[r.admin1, r.country].filter(Boolean).join(', ')}</div>
+              </div>`).join('');
+          }
+          container.classList.add('visible');
+          // Store results for selection
+          window._weatherSearchResults = results;
+        } catch (e) {}
+      }, 300);
+    }
+
+    function selectFirstWeatherResult() {
+      if (window._weatherSearchResults && window._weatherSearchResults.length > 0) {
+        selectWeatherResult(0);
+      }
+    }
+
+    function selectWeatherResult(idx) {
+      const r = window._weatherSearchResults[idx];
+      if (!r) return;
+      selectedWeatherResult = { name: r.name, lat: r.latitude, lon: r.longitude };
+      document.getElementById('wp-weather-search').value = r.name;
+      document.getElementById('wp-weather-results').classList.remove('visible');
+      document.getElementById('wp-weather-selected').innerHTML = `Selected: <strong>${r.name}</strong> (${r.latitude.toFixed(2)}, ${r.longitude.toFixed(2)}) &mdash; ${[r.admin1, r.country].filter(Boolean).join(', ')}`;
+    }
+
+    async function saveWeatherSettings() {
+      const cfg = loadConfig() || {};
+      if (selectedWeatherResult) {
+        cfg.weather = selectedWeatherResult;
+      } else {
+        // Geocode the typed name if it differs
+        const name = document.getElementById('wp-weather-search').value.trim();
+        if (name && name !== getWeather().name) {
+          try {
+            const geoRes = await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(name)}&count=1&language=en&format=json`);
+            const geoData = await geoRes.json();
+            if (geoData.results && geoData.results.length > 0) {
+              const r = geoData.results[0];
+              cfg.weather = { name: r.name, lat: r.latitude, lon: r.longitude };
+            } else {
+              cfg.weather = { ...getWeather(), name: name };
+            }
+          } catch (e) {
+            cfg.weather = { ...getWeather(), name: name };
+          }
+        }
+      }
+      if (!cfg.stops) cfg.stops = getStops();
+      if (!cfg.stocks) cfg.stocks = getStocks();
+      if (!cfg.feeds) cfg.feeds = getFeeds();
+      localStorage.setItem('dashboard-config', JSON.stringify(cfg));
+      selectedWeatherResult = null;
+      closeWidgetPopup();
+      showToast('Weather location updated');
+      fetchWeather();
+    }
+
+    // ── Stocks Settings ──
+    const STOCK_PRESETS = [
+      { symbol: '^GSPC', label: 'S&P 500', category: 'US Indices' },
+      { symbol: '^DJI', label: 'Dow Jones', category: 'US Indices' },
+      { symbol: '^IXIC', label: 'NASDAQ', category: 'US Indices' },
+      { symbol: '^RUT', label: 'Russell 2000', category: 'US Indices' },
+      { symbol: 'OSEBX.OL', label: 'OSEBX', category: 'Nordic' },
+      { symbol: 'OBX.OL', label: 'OBX', category: 'Nordic' },
+      { symbol: '^OMXS30', label: 'OMX Stockholm', category: 'Nordic' },
+      { symbol: '^OMXC25', label: 'OMX Copenhagen', category: 'Nordic' },
+      { symbol: '^FTSE', label: 'FTSE 100', category: 'Europe' },
+      { symbol: '^GDAXI', label: 'DAX', category: 'Europe' },
+      { symbol: '^FCHI', label: 'CAC 40', category: 'Europe' },
+      { symbol: 'EURUSD=X', label: 'EUR/USD', category: 'Currencies' },
+      { symbol: 'USDNOK=X', label: 'USD/NOK', category: 'Currencies' },
+      { symbol: 'EURNOK=X', label: 'EUR/NOK', category: 'Currencies' },
+      { symbol: 'GBPUSD=X', label: 'GBP/USD', category: 'Currencies' },
+      { symbol: 'BTC-USD', label: 'Bitcoin', category: 'Crypto' },
+      { symbol: 'ETH-USD', label: 'Ethereum', category: 'Crypto' },
+      { symbol: 'AAPL', label: 'Apple', category: 'Tech Stocks' },
+      { symbol: 'MSFT', label: 'Microsoft', category: 'Tech Stocks' },
+      { symbol: 'GOOGL', label: 'Alphabet', category: 'Tech Stocks' },
+      { symbol: 'NVDA', label: 'NVIDIA', category: 'Tech Stocks' },
+      { symbol: 'TSLA', label: 'Tesla', category: 'Tech Stocks' },
+      { symbol: 'EQNR.OL', label: 'Equinor', category: 'Oslo Stocks' },
+      { symbol: 'DNB.OL', label: 'DNB', category: 'Oslo Stocks' },
+      { symbol: 'TEL.OL', label: 'Telenor', category: 'Oslo Stocks' },
+      { symbol: 'MOWI.OL', label: 'Mowi', category: 'Oslo Stocks' },
+    ];
+
+    let currentStocksSelection = [];
+
+    function getStocksSettingsHTML() {
+      currentStocksSelection = [...getStocks()];
+      const activeSymbols = currentStocksSelection.map(s => s.symbol);
+
+      // Group presets by category
+      const categories = {};
+      STOCK_PRESETS.forEach(p => {
+        if (!categories[p.category]) categories[p.category] = [];
+        categories[p.category].push(p);
+      });
+
+      let presetsHTML = '';
+      for (const [cat, items] of Object.entries(categories)) {
+        presetsHTML += `<label style="margin-top:8px;margin-bottom:6px;">${cat}</label>
+          <div class="preset-chips">
+            ${items.map(p => `<button class="preset-chip ${activeSymbols.includes(p.symbol) ? 'active' : ''}" data-symbol="${p.symbol}" data-label="${p.label}" onclick="toggleStockPreset(this)">${p.label}</button>`).join('')}
+          </div>`;
+      }
+
+      return `
+        <h3>Markets</h3>
+        <label>Your tracked markets</label>
+        <div class="tag-list" id="wp-stocks-tags">
+          ${renderStockTags()}
+        </div>
+        <label style="margin-bottom:8px;">Quick add from presets</label>
+        ${presetsHTML}
+        <label style="margin-top:12px;">Or add a custom symbol</label>
+        <div style="display:flex;gap:8px;">
+          <input id="wp-stock-custom" placeholder="e.g. TSLA or DNB.OL" style="margin-bottom:0;flex:1;" onkeydown="if(event.key==='Enter')addCustomStock()" />
+          <button class="btn" onclick="addCustomStock()" style="white-space:nowrap;">Add</button>
+        </div>
+        <p class="hint" style="margin-top:4px;">Yahoo Finance symbol. Use .OL for Oslo stocks.</p>
+        <div class="widget-popup-actions">
+          <button class="btn" onclick="resetWidget('stocks')" style="margin-right:auto;font-size:0.78rem;color:var(--text-secondary);">Reset to default</button>
+          <button class="btn" onclick="closeWidgetPopup()">Cancel</button>
+          <button class="btn btn-primary" onclick="saveStocksSettings()">Save</button>
+        </div>`;
+    }
+
+    function renderStockTags() {
+      if (currentStocksSelection.length === 0) return '<span style="color:var(--text-secondary);font-size:0.85rem;">No markets selected</span>';
+      return currentStocksSelection.map((s, i) => `
+        <span class="tag-item">
+          ${s.label}
+          <button class="tag-remove" onclick="removeStock(${i})">&times;</button>
+        </span>`).join('');
+    }
+
+    function updateStockTags() {
+      document.getElementById('wp-stocks-tags').innerHTML = renderStockTags();
+      // Update preset chips active state
+      const activeSymbols = currentStocksSelection.map(s => s.symbol);
+      document.querySelectorAll('#widget-popup .preset-chip').forEach(chip => {
+        chip.classList.toggle('active', activeSymbols.includes(chip.dataset.symbol));
+      });
+    }
+
+    function toggleStockPreset(btn) {
+      const symbol = btn.dataset.symbol;
+      const label = btn.dataset.label;
+      const idx = currentStocksSelection.findIndex(s => s.symbol === symbol);
+      if (idx >= 0) {
+        currentStocksSelection.splice(idx, 1);
+      } else {
+        currentStocksSelection.push({ symbol, label });
+      }
+      updateStockTags();
+    }
+
+    function removeStock(idx) {
+      currentStocksSelection.splice(idx, 1);
+      updateStockTags();
+    }
+
+    function addCustomStock() {
+      const input = document.getElementById('wp-stock-custom');
+      const sym = input.value.trim().toUpperCase();
+      if (!sym) return;
+      if (currentStocksSelection.find(s => s.symbol === sym)) {
+        input.value = '';
+        return;
+      }
+      const knownLabels = {};
+      STOCK_PRESETS.forEach(p => { knownLabels[p.symbol] = p.label; });
+      currentStocksSelection.push({ symbol: sym, label: knownLabels[sym] || sym });
+      input.value = '';
+      updateStockTags();
+    }
+
+    function saveStocksSettings() {
+      const cfg = loadConfig() || {};
+      cfg.stocks = currentStocksSelection;
+      if (!cfg.stops) cfg.stops = getStops();
+      if (!cfg.weather) cfg.weather = getWeather();
+      if (!cfg.feeds) cfg.feeds = getFeeds();
+      localStorage.setItem('dashboard-config', JSON.stringify(cfg));
+      closeWidgetPopup();
+      showToast('Markets updated');
+      fetchStocks();
+    }
+
+    // ── News Settings ──
+    const FEED_PRESETS = [
+      { name: 'BBC World', url: 'https://feeds.bbci.co.uk/news/world/rss.xml' },
+      { name: 'BBC Tech', url: 'https://feeds.bbci.co.uk/news/technology/rss.xml' },
+      { name: 'NRK', url: 'https://www.nrk.no/toppsaker.rss' },
+      { name: 'NRK Sport', url: 'https://www.nrk.no/sport/toppsaker.rss' },
+      { name: 'Ars Technica', url: 'https://feeds.arstechnica.com/arstechnica/index' },
+      { name: 'Hacker News', url: 'https://hnrss.org/frontpage' },
+      { name: 'Reuters World', url: 'https://www.reutersagency.com/feed/?taxonomy=best-sectors&post_type=best' },
+      { name: 'The Verge', url: 'https://www.theverge.com/rss/index.xml' },
+      { name: 'TechCrunch', url: 'https://techcrunch.com/feed/' },
+      { name: 'E24', url: 'https://e24.no/rss2/' },
+      { name: 'VG', url: 'https://www.vg.no/rss/feed/?categories=nyheter' },
+    ];
+
+    let currentFeedsSelection = [];
+
+    function getNewsSettingsHTML() {
+      currentFeedsSelection = [...getFeeds()];
+      const activeUrls = currentFeedsSelection.map(f => f.url);
+
+      return `
+        <h3>News Feeds</h3>
+        <label>Your feeds</label>
+        <div class="tag-list" id="wp-feeds-tags">
+          ${renderFeedTags()}
+        </div>
+        <label style="margin-bottom:8px;">Quick add from popular feeds</label>
+        <div class="preset-chips" id="wp-feed-presets">
+          ${FEED_PRESETS.map(p => `<button class="preset-chip ${activeUrls.includes(p.url) ? 'active' : ''}" data-url="${p.url}" data-name="${p.name}" onclick="toggleFeedPreset(this)">${p.name}</button>`).join('')}
+        </div>
+        <label style="margin-top:12px;">Or add a custom feed</label>
+        <div style="display:flex;gap:8px;margin-bottom:4px;">
+          <input id="wp-feed-name" placeholder="Name" style="margin-bottom:0;width:120px;" />
+          <input id="wp-feed-url" placeholder="RSS feed URL" style="margin-bottom:0;flex:1;" onkeydown="if(event.key==='Enter')addCustomFeed()" />
+          <button class="btn" onclick="addCustomFeed()" style="white-space:nowrap;">Add</button>
+        </div>
+        <div class="widget-popup-actions">
+          <button class="btn" onclick="resetWidget('news')" style="margin-right:auto;font-size:0.78rem;color:var(--text-secondary);">Reset to default</button>
+          <button class="btn" onclick="closeWidgetPopup()">Cancel</button>
+          <button class="btn btn-primary" onclick="saveNewsSettings()">Save</button>
+        </div>`;
+    }
+
+    function renderFeedTags() {
+      if (currentFeedsSelection.length === 0) return '<span style="color:var(--text-secondary);font-size:0.85rem;">No feeds selected</span>';
+      return currentFeedsSelection.map((f, i) => `
+        <span class="tag-item">
+          ${f.name}
+          <button class="tag-remove" onclick="removeFeed(${i})">&times;</button>
+        </span>`).join('');
+    }
+
+    function updateFeedTags() {
+      document.getElementById('wp-feeds-tags').innerHTML = renderFeedTags();
+      const activeUrls = currentFeedsSelection.map(f => f.url);
+      document.querySelectorAll('#wp-feed-presets .preset-chip').forEach(chip => {
+        chip.classList.toggle('active', activeUrls.includes(chip.dataset.url));
+      });
+    }
+
+    function toggleFeedPreset(btn) {
+      const url = btn.dataset.url;
+      const name = btn.dataset.name;
+      const idx = currentFeedsSelection.findIndex(f => f.url === url);
+      if (idx >= 0) {
+        currentFeedsSelection.splice(idx, 1);
+      } else {
+        currentFeedsSelection.push({ name, url });
+      }
+      updateFeedTags();
+    }
+
+    function removeFeed(idx) {
+      currentFeedsSelection.splice(idx, 1);
+      updateFeedTags();
+    }
+
+    function addCustomFeed() {
+      const nameInput = document.getElementById('wp-feed-name');
+      const urlInput = document.getElementById('wp-feed-url');
+      const name = nameInput.value.trim();
+      const url = urlInput.value.trim();
+      if (!url) return;
+      if (currentFeedsSelection.find(f => f.url === url)) return;
+      currentFeedsSelection.push({ name: name || new URL(url).hostname, url });
+      nameInput.value = '';
+      urlInput.value = '';
+      updateFeedTags();
+    }
+
+    function saveNewsSettings() {
+      const cfg = loadConfig() || {};
+      cfg.feeds = currentFeedsSelection;
+      if (!cfg.stops) cfg.stops = getStops();
+      if (!cfg.weather) cfg.weather = getWeather();
+      if (!cfg.stocks) cfg.stocks = getStocks();
+      localStorage.setItem('dashboard-config', JSON.stringify(cfg));
+      activeTab = 0;
+      closeWidgetPopup();
+      showToast('News feeds updated');
+      fetchNews();
+    }
+
+    // ── Transit Settings ──
+    let currentStopsSelection = [];
+    let stopSearchTimeout = null;
+
+    function getTransitSettingsHTML() {
+      currentStopsSelection = getStops().map(id => ({ id, name: '' }));
+      // Try to get names from existing DOM
+      document.querySelectorAll('.stop-name').forEach((el, i) => {
+        if (currentStopsSelection[i]) currentStopsSelection[i].name = el.textContent;
+      });
+
+      return `
+        <h3>Transit Stops</h3>
+        <label>Your stops</label>
+        <div class="tag-list" id="wp-stops-tags">
+          ${renderStopTags()}
+        </div>
+        <label>Search for a stop</label>
+        <div class="search-wrapper">
+          <input id="wp-stop-search" placeholder="Type a stop name (e.g. Jernbanetorget, Majorstuen)" oninput="onStopSearch(this.value)" autocomplete="off" />
+          <div class="search-results" id="wp-stop-results"></div>
+        </div>
+        <p class="hint">Search by name. No need to know stop IDs.</p>
+        <div class="widget-popup-actions">
+          <button class="btn" onclick="resetWidget('transit')" style="margin-right:auto;font-size:0.78rem;color:var(--text-secondary);">Reset to default</button>
+          <button class="btn" onclick="closeWidgetPopup()">Cancel</button>
+          <button class="btn btn-primary" onclick="saveTransitSettings()">Save</button>
+        </div>`;
+    }
+
+    function renderStopTags() {
+      if (currentStopsSelection.length === 0) return '<span style="color:var(--text-secondary);font-size:0.85rem;">No stops selected</span>';
+      return currentStopsSelection.map((s, i) => `
+        <span class="tag-item">
+          ${s.name || s.id}
+          <button class="tag-remove" onclick="removeStop(${i})">&times;</button>
+        </span>`).join('');
+    }
+
+    function updateStopTags() {
+      document.getElementById('wp-stops-tags').innerHTML = renderStopTags();
+    }
+
+    function removeStop(idx) {
+      currentStopsSelection.splice(idx, 1);
+      updateStopTags();
+    }
+
+    function onStopSearch(query) {
+      clearTimeout(stopSearchTimeout);
+      if (query.length < 2) {
+        document.getElementById('wp-stop-results').classList.remove('visible');
+        return;
+      }
+      stopSearchTimeout = setTimeout(async () => {
+        try {
+          const res = await fetch('https://api.entur.io/geocoder/v1/autocomplete?text=' + encodeURIComponent(query) + '&layers=venue&size=6', {
+            headers: { 'ET-Client-Name': 'crild-dashboard' }
+          });
+          const data = await res.json();
+          const features = data.features || [];
+          const stops = features.filter(f => f.properties.layer === 'venue' && f.properties.id.startsWith('NSR:StopPlace:'));
+          const container = document.getElementById('wp-stop-results');
+          if (stops.length === 0) {
+            container.innerHTML = '<div class="search-result-item"><span class="result-name">No stops found</span></div>';
+          } else {
+            container.innerHTML = stops.map((f, i) => `
+              <div class="search-result-item" onclick="selectStopResult(${i})">
+                <div class="result-name">${f.properties.name}</div>
+                <div class="result-detail">${f.properties.county || ''} ${f.properties.locality ? '&middot; ' + f.properties.locality : ''}</div>
+              </div>`).join('');
+          }
+          container.classList.add('visible');
+          window._stopSearchResults = stops;
+        } catch (e) {}
+      }, 300);
+    }
+
+    function selectStopResult(idx) {
+      const f = window._stopSearchResults[idx];
+      if (!f) return;
+      const id = f.properties.id;
+      const name = f.properties.name;
+      if (currentStopsSelection.find(s => s.id === id)) return;
+      currentStopsSelection.push({ id, name });
+      document.getElementById('wp-stop-search').value = '';
+      document.getElementById('wp-stop-results').classList.remove('visible');
+      updateStopTags();
+    }
+
+    function saveTransitSettings() {
+      const cfg = loadConfig() || {};
+      cfg.stops = currentStopsSelection.map(s => s.id);
+      if (!cfg.weather) cfg.weather = getWeather();
+      if (!cfg.stocks) cfg.stocks = getStocks();
+      if (!cfg.feeds) cfg.feeds = getFeeds();
+      localStorage.setItem('dashboard-config', JSON.stringify(cfg));
+      closeWidgetPopup();
+      showToast('Transit stops updated');
+      fetchTransit();
+    }
+
+    // ── Reset to defaults ──
+    function resetWidget(widget) {
+      const cfg = loadConfig() || {};
+      switch (widget) {
+        case 'weather':
+          cfg.weather = DEFAULTS.weather;
+          localStorage.setItem('dashboard-config', JSON.stringify(cfg));
+          closeWidgetPopup();
+          showToast('Weather reset to default');
+          fetchWeather();
+          break;
+        case 'stocks':
+          cfg.stocks = DEFAULTS.stocks;
+          localStorage.setItem('dashboard-config', JSON.stringify(cfg));
+          closeWidgetPopup();
+          showToast('Markets reset to default');
+          fetchStocks();
+          break;
+        case 'news':
+          cfg.feeds = DEFAULTS.feeds;
+          localStorage.setItem('dashboard-config', JSON.stringify(cfg));
+          activeTab = 0;
+          closeWidgetPopup();
+          showToast('News feeds reset to default');
+          fetchNews();
+          break;
+        case 'transit':
+          cfg.stops = DEFAULTS.stops;
+          localStorage.setItem('dashboard-config', JSON.stringify(cfg));
+          closeWidgetPopup();
+          showToast('Transit stops reset to default');
+          fetchTransit();
+          break;
+      }
+    }
+
+    // Close popups on Escape key
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        document.getElementById('widget-popup-overlay').classList.remove('open');
+        document.getElementById('share-overlay').classList.remove('open');
+      }
+    });
+
+    // ── Share & Save ──
+    const WORKER_BASE = 'https://yahoopull.charles-rutherford93.workers.dev';
+    const DASHBOARD_URL = window.location.origin + window.location.pathname;
+
+    function openSharePanel() {
+      document.getElementById('share-overlay').classList.add('open');
+      document.getElementById('share-link-result').style.display = 'none';
+      document.getElementById('share-load-result').textContent = '';
+      document.getElementById('share-load-code').value = '';
+      document.getElementById('share-save-btn').textContent = 'Generate share link';
+      document.getElementById('share-save-btn').disabled = false;
+    }
+
+    function closeSharePanel(e) {
+      if (e && e.target && e.target !== document.getElementById('share-overlay')) return;
+      document.getElementById('share-overlay').classList.remove('open');
+    }
+
+    async function saveConfigToCloud() {
+      const btn = document.getElementById('share-save-btn');
+      btn.textContent = 'Saving...';
+      btn.disabled = true;
+      try {
+        const cfg = loadConfig() || {};
+        // Include widget order
+        const order = localStorage.getItem('dashboard-widget-order');
+        if (order) cfg._widgetOrder = JSON.parse(order);
+        // Include theme
+        cfg._theme = localStorage.getItem('dashboard-theme') || 'dark';
+
+        const res = await fetch(WORKER_BASE + '/config/save', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(cfg)
+        });
+        const data = await res.json();
+        if (data.code) {
+          const link = DASHBOARD_URL + '?config=' + data.code;
+          document.getElementById('share-link-input').value = link;
+          document.getElementById('share-link-result').style.display = 'block';
+          btn.textContent = 'Link generated!';
+        } else {
+          btn.textContent = 'Error - try again';
+          btn.disabled = false;
+        }
+      } catch (e) {
+        btn.textContent = 'Error - try again';
+        btn.disabled = false;
+      }
+    }
+
+    function copyShareLink() {
+      const input = document.getElementById('share-link-input');
+      navigator.clipboard.writeText(input.value).then(() => {
+        showToast('Link copied to clipboard');
+      });
+    }
+
+    async function loadConfigFromCloud() {
+      const input = document.getElementById('share-load-code').value.trim();
+      const result = document.getElementById('share-load-result');
+      if (!input) return;
+
+      // Extract code from full URL or use as-is
+      let code = input;
+      if (input.includes('?config=')) {
+        code = input.split('?config=')[1].split('&')[0];
+      }
+
+      result.textContent = 'Loading...';
+      try {
+        const res = await fetch(WORKER_BASE + '/config/load?code=' + encodeURIComponent(code));
+        if (!res.ok) {
+          result.textContent = 'Config not found. Check the code and try again.';
+          result.style.color = 'var(--negative)';
+          return;
+        }
+        const cfg = await res.json();
+
+        // Apply widget order if present
+        if (cfg._widgetOrder) {
+          localStorage.setItem('dashboard-widget-order', JSON.stringify(cfg._widgetOrder));
+          delete cfg._widgetOrder;
+        }
+        // Apply theme if present
+        if (cfg._theme) {
+          localStorage.setItem('dashboard-theme', cfg._theme);
+          delete cfg._theme;
+        }
+
+        localStorage.setItem('dashboard-config', JSON.stringify(cfg));
+        closeSharePanel();
+        showToast('Setup loaded! Refreshing...');
+        setTimeout(() => window.location.reload(), 1000);
+      } catch (e) {
+        result.textContent = 'Failed to load config.';
+        result.style.color = 'var(--negative)';
+      }
+    }
+
+    function exportConfig() {
+      const cfg = loadConfig() || {};
+      const order = localStorage.getItem('dashboard-widget-order');
+      if (order) cfg._widgetOrder = JSON.parse(order);
+      cfg._theme = localStorage.getItem('dashboard-theme') || 'dark';
+      const blob = new Blob([JSON.stringify(cfg, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'dashboard-config.json';
+      a.click();
+      URL.revokeObjectURL(url);
+      showToast('Config exported');
+    }
+
+    function importConfig(event) {
+      const file = event.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = function(e) {
+        try {
+          const cfg = JSON.parse(e.target.result);
+          if (cfg._widgetOrder) {
+            localStorage.setItem('dashboard-widget-order', JSON.stringify(cfg._widgetOrder));
+            delete cfg._widgetOrder;
+          }
+          if (cfg._theme) {
+            localStorage.setItem('dashboard-theme', cfg._theme);
+            delete cfg._theme;
+          }
+          localStorage.setItem('dashboard-config', JSON.stringify(cfg));
+          showToast('Config imported! Refreshing...');
+          setTimeout(() => window.location.reload(), 1000);
+        } catch (err) {
+          showToast('Invalid config file');
+        }
+      };
+      reader.readAsText(file);
+      event.target.value = '';
+    }
+
+    // Auto-load config from URL on page load
+    (function loadFromURL() {
+      const params = new URLSearchParams(window.location.search);
+      const code = params.get('config');
+      if (!code) return;
+      fetch(WORKER_BASE + '/config/load?code=' + encodeURIComponent(code))
+        .then(res => { if (res.ok) return res.json(); throw new Error(); })
+        .then(cfg => {
+          if (cfg._widgetOrder) {
+            localStorage.setItem('dashboard-widget-order', JSON.stringify(cfg._widgetOrder));
+            delete cfg._widgetOrder;
+          }
+          if (cfg._theme) {
+            localStorage.setItem('dashboard-theme', cfg._theme);
+            delete cfg._theme;
+          }
+          localStorage.setItem('dashboard-config', JSON.stringify(cfg));
+          // Remove ?config= from URL and reload
+          window.history.replaceState({}, '', window.location.pathname);
+          window.location.reload();
+        })
+        .catch(() => {});
+    })();
+
+    // Close search dropdowns when clicking outside
+    document.addEventListener('click', (e) => {
+      if (!e.target.closest('.search-wrapper')) {
+        document.querySelectorAll('.search-results').forEach(el => el.classList.remove('visible'));
+      }
+    });
+
+    // ── Adaptive Grid Layout ──
+    function applyAdaptiveLayout() {
+      const grid = document.querySelector('.grid');
+      if (!grid) return;
+      const cards = Array.from(grid.querySelectorAll('.card[data-widget]'));
+      const narrowWidgets = new Set(['clock', 'weather', 'sensors']);
+
+      // Clear previous layout spans
+      cards.forEach(c => c.classList.remove('span-full', 'span-half'));
+
+      let i = 0;
+      while (i < cards.length) {
+        const card = cards[i];
+        const isNarrow = narrowWidgets.has(card.dataset.widget);
+        const next = cards[i + 1];
+        const nextIsNarrow = next ? narrowWidgets.has(next.dataset.widget) : false;
+
+        if (isNarrow && next && nextIsNarrow) {
+          // Two consecutive narrow cards share a row
+          card.classList.add('span-half');
+          next.classList.add('span-half');
+          i += 2;
+        } else if (isNarrow && next && !nextIsNarrow) {
+          // Narrow followed by wide: narrow gets full, wide gets full
+          card.classList.add('span-full');
+          i += 1;
+        } else if (!isNarrow) {
+          // Wide card always gets full width
+          card.classList.add('span-full');
+          i += 1;
+        } else {
+          // Last narrow card alone
+          card.classList.add('span-full');
+          i += 1;
+        }
+      }
+    }
+
+    // Run layout on load and resize
+    applyAdaptiveLayout();
+    window.addEventListener('resize', applyAdaptiveLayout);
+
+    // ── Drag and Drop Reordering ──
+    (function initDragAndDrop() {
+      const grid = document.querySelector('.grid');
+      let draggedCard = null;
+      let dragOverCard = null;
+      let touchStartY = 0;
+      let touchStartX = 0;
+      let isDraggingTouch = false;
+      let touchClone = null;
+      let touchScrollInterval = null;
+
+      // Restore saved order on page load
+      function restoreOrder() {
+        const saved = localStorage.getItem('dashboard-widget-order');
+        if (!saved) return;
+        try {
+          const order = JSON.parse(saved);
+          const cards = Array.from(grid.querySelectorAll('.card[data-widget]'));
+          const cardMap = {};
+          cards.forEach(c => { cardMap[c.dataset.widget] = c; });
+          order.forEach(widgetName => {
+            const card = cardMap[widgetName];
+            if (card) grid.appendChild(card);
+          });
+        } catch (e) {}
+      }
+
+      function saveOrder() {
+        const cards = Array.from(grid.querySelectorAll('.card[data-widget]'));
+        const order = cards.map(c => c.dataset.widget);
+        localStorage.setItem('dashboard-widget-order', JSON.stringify(order));
+        applyAdaptiveLayout();
+      }
+
+      // Make card headers draggable
+      function setupCard(card) {
+        const header = card.querySelector('.card-header');
+        if (!header) return;
+        card.setAttribute('draggable', 'true');
+
+        // Prevent drag when clicking buttons/inputs inside header
+        header.addEventListener('mousedown', (e) => {
+          if (e.target.closest('button, input, select, a')) {
+            card.setAttribute('draggable', 'false');
+          } else {
+            card.setAttribute('draggable', 'true');
+          }
+        });
+
+        // HTML5 Drag events
+        card.addEventListener('dragstart', (e) => {
+          if (e.target !== card) return;
+          draggedCard = card;
+          card.classList.add('dragging');
+          e.dataTransfer.effectAllowed = 'move';
+          e.dataTransfer.setData('text/plain', card.dataset.widget);
+        });
+
+        card.addEventListener('dragend', () => {
+          card.classList.remove('dragging');
+          grid.querySelectorAll('.card').forEach(c => c.classList.remove('drag-over'));
+          if (draggedCard) {
+            saveOrder();
+            draggedCard = null;
+          }
+        });
+
+        card.addEventListener('dragover', (e) => {
+          e.preventDefault();
+          e.dataTransfer.dropEffect = 'move';
+          if (!draggedCard || draggedCard === card) return;
+          grid.querySelectorAll('.card').forEach(c => c.classList.remove('drag-over'));
+          card.classList.add('drag-over');
+          dragOverCard = card;
+        });
+
+        card.addEventListener('dragleave', () => {
+          card.classList.remove('drag-over');
+        });
+
+        card.addEventListener('drop', (e) => {
+          e.preventDefault();
+          card.classList.remove('drag-over');
+          if (!draggedCard || draggedCard === card) return;
+          const cards = Array.from(grid.querySelectorAll('.card[data-widget]'));
+          const dragIdx = cards.indexOf(draggedCard);
+          const dropIdx = cards.indexOf(card);
+          if (dragIdx < dropIdx) {
+            card.after(draggedCard);
+          } else {
+            card.before(draggedCard);
+          }
+        });
+
+        // Touch events for mobile
+        header.addEventListener('touchstart', (e) => {
+          if (e.target.closest('button, input, select, a')) return;
+          const touch = e.touches[0];
+          touchStartX = touch.clientX;
+          touchStartY = touch.clientY;
+          isDraggingTouch = false;
+          draggedCard = card;
+        }, { passive: true });
+
+        header.addEventListener('touchmove', (e) => {
+          if (!draggedCard || draggedCard !== card) return;
+          const touch = e.touches[0];
+          const dx = Math.abs(touch.clientX - touchStartX);
+          const dy = Math.abs(touch.clientY - touchStartY);
+
+          if (!isDraggingTouch && (dx > 10 || dy > 10)) {
+            isDraggingTouch = true;
+            card.classList.add('dragging');
+
+            // Create floating clone
+            touchClone = card.cloneNode(true);
+            touchClone.style.position = 'fixed';
+            touchClone.style.zIndex = '1000';
+            touchClone.style.width = card.offsetWidth + 'px';
+            touchClone.style.pointerEvents = 'none';
+            touchClone.style.opacity = '0.85';
+            touchClone.style.transform = 'scale(1.03)';
+            touchClone.style.boxShadow = '0 8px 32px rgba(0,0,0,0.25)';
+            document.body.appendChild(touchClone);
+          }
+
+          if (isDraggingTouch) {
+            e.preventDefault();
+            const cardRect = card.getBoundingClientRect();
+            touchClone.style.left = cardRect.left + 'px';
+            touchClone.style.top = (touch.clientY - cardRect.height / 2) + 'px';
+
+            // Auto-scroll near edges
+            clearInterval(touchScrollInterval);
+            if (touch.clientY < 80) {
+              touchScrollInterval = setInterval(() => window.scrollBy(0, -8), 16);
+            } else if (touch.clientY > window.innerHeight - 80) {
+              touchScrollInterval = setInterval(() => window.scrollBy(0, 8), 16);
+            }
+
+            // Find card under touch
+            grid.querySelectorAll('.card').forEach(c => c.classList.remove('drag-over'));
+            const elemBelow = document.elementFromPoint(touch.clientX, touch.clientY);
+            const targetCard = elemBelow?.closest('.card[data-widget]');
+            if (targetCard && targetCard !== card) {
+              targetCard.classList.add('drag-over');
+              dragOverCard = targetCard;
+            }
+          }
+        }, { passive: false });
+
+        header.addEventListener('touchend', () => {
+          clearInterval(touchScrollInterval);
+          if (isDraggingTouch && draggedCard && dragOverCard && draggedCard !== dragOverCard) {
+            const cards = Array.from(grid.querySelectorAll('.card[data-widget]'));
+            const dragIdx = cards.indexOf(draggedCard);
+            const dropIdx = cards.indexOf(dragOverCard);
+            if (dragIdx < dropIdx) {
+              dragOverCard.after(draggedCard);
+            } else {
+              dragOverCard.before(draggedCard);
+            }
+            saveOrder();
+          }
+          if (touchClone) {
+            touchClone.remove();
+            touchClone = null;
+          }
+          grid.querySelectorAll('.card').forEach(c => c.classList.remove('dragging', 'drag-over'));
+          draggedCard = null;
+          dragOverCard = null;
+          isDraggingTouch = false;
+        });
+      }
+
+      // Set up all cards
+      grid.querySelectorAll('.card[data-widget]').forEach(setupCard);
+      restoreOrder();
+      applyAdaptiveLayout();
+    })();
   </script>
 </body>
 </html>

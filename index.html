@@ -3777,9 +3777,9 @@
       if (cfg?.mobility?.lat && cfg?.mobility?.lon) {
         return { name: cfg.mobility.name || 'Saved location', lat: cfg.mobility.lat, lon: cfg.mobility.lon };
       }
-      // Otherwise use global location
+      // Otherwise use global location — show full address if available
       const loc = getLocation();
-      return { name: loc.name, lat: loc.lat, lon: loc.lon };
+      return { name: loc.address || loc.name, lat: loc.lat, lon: loc.lon };
     }
 
     function getMobilityMaxDistance() {
@@ -3978,7 +3978,24 @@
       container.style.display = 'none';
       const pt = a.representasjonspunkt || {};
       if (pt.lat && pt.lon) {
+        // Update global location since we have full address details
+        saveLocation({
+          name: a.adressenavn || a.adressetekst.split(',')[0],
+          lat: pt.lat, lon: pt.lon,
+          address: a.adressetekst,
+          gatenavn: a.adressenavn,
+          gatekode: a.adressekode,
+          husnr: String(a.nummer) + (a.bokstav || ''),
+          kommunenr: a.kommunenummer
+        });
+        // Clear mobility override so it follows global location
+        const cfg = loadConfig() || {};
+        if (cfg.mobility) { delete cfg.mobility.lat; delete cfg.mobility.lon; delete cfg.mobility.name; }
+        localStorage.setItem('dashboard-config', JSON.stringify(cfg));
         setMobilityCenter(pt.lat, pt.lon, a.adressetekst);
+        // Update all dependent widgets
+        fetchWeather(); fetchWaste(); fetchPower();
+        updateStopsForLocation();
       }
     }
 
@@ -5023,6 +5040,10 @@
         return;
       }
       saveLocation(locationSelectedAddress);
+      // Clear mobility override so it follows global location
+      const cfg = loadConfig() || {};
+      if (cfg.mobility) { delete cfg.mobility.lat; delete cfg.mobility.lon; delete cfg.mobility.name; }
+      localStorage.setItem('dashboard-config', JSON.stringify(cfg));
       locationSelectedAddress = null;
       closeWidgetPopup();
       showToast('Location updated for all widgets');
@@ -5031,7 +5052,8 @@
       fetchPower();
       updateStopsForLocation();
       if (mobilityMap) {
-        setMobilityCenter(getLocation().lat, getLocation().lon, getLocation().name);
+        const loc = getLocation();
+        setMobilityCenter(loc.lat, loc.lon, loc.address || loc.name);
       }
     }
 

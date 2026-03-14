@@ -5916,10 +5916,12 @@
     const ALL_WIDGETS = ['weather', 'sensors', 'hue', 'stocks', 'power', 'news', 'transit', 'waste', 'mobility'];
     const WIDGET_LABELS = { weather: 'Weather', sensors: 'Home sensors', hue: 'Lights', stocks: 'Markets', power: 'Power price', news: 'News', transit: 'Departures', waste: 'Waste collection', mobility: 'Nearby mobility' };
 
+    const DEFAULT_WIDGET_ORDER = ['weather', 'transit', 'mobility', 'power', 'news', 'stocks', 'waste', 'sensors', 'hue'];
+
     function getLayoutConfig() {
       const saved = localStorage.getItem('dashboard-layout');
       if (saved) return JSON.parse(saved);
-      return { columns: 2, spacing: 'comfortable', width: 'default' };
+      return { columns: 2, spacing: 'comfortable', width: 'default', hiddenWidgets: ['sensors', 'hue'] };
     }
 
     function saveLayoutConfig(cfg) {
@@ -6133,12 +6135,11 @@
       let touchClone = null;
       let touchScrollInterval = null;
 
-      // Restore saved order on page load
+      // Restore saved order on page load (or apply default order)
       function restoreOrder() {
         const saved = localStorage.getItem('dashboard-widget-order');
-        if (!saved) return;
+        const order = saved ? JSON.parse(saved) : DEFAULT_WIDGET_ORDER;
         try {
-          const order = JSON.parse(saved);
           const cards = Array.from(grid.querySelectorAll('.card[data-widget]'));
           const cardMap = {};
           cards.forEach(c => { cardMap[c.dataset.widget] = c; });

@@ -5365,7 +5365,7 @@
       try {
         // Use Entur's nearest query — returns stops sorted by walking distance natively
         const nearestQuery = `query($lat:Float!,$lon:Float!,$max:Int!){
-          nearest(latitude:$lat,longitude:$lon,maximumDistance:2000,maximumResults:$max,filterByPlaceTypes:StopPlace){
+          nearest(latitude:$lat,longitude:$lon,maximumDistance:2000,maximumResults:$max,filterByPlaceTypes:stopPlace){
             edges{node{place{...on StopPlace{id name estimatedCalls(numberOfDepartures:20){serviceJourney{line{publicCode}}}}}distance}}
           }
         }`;

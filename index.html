@@ -100,7 +100,7 @@
       background: var(--bg-card);
       border: 1px solid var(--border);
       border-radius: var(--radius);
-      padding: 20px;
+      padding: 16px;
       box-shadow: var(--shadow);
       position: relative;
     }
@@ -121,7 +121,7 @@
       display: flex;
       justify-content: space-between;
       align-items: center;
-      margin-bottom: 16px;
+      margin-bottom: 12px;
       cursor: grab;
     }
 
@@ -253,21 +253,21 @@
     /* Stocks */
     .stocks-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-      gap: 12px;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 10px;
     }
 
     .stock-card {
       border: 1px solid var(--border);
       border-radius: 12px;
-      padding: 14px;
+      padding: 12px;
     }
 
     .stock-header {
       display: flex;
       justify-content: space-between;
       align-items: flex-start;
-      margin-bottom: 12px;
+      margin-bottom: 8px;
     }
 
     .stock-name {
@@ -301,7 +301,7 @@
 
     .stock-chart {
       width: 100%;
-      height: 140px;
+      height: 110px;
       display: block;
       cursor: crosshair;
     }
@@ -473,7 +473,7 @@
 
     .co2-chart {
       width: 100%;
-      height: 80px;
+      height: 60px;
       display: block;
       cursor: crosshair;
     }
@@ -528,25 +528,25 @@
     }
 
     .power-price {
-      font-size: 2.2rem;
+      font-size: 1.6rem;
       font-weight: 300;
       letter-spacing: -0.02em;
     }
 
     .power-unit {
-      font-size: 0.85rem;
+      font-size: 0.75rem;
       color: var(--text-secondary);
     }
 
     .power-label {
-      font-size: 0.85rem;
+      font-size: 0.75rem;
       color: var(--text-secondary);
-      margin-bottom: 12px;
+      margin-bottom: 8px;
     }
 
     .power-chart {
       width: 100%;
-      height: 160px;
+      height: 100px;
       display: block;
       cursor: crosshair;
     }
@@ -1099,8 +1099,8 @@
     .grid.spacing-comfortable { gap: 16px; }
     .grid.spacing-spacious { gap: 24px; }
 
-    .grid.spacing-compact .card { padding: 12px; }
-    .grid.spacing-spacious .card { padding: 24px; }
+    .grid.spacing-compact .card { padding: 10px; }
+    .grid.spacing-spacious .card { padding: 20px; }
 
     /* Max width overrides */
     .container.width-narrow { max-width: 1000px; }
@@ -1194,7 +1194,7 @@
       </div>
 
       <!-- Power prices -->
-      <div class="card card-wide" data-widget="power">
+      <div class="card card-narrow" data-widget="power">
         <div class="card-header">
           <span class="card-title" id="power-title">Power price &mdash; Oslo</span>
           <span class="card-status" id="power-status"></span>
@@ -3252,7 +3252,7 @@
       const grid = document.querySelector('.grid');
       if (!grid) return;
       const cards = Array.from(grid.querySelectorAll('.card[data-widget]'));
-      const narrowWidgets = new Set(['clock', 'weather', 'sensors', 'hue']);
+      const narrowWidgets = new Set(['clock', 'weather', 'sensors', 'hue', 'power']);
       const layoutCfg = getLayoutConfig();
       const cols = layoutCfg.columns;
 

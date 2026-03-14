@@ -1969,62 +1969,80 @@
         ctx.setLineDash([]);
       }
 
-      // Label local peaks and troughs
+      // Label peaks and troughs
       ctx.font = '9px -apple-system, sans-serif';
       ctx.textAlign = 'center';
       const textColor = styles.getPropertyValue('--text').trim();
 
-      // Find daily highs and lows (always labeled)
-      const todayPrices = prices.filter(p => p.isToday);
-      const tmrwPrices = prices.filter(p => !p.isToday);
-      const mustLabel = new Set();
-
-      [todayPrices, tmrwPrices].forEach(dayPrices => {
-        if (dayPrices.length === 0) return;
-        let hiIdx = 0, loIdx = 0;
-        dayPrices.forEach((p, i) => {
-          if (p.value > dayPrices[hiIdx].value) hiIdx = i;
-          if (p.value < dayPrices[loIdx].value) loIdx = i;
-        });
-        // Map back to index in full prices array
-        const offset = dayPrices === todayPrices ? 0 : todayPrices.length;
-        mustLabel.add(offset + hiIdx);
-        mustLabel.add(offset + loIdx);
-      });
-
-      // Detect all local peaks and troughs
+      // Detect turning points: find runs of same value, compare to values before/after the run
       const candidates = [];
-      for (let i = 0; i < prices.length; i++) {
-        const prev = i > 0 ? prices[i - 1].value : prices[i].value;
-        const next = i < prices.length - 1 ? prices[i + 1].value : prices[i].value;
+      let i = 0;
+      while (i < prices.length) {
+        // Find the end of a plateau (consecutive same values)
+        let j = i;
+        while (j < prices.length - 1 && prices[j + 1].value === prices[i].value) j++;
+
         const val = prices[i].value;
-        const isPeak = val >= prev && val >= next && (val > prev || val > next);
-        const isTrough = val <= prev && val <= next && (val < prev || val < next);
-        if (isPeak || isTrough) {
-          candidates.push({ i, isPeak, priority: mustLabel.has(i) ? 0 : 1 });
+        const prevVal = i > 0 ? prices[i - 1].value : val;
+        const nextVal = j < prices.length - 1 ? prices[j + 1].value : val;
+        const midIdx = Math.floor((i + j) / 2);
+
+        const isPeak = val > prevVal && val > nextVal;
+        const isTrough = val < prevVal && val < nextVal;
+        // Also detect endpoints of rises/falls (val equals one side but differs from other)
+        const isLocalPeak = val >= prevVal && val >= nextVal && (val > prevVal || val > nextVal);
+        const isLocalTrough = val <= prevVal && val <= nextVal && (val < prevVal || val < nextVal);
+
+        if (isPeak || isTrough || isLocalPeak || isLocalTrough) {
+          const type = (isPeak || isLocalPeak) ? 'peak' : 'trough';
+          candidates.push({ i: midIdx, type, val });
         }
+        i = j + 1;
       }
 
-      // Sort by priority (daily hi/lo first) then by index
-      candidates.sort((a, b) => a.priority - b.priority || a.i - b.i);
+      // Find daily highs and lows (always labeled)
+      const mustLabel = new Set();
+      const todayCount = prices.filter(p => p.isToday).length;
+      [[0, todayCount], [todayCount, prices.length]].forEach(([start, end]) => {
+        if (start >= end) return;
+        let hiIdx = start, loIdx = start;
+        for (let k = start; k < end; k++) {
+          if (prices[k].value >= prices[hiIdx].value) hiIdx = k;
+          if (prices[k].value <= prices[loIdx].value) loIdx = k;
+        }
+        // Find if any candidate is at these values, otherwise add them
+        const hiCand = candidates.find(c => c.i >= start && c.i < end && c.val === prices[hiIdx].value);
+        const loCand = candidates.find(c => c.i >= start && c.i < end && c.val === prices[loIdx].value);
+        if (hiCand) mustLabel.add(hiCand.i);
+        else { candidates.push({ i: hiIdx, type: 'peak', val: prices[hiIdx].value }); mustLabel.add(hiIdx); }
+        if (loCand) mustLabel.add(loCand.i);
+        else { candidates.push({ i: loIdx, type: 'trough', val: prices[loIdx].value }); mustLabel.add(loIdx); }
+      });
+
+      // Sort: daily hi/lo first, then by index
+      candidates.sort((a, b) => {
+        const ap = mustLabel.has(a.i) ? 0 : 1;
+        const bp = mustLabel.has(b.i) ? 0 : 1;
+        return ap - bp || a.i - b.i;
+      });
 
       const labeled = [];
-      candidates.forEach(({ i, isPeak, priority }) => {
-        const x = getX(i) + getX(1) / 2;
-        const y = getY(prices[i].value);
-        const labelText = prices[i].value.toFixed(0);
+      candidates.forEach(({ i: ci, type, val }) => {
+        const x = getX(ci) + getX(1) / 2;
+        const y = getY(val);
+        const labelText = val.toFixed(0);
 
         // Daily hi/lo always shown; others need spacing
-        if (priority > 0) {
+        if (!mustLabel.has(ci)) {
           const minGap = totalHours > 24 ? 18 : 24;
           const tooClose = labeled.some(lx => Math.abs(lx - x) < minGap);
           if (tooClose) return;
         }
         labeled.push(x);
 
-        const isFuture = !(prices[i].isToday && i <= currentHour);
+        const isFuture = !(prices[ci].isToday && ci <= currentHour);
         ctx.fillStyle = isFuture ? textColor + '80' : textColor;
-        if (isPeak) {
+        if (type === 'peak') {
           ctx.fillText(labelText, x, y - 5);
         } else {
           ctx.fillText(labelText, x, y + 12);

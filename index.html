@@ -5339,23 +5339,32 @@
     let currentStopsSelection = [];
     let stopSearchTimeout = null;
 
-    async function findNearestStops(lat, lon, count) {
+    async function findNearestStopsByWalking(lat, lon, count) {
       try {
-        const res = await fetch(`https://api.entur.io/geocoder/v1/reverse?point.lat=${lat}&point.lon=${lon}&layers=venue&size=${count || 2}&boundary.circle.radius=2`, {
+        // Fetch more candidates than needed, then rank by walking distance
+        const res = await fetch(`https://api.entur.io/geocoder/v1/reverse?point.lat=${lat}&point.lon=${lon}&layers=venue&size=8&boundary.circle.radius=2`, {
           headers: { 'ET-Client-Name': 'crild-dashboard' }
         });
         const data = await res.json();
         const features = (data.features || []).filter(f => f.properties.id.startsWith('NSR:StopPlace:'));
-        return features.map(f => f.properties.id);
+        if (features.length === 0) return [];
+        // Get walking distance to each candidate in parallel
+        const routes = await Promise.all(features.map(async f => {
+          const [fLon, fLat] = f.geometry.coordinates;
+          const route = await fetchWalkingRoute(lat, lon, fLat, fLon);
+          return { id: f.properties.id, name: f.properties.name, walkDist: route ? route.distanceM : Infinity };
+        }));
+        routes.sort((a, b) => a.walkDist - b.walkDist);
+        return routes.slice(0, count || 2);
       } catch (e) { return []; }
     }
 
     async function updateStopsForLocation() {
       const loc = getLocation();
-      const stops = await findNearestStops(loc.lat, loc.lon, 2);
+      const stops = await findNearestStopsByWalking(loc.lat, loc.lon, 2);
       if (stops.length > 0) {
         const cfg = loadConfig() || {};
-        cfg.stops = stops;
+        cfg.stops = stops.map(s => s.id);
         localStorage.setItem('dashboard-config', JSON.stringify(cfg));
         fetchTransit();
       }
@@ -5393,13 +5402,9 @@
       btn.disabled = true;
       const loc = getLocation();
       try {
-        const res = await fetch(`https://api.entur.io/geocoder/v1/reverse?point.lat=${loc.lat}&point.lon=${loc.lon}&layers=venue&size=5&boundary.circle.radius=2`, {
-          headers: { 'ET-Client-Name': 'crild-dashboard' }
-        });
-        const data = await res.json();
-        const features = (data.features || []).filter(f => f.properties.id.startsWith('NSR:StopPlace:'));
-        if (features.length > 0) {
-          currentStopsSelection = features.slice(0, 2).map(f => ({ id: f.properties.id, name: f.properties.name }));
+        const stops = await findNearestStopsByWalking(loc.lat, loc.lon, 2);
+        if (stops.length > 0) {
+          currentStopsSelection = stops.map(s => ({ id: s.id, name: s.name }));
           updateStopTags();
         }
         btn.textContent = 'Find nearest stops to my location';

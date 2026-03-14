@@ -3636,12 +3636,21 @@
             });
           }
         } else {
-          if (!data || !Array.isArray(data) || data.length === 0) {
+          // Norkart API may wrap in {Tommedatoer: [...]} or return array directly
+          let fractions = Array.isArray(data) ? data : (data?.Tommedatoer || []);
+          if (!fractions || fractions.length === 0) {
             document.getElementById('waste-content').innerHTML = '<div class="error">No collection data found for this address.</div>';
             return;
           }
-          data.forEach(fraction => {
-            const name = fraction.Fraksjon || fraction.FraksjonNavn || 'Unknown';
+          const NORKART_FRACTIONS = {
+            1: 'Restavfall', 2: 'Papir', 3: 'Plastemballasje',
+            4: 'Glass/Metall', 5: 'Matavfall', 6: 'Trevirke',
+            7: 'Tekstiler', 8: 'Hageavfall', 9: 'Farlig avfall',
+            10: 'Metall', 11: 'Drikkekartonger', 12: 'Papp',
+            13: 'Spesialavfall', 14: 'Juletrær'
+          };
+          fractions.forEach(fraction => {
+            const name = fraction.Fraksjon || fraction.FraksjonNavn || NORKART_FRACTIONS[fraction.NorkartStandardFraksjonId] || 'Unknown';
             const dates = fraction.Tommedatoer || [];
             let foundNext = false;
             let lastPast = null;
@@ -3662,8 +3671,8 @@
           });
           // If no past dates in data, estimate from spacing between dates
           if (past.length === 0 && upcoming.length > 0) {
-            data.forEach(fraction => {
-              const name = fraction.Fraksjon || fraction.FraksjonNavn || 'Unknown';
+            fractions.forEach(fraction => {
+              const name = fraction.Fraksjon || fraction.FraksjonNavn || NORKART_FRACTIONS[fraction.NorkartStandardFraksjonId] || 'Unknown';
               const dates = (fraction.Tommedatoer || []).map(ds => { const d = new Date(ds); d.setHours(0,0,0,0); return d; }).sort((a,b) => a-b);
               const futureDates = dates.filter(d => d >= now);
               if (futureDates.length >= 2) {
@@ -4952,7 +4961,7 @@
         address: a.adressetekst,
         gatenavn: a.adressenavn,
         gatekode: a.adressekode,
-        husnr: String(a.nummer),
+        husnr: String(a.nummer) + (a.bokstav || ''),
         kommunenr: a.kommunenummer
       };
       document.getElementById('wp-location-search').value = a.adressetekst;

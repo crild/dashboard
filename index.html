@@ -2762,6 +2762,15 @@
             if (color) m.setIcon(createScooterIcon(color, m._battery));
           }
         });
+        // Re-render transit stop icons for theme
+        mobilityTransitMarkers.forEach(m => {
+          const fillColor = isDark ? '#4a9eff' : '#2563eb';
+          const strokeColor = isDark ? '#fff' : '#1e40af';
+          m.setIcon(L.divIcon({
+            html: `<svg width="20" height="20" xmlns="http://www.w3.org/2000/svg"><rect x="3" y="3" width="14" height="14" rx="3" fill="${fillColor}" fill-opacity="0.9" stroke="${strokeColor}" stroke-width="1.5"/><text x="10" y="14" text-anchor="middle" fill="white" font-size="10" font-weight="bold">T</text></svg>`,
+            className: 'mobility-transit-icon', iconSize: [20, 20], iconAnchor: [10, 10], popupAnchor: [0, -10]
+          }));
+        });
       }
     };
 
@@ -3736,6 +3745,7 @@
     // ── Mobility (scooters & bikes) ──
     let mobilityMap = null;
     let mobilityMarkers = [];
+    let mobilityTransitMarkers = [];
     let mobilityLocationMarker = null;
     let mobilityCenter = null; // { lat, lon, name }
     let mobilitySearchTimeout = null;
@@ -4289,6 +4299,8 @@
       // Clear old vehicle/station markers and route (keep location marker)
       mobilityMarkers.forEach(m => m.remove());
       mobilityMarkers = [];
+      mobilityTransitMarkers.forEach(m => m.remove());
+      mobilityTransitMarkers = [];
       if (mobilityRouteLayer) { mobilityRouteLayer.remove(); mobilityRouteLayer = null; }
 
       try {
@@ -4374,6 +4386,42 @@
           marker._docks = docks;
           mobilityMarkers.push(marker);
         });
+
+        // Add transit stop markers
+        try {
+          const stops = getStops();
+          const stopResults = await Promise.all(stops.map(async (stopId) => {
+            try {
+              const res = await fetch('https://api.entur.io/journey-planner/v3/graphql', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'ET-Client-Name': 'crild-dashboard' },
+                body: JSON.stringify({ query: `query($id:String!){stopPlace(id:$id){name latitude longitude}}`, variables: { id: stopId } })
+              });
+              const data = await res.json();
+              return data.data.stopPlace;
+            } catch { return null; }
+          }));
+          stopResults.filter(Boolean).forEach(stop => {
+            if (!stop.latitude || !stop.longitude) return;
+            const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+            const icon = L.divIcon({
+              html: `<svg width="20" height="20" xmlns="http://www.w3.org/2000/svg">
+                <rect x="3" y="3" width="14" height="14" rx="3" fill="${isDark ? '#4a9eff' : '#2563eb'}" fill-opacity="0.9" stroke="${isDark ? '#fff' : '#1e40af'}" stroke-width="1.5"/>
+                <text x="10" y="14" text-anchor="middle" fill="white" font-size="10" font-weight="bold">T</text>
+              </svg>`,
+              className: 'mobility-transit-icon',
+              iconSize: [20, 20],
+              iconAnchor: [10, 10],
+              popupAnchor: [0, -10]
+            });
+            const walkMin = transitWalkCache[stop.name] != null ? transitWalkCache[stop.name] : null;
+            const walkLabel = walkMin != null ? `<br>${walkMin} min walk` : '';
+            const marker = L.marker([stop.latitude, stop.longitude], { icon, zIndexOffset: 500 })
+              .bindPopup(`<strong>${stop.name}</strong>${walkLabel}`)
+              .addTo(mobilityMap);
+            mobilityTransitMarkers.push(marker);
+          });
+        } catch {}
 
         // Walking route to nearest visible scooter (by actual walking distance)
         await showNearestWalkRoute();

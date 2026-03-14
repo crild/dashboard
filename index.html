@@ -1917,54 +1917,54 @@
       // Helper to get Y for a price value
       const getY = (val) => pad + chartH - ((val - min) / range) * chartH;
 
-      // Draw past line (solid) + fill
+      // Stepped line helper: draws horizontal for each hour, then vertical to next
+      function drawSteppedPath(ctx, startI, endI) {
+        for (let i = startI; i <= endI; i++) {
+          const xLeft = getX(i);
+          const xRight = getX(i + 1);
+          const y = getY(prices[i].value);
+          if (i === startI) ctx.moveTo(xLeft, y);
+          else ctx.lineTo(xLeft, y);
+          ctx.lineTo(xRight, y);
+        }
+      }
+
+      // Draw past (solid) + fill
       if (nowIdx >= 0) {
-        // Gradient fill under past
         const grad = ctx.createLinearGradient(0, 0, 0, pad + chartH);
         grad.addColorStop(0, accentColor + '25');
         grad.addColorStop(1, accentColor + '05');
         ctx.beginPath();
         ctx.moveTo(getX(0), pad + chartH);
-        for (let i = 0; i <= nowIdx; i++) {
-          ctx.lineTo(getX(i) + getX(1) / 2, getY(prices[i].value));
-        }
-        ctx.lineTo(getX(nowIdx) + getX(1) / 2, pad + chartH);
+        drawSteppedPath(ctx, 0, nowIdx);
+        ctx.lineTo(getX(nowIdx + 1), pad + chartH);
         ctx.closePath();
         ctx.fillStyle = grad;
         ctx.fill();
 
-        // Solid line for past
+        // Solid stepped line for past
         ctx.beginPath();
-        for (let i = 0; i <= nowIdx; i++) {
-          const x = getX(i) + getX(1) / 2;
-          const y = getY(prices[i].value);
-          if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
-        }
+        drawSteppedPath(ctx, 0, nowIdx);
         ctx.strokeStyle = accentColor;
         ctx.lineWidth = 2;
-        ctx.lineJoin = 'round';
         ctx.stroke();
 
         // Current dot
+        const nowX = getX(nowIdx) + (getX(1)) / 2;
         ctx.beginPath();
-        ctx.arc(getX(nowIdx) + getX(1) / 2, getY(prices[nowIdx].value), 3.5, 0, Math.PI * 2);
+        ctx.arc(nowX, getY(prices[nowIdx].value), 3.5, 0, Math.PI * 2);
         ctx.fillStyle = accentColor;
         ctx.fill();
       }
 
-      // Draw future line (dashed/faded)
+      // Draw future (dashed/faded stepped)
       const futureStart = Math.max(0, nowIdx);
       if (futureStart < prices.length - 1) {
         ctx.beginPath();
         ctx.strokeStyle = accentColor + '40';
         ctx.lineWidth = 1.5;
         ctx.setLineDash([4, 3]);
-        ctx.lineJoin = 'round';
-        for (let i = futureStart; i < prices.length; i++) {
-          const x = getX(i) + getX(1) / 2;
-          const y = getY(prices[i].value);
-          if (i === futureStart) ctx.moveTo(x, y); else ctx.lineTo(x, y);
-        }
+        drawSteppedPath(ctx, futureStart, prices.length - 1);
         ctx.stroke();
         ctx.setLineDash([]);
       }

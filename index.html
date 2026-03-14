@@ -796,6 +796,13 @@
       white-space: nowrap;
     }
 
+    .departure-item.missed {
+      opacity: 0.4;
+    }
+    .departure-time.missed {
+      color: var(--text-secondary);
+      text-decoration: line-through;
+    }
     .departure-time.urgent {
       color: var(--negative);
       font-weight: 700;
@@ -4552,11 +4559,12 @@
       let urgency = '';
       if (walkMin != null) {
         const buffer = diff - walkMin;
-        if (buffer <= 1) urgency = 'urgent';       // red: must leave NOW
-        else if (buffer <= 4) urgency = 'hurry';    // yellow: get moving
-        else urgency = 'relaxed';                   // green: plenty of time
+        if (buffer < 0) urgency = 'missed';          // grey: can't make it
+        else if (buffer <= 1) urgency = 'urgent';    // red: must leave NOW
+        else if (buffer <= 4) urgency = 'hurry';     // yellow: get moving
+        else urgency = 'relaxed';                    // green: plenty of time
       }
-      if (diff <= 0) return { text: 'Now', urgency: urgency || 'urgent' };
+      if (diff <= 0) return { text: 'Now', urgency: urgency || 'missed' };
       if (diff === 1) return { text: '1 min', urgency: urgency || 'urgent' };
       if (diff < 10) return { text: `${diff} min`, urgency };
       return {
@@ -4664,7 +4672,7 @@
               const time = formatMinutes(call.expectedDepartureTime, walkMin);
               const color = getLineColor(line.publicCode, line.transportMode);
               return `
-                <div class="departure-item">
+                <div class="departure-item ${time.urgency === 'missed' ? 'missed' : ''}">
                   <span class="departure-line" style="background:${color}">${line.publicCode}</span>
                   <span class="departure-dest">${call.destinationDisplay.frontText}</span>
                   <span class="departure-time ${time.urgency || ''}">${time.text}</span>

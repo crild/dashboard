@@ -1,0 +1,7 @@
+# Local Worker secrets — never commit. See .dev.vars.example.
+.dev.vars
+
+# Wrangler local state (simulated KV lives here)
+.wrangler/
+node_modules/
+*.log

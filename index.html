@@ -350,6 +350,66 @@
       gap: 10px;
     }
 
+    .index-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+      gap: 10px;
+    }
+
+    .index-tile {
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 10px 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+    }
+
+    .index-tile.stale { opacity: 0.5; }
+
+    .index-tile-top {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 0.72rem;
+      color: var(--text-secondary);
+      min-width: 0;
+    }
+
+    .index-tile-label {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .index-tile-value {
+      font-size: 1.3rem;
+      font-weight: 600;
+      font-variant-numeric: tabular-nums;
+      line-height: 1.15;
+    }
+
+    .index-tile-caption {
+      font-size: 0.72rem;
+      color: var(--text-secondary);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .index-gauge {
+      height: 4px;
+      border-radius: 2px;
+      background: var(--border);
+      overflow: hidden;
+    }
+
+    .index-gauge-fill {
+      height: 100%;
+      border-radius: 2px;
+      background: var(--accent);
+    }
+
     .stock-card {
       border: 1px solid var(--border);
       border-radius: 12px;
@@ -1683,6 +1743,20 @@
         </div>
       </div>
 
+      <!-- Vibes indexes -->
+      <div class="card card-wide" data-widget="indexes">
+        <div class="card-header">
+          <span class="card-title">Vibes</span>
+          <div class="card-header-right">
+            <span class="card-status" id="indexes-status"></span>
+            <button class="card-edit-btn" onclick="openWidgetSettings('indexes')" title="Choose indexes">&#9998;<span class="edit-label">Edit</span></button>
+          </div>
+        </div>
+        <div id="indexes-content">
+          <div class="loading">Loading indexes...</div>
+        </div>
+      </div>
+
       <!-- Power prices -->
       <div class="card card-narrow" data-widget="power">
         <div class="card-header">
@@ -1835,6 +1909,14 @@
         { name: 'BBC Tech', url: 'https://feeds.bbci.co.uk/news/technology/rss.xml' },
         { name: 'NRK', url: 'https://www.nrk.no/toppsaker.rss' },
         { name: 'Hawk Infinity', type: 'search', query: 'Hawk Infinity' }
+      ],
+      // Names resolve against INDEX_SOURCES in the Worker; /index/_list is the
+      // full menu. Start with the four confirmed working end to end.
+      indexes: [
+        { name: 'crypto-fng' },
+        { name: 'co2' },
+        { name: 'eurnok' },
+        { name: 'styringsrente' }
       ]
     };
 
@@ -1875,7 +1957,12 @@
     }
 
     // ── Worker auth token ──
-    const WORKER_URL = 'https://yahoopull.charles-rutherford93.workers.dev';
+    // Served from localhost (node dev.mjs) the page talks to `wrangler dev`,
+    // so Worker changes can be tested without deploying. Anywhere else —
+    // GitHub Pages, the wall tablet — it is production.
+    const WORKER_URL = ['localhost', '127.0.0.1', '[::1]'].includes(location.hostname)
+      ? 'http://127.0.0.1:8787'
+      : 'https://yahoopull.charles-rutherford93.workers.dev';
 
     function getDashboardToken() {
       return localStorage.getItem('dashboard-token') || '';
@@ -1890,9 +1977,25 @@
       return fetch(WORKER_URL + path, opts);
     }
 
-    function workerAuthUrl(path) {
-      const token = getDashboardToken();
-      return WORKER_URL + path + (token ? '?token=' + encodeURIComponent(token) : '');
+    // OAuth start URLs are top-level navigations and cannot carry a header, so
+    // trade the token for a single-use ticket instead of putting it in the URL.
+    async function openWorkerAuth(path) {
+      if (!getDashboardToken()) {
+        showToast('Enter the dashboard owner token first');
+        return;
+      }
+      // Opened before the await so the popup blocker does not swallow it.
+      const win = window.open('about:blank', '_blank');
+      try {
+        const res = await workerFetch('/auth/ticket', { method: 'POST' });
+        if (!res.ok) throw new Error('ticket ' + res.status);
+        const { ticket } = await res.json();
+        const target = WORKER_URL + path + '?ticket=' + encodeURIComponent(ticket);
+        if (win) win.location = target; else window.location = target;
+      } catch (e) {
+        if (win) win.close();
+        showToast('Could not start authorization — check the token');
+      }
     }
 
     function promptDashboardToken() {
@@ -2058,7 +2161,7 @@
       if (key === 'r') {
         e.preventDefault();
         fetchWeather(); fetchStocks(); fetchPower(); fetchSensors();
-        fetchHue(); fetchWaste(); fetchNews(); fetchTransit();
+        fetchHue(); fetchWaste(); fetchNews(); fetchTransit(); fetchIndexes();
         refreshMobilityData(true);
         showToast('Refreshing all widgets');
       } else if (key === 'd') {
@@ -3332,7 +3435,7 @@
       try {
         const res = await workerFetch('/netatmo/data');
         if (res.status === 401 || res.status === 403) {
-          document.getElementById('sensors-content').innerHTML = `<div style="color:var(--text-secondary);font-size:0.85rem;line-height:1.5;">Requires Netatmo authorization.<br>Dashboard owner: <a href="${workerAuthUrl('/auth/netatmo')}" target="_blank" style="color:var(--accent)">authorize here</a></div>`;
+          document.getElementById('sensors-content').innerHTML = `<div style="color:var(--text-secondary);font-size:0.85rem;line-height:1.5;">Requires Netatmo authorization.<br>Dashboard owner: <a href="#" onclick="openWorkerAuth('/auth/netatmo'); return false;" style="color:var(--accent)">authorize here</a></div>`;
           return;
         }
         const data = await res.json();
@@ -3490,7 +3593,7 @@
       try {
         const res = await workerFetch('/hue/groups');
         if (res.status === 401 || res.status === 403) {
-          document.getElementById('hue-content').innerHTML = `<div style="color:var(--text-secondary);font-size:0.85rem;line-height:1.5;">Requires Hue authorization.<br>Dashboard owner: <a href="${workerAuthUrl('/auth/hue')}" target="_blank" style="color:var(--accent)">authorize here</a></div>`;
+          document.getElementById('hue-content').innerHTML = `<div style="color:var(--text-secondary);font-size:0.85rem;line-height:1.5;">Requires Hue authorization.<br>Dashboard owner: <a href="#" onclick="openWorkerAuth('/auth/hue'); return false;" style="color:var(--accent)">authorize here</a></div>`;
           return;
         }
         const groupData = await res.json();
@@ -4955,6 +5058,7 @@
         case 'hue': return getHueSettingsHTML();
         case 'waste': return getWasteSettingsHTML();
         case 'mobility': return getMobilitySettingsHTML();
+        case 'indexes': return getIndexesSettingsHTML();
         default: return '<p>No settings available.</p>';
       }
     }
@@ -5550,7 +5654,7 @@
           <div class="loading">Loading scenes...</div>
         </div>
         <div class="widget-popup-actions">
-          <a href="${workerAuthUrl('/auth/hue')}" target="_blank" class="btn" style="text-decoration:none;margin-right:auto;font-size:0.78rem;color:var(--text-secondary);">Re-authorize</a>
+          <a href="#" onclick="openWorkerAuth('/auth/hue'); return false;" class="btn" style="text-decoration:none;margin-right:auto;font-size:0.78rem;color:var(--text-secondary);">Re-authorize</a>
           <button class="btn" onclick="closeWidgetPopup()">Cancel</button>
           <button class="btn btn-primary" onclick="saveHueSettings()">Save</button>
         </div>`;
@@ -5688,6 +5792,13 @@
             const loc = getLocation();
             setMobilityCenter(loc.lat, loc.lon, loc.address || loc.name, true);
           }
+          break;
+        case 'indexes':
+          cfg.indexes = DEFAULTS.indexes;
+          localStorage.setItem('dashboard-config', JSON.stringify(cfg));
+          closeWidgetPopup();
+          showToast('Indexes reset to default');
+          fetchIndexes();
           break;
         case 'stocks':
           cfg.stocks = DEFAULTS.stocks;
@@ -5912,16 +6023,161 @@
       }
     });
 
-    // ── Layout Settings ──
-    const ALL_WIDGETS = ['weather', 'sensors', 'hue', 'stocks', 'power', 'news', 'transit', 'waste', 'mobility'];
-    const WIDGET_LABELS = { weather: 'Weather', sensors: 'Home sensors', hue: 'Lights', stocks: 'Markets', power: 'Power price', news: 'News', transit: 'Departures', waste: 'Waste collection', mobility: 'Nearby mobility' };
+    // ── Vibes indexes ──
+    // Tiles are driven by config: a pick is just { name }, and everything else
+    // (label, emoji, unit, gauge scale) comes from the Worker's registry, so
+    // adding an index is data rather than code.
+    let indexCatalog = null;
 
-    const DEFAULT_WIDGET_ORDER = ['weather', 'transit', 'mobility', 'power', 'news', 'stocks', 'waste', 'sensors', 'hue'];
+    function getIndexes() {
+      const cfg = loadConfig();
+      return cfg?.indexes ?? DEFAULTS.indexes;
+    }
+
+    // Values are third-party, and go in via innerHTML.
+    function escIndex(v) {
+      return String(v ?? '').replace(/[&<>"']/g, c => (
+        { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
+      ));
+    }
+
+    async function fetchIndexCatalog(force) {
+      if (indexCatalog && !force) return indexCatalog;
+      const res = await workerFetch('/index/_list');
+      if (!res.ok) throw new Error('catalog ' + res.status);
+      indexCatalog = (await res.json()).indexes || [];
+      return indexCatalog;
+    }
+
+    function indexTimestamp(ts) {
+      if (!ts) return 'never';
+      return new Date(ts).toLocaleString('nb-NO', {
+        day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit'
+      });
+    }
+
+    async function fetchIndexes() {
+      const content = document.getElementById('indexes-content');
+      const status = document.getElementById('indexes-status');
+      if (!content) return;
+
+      // /index/* is behind the owner token, same as sensors and lights.
+      if (!getDashboardToken()) {
+        content.innerHTML = `<div style="color:var(--text-secondary);font-size:0.85rem;line-height:1.5;">Requires the dashboard owner token.<br>Use the lock button in the header to enter it.</div>`;
+        status.textContent = '';
+        return;
+      }
+
+      const picks = getIndexes();
+      if (!picks.length) {
+        content.innerHTML = `<div style="color:var(--text-secondary);font-size:0.85rem;">No indexes selected &mdash; use Edit to choose some.</div>`;
+        status.textContent = '';
+        return;
+      }
+
+      // One request per index, in parallel. A single source failing must not
+      // take the widget down, so each is caught individually.
+      const results = await Promise.all(picks.map(async p => {
+        try {
+          const res = await workerFetch('/index/' + encodeURIComponent(p.name));
+          if (!res.ok) throw new Error('HTTP ' + res.status);
+          return await res.json();
+        } catch (e) {
+          return { name: p.name, label: p.name, display: null, value: null, stale: true, error: e.message };
+        }
+      }));
+
+      content.innerHTML = '<div class="index-grid">' + results.map(r => {
+        let gauge = '';
+        if (r.scale && r.value !== null && r.value !== undefined) {
+          const span = r.scale[1] - r.scale[0];
+          const pct = span ? Math.max(0, Math.min(100, ((r.value - r.scale[0]) / span) * 100)) : 0;
+          gauge = `<div class="index-gauge"><div class="index-gauge-fill" style="width:${pct}%"></div></div>`;
+        }
+        const when = indexTimestamp(r.ts);
+        const caption = r.stale ? 'Stale &middot; ' + escIndex(when) : escIndex(r.caption || '');
+        const title = `${escIndex(r.label)} — updated ${escIndex(when)}${r.error ? ' — ' + escIndex(r.error) : ''}`;
+        return `
+          <div class="index-tile${r.stale ? ' stale' : ''}" title="${title}">
+            <div class="index-tile-top">
+              <span>${escIndex(r.emoji || '')}</span>
+              <span class="index-tile-label">${escIndex(r.label)}</span>
+            </div>
+            <div class="index-tile-value">${r.display === null || r.display === undefined ? '&mdash;' : escIndex(r.display) + escIndex(r.unit || '')}</div>
+            ${gauge}
+            <div class="index-tile-caption">${caption}</div>
+          </div>`;
+      }).join('') + '</div>';
+
+      const staleCount = results.filter(r => r.stale).length;
+      status.textContent = (staleCount ? staleCount + ' stale · ' : '') +
+        'Updated ' + new Date().toLocaleTimeString('nb-NO', { hour: '2-digit', minute: '2-digit' });
+    }
+    fetchIndexes();
+    setInterval(fetchIndexes, 15 * 60 * 1000);
+
+    function getIndexesSettingsHTML() {
+      // The catalogue is a Worker round-trip, so fill the list in after render.
+      setTimeout(renderIndexesSettings, 0);
+      return `
+        <h3>Vibes indexes</h3>
+        <p class="hint" style="margin-bottom:8px;">Pick which indexes appear. The list comes from the Worker &mdash; new sources show up here automatically.</p>
+        <div id="wp-indexes-list" style="max-height:300px;overflow-y:auto;"><div class="loading">Loading available indexes...</div></div>
+        <div class="widget-popup-actions">
+          <button class="btn" onclick="resetWidget('indexes')" style="margin-right:auto;font-size:0.78rem;color:var(--text-secondary);">Reset to default</button>
+          <button class="btn" onclick="closeWidgetPopup()">Close</button>
+        </div>`;
+    }
+
+    async function renderIndexesSettings() {
+      const el = document.getElementById('wp-indexes-list');
+      if (!el) return;
+      if (!getDashboardToken()) {
+        el.innerHTML = '<p class="hint">Enter the dashboard owner token first (lock button in the header).</p>';
+        return;
+      }
+      try {
+        const catalog = await fetchIndexCatalog(true);
+        const picked = getIndexes().map(p => p.name);
+        el.innerHTML = '<div style="display:flex;flex-wrap:wrap;gap:6px;">' + catalog.map(c => {
+          const on = picked.includes(c.name);
+          const warn = c.unverified ? ' *' : '';
+          return `<button class="layout-choice${on ? ' selected' : ''}" onclick="toggleIndex('${escIndex(c.name)}', this)" style="font-size:0.75rem;padding:6px 12px;">${escIndex(c.emoji || '')} ${escIndex(c.label)}${warn}</button>`;
+        }).join('') + '</div>' +
+        (catalog.some(c => c.unverified)
+          ? '<p class="hint" style="margin-top:8px;">* source not yet confirmed from the Worker.</p>'
+          : '');
+      } catch (e) {
+        el.innerHTML = '<p class="hint">Could not reach the Worker index catalogue.</p>';
+      }
+    }
+
+    function toggleIndex(name, btn) {
+      const cfg = loadConfig() || {};
+      const list = (cfg.indexes ?? DEFAULTS.indexes).slice();
+      const idx = list.findIndex(i => i.name === name);
+      if (idx >= 0) {
+        list.splice(idx, 1);
+        btn.classList.remove('selected');
+      } else {
+        list.push({ name });
+        btn.classList.add('selected');
+      }
+      cfg.indexes = list;
+      localStorage.setItem('dashboard-config', JSON.stringify(cfg));
+      fetchIndexes();
+    }
+
+    // ── Layout Settings ──
+    const ALL_WIDGETS = ['weather', 'sensors', 'hue', 'stocks', 'indexes', 'power', 'news', 'transit', 'waste', 'mobility'];
+    const WIDGET_LABELS = { weather: 'Weather', sensors: 'Home sensors', hue: 'Lights', stocks: 'Markets', indexes: 'Vibes', power: 'Power price', news: 'News', transit: 'Departures', waste: 'Waste collection', mobility: 'Nearby mobility' };
+
+    const DEFAULT_WIDGET_ORDER = ['weather', 'transit', 'mobility', 'power', 'news', 'stocks', 'indexes', 'waste', 'sensors', 'hue'];
 
     function getLayoutConfig() {
       const saved = localStorage.getItem('dashboard-layout');
       if (saved) return JSON.parse(saved);
-      return { columns: 2, spacing: 'comfortable', width: 'default', hiddenWidgets: ['sensors', 'hue'] };
+      return { columns: 2, spacing: 'comfortable', width: 'default', hiddenWidgets: ['sensors', 'hue', 'indexes'] };
     }
 
     function saveLayoutConfig(cfg) {

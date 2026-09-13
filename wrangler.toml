@@ -1,0 +1,19 @@
+# Local development config for the dashboard Worker.
+#
+# The deployed Worker is written in *service-worker* format (addEventListener
+# plus bare globals for secrets and KV), so it is declared that way here. Do not
+# convert it to module format without rewriting every DASHBOARD_TOKEN / KV
+# reference in cloudflare-worker-deploy.js.
+#
+#   npx wrangler dev        run locally on :8787 with simulated KV
+#   npx wrangler deploy     push to Cloudflare (needs the real KV id below)
+
+name = "yahoopull"
+main = "cloudflare-worker-deploy.js"
+compatibility_date = "2026-09-13"
+
+# Replace `id` with the real namespace id from the Cloudflare dashboard before
+# deploying. `wrangler dev` ignores it and uses a local simulation.
+kv_namespaces = [
+  { binding = "KV", id = "0000000000000000000000000000000f" }
+]

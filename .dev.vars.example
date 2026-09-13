@@ -1,0 +1,24 @@
+# Copy to .dev.vars and fill in. .dev.vars is gitignored.
+# These become the Worker's globals under `wrangler dev`; in production they are
+# set as Worker secrets in the Cloudflare dashboard instead.
+
+# Any long random string. Fail-closed: with this empty, every protected route
+# returns 503 rather than serving data.
+DASHBOARD_TOKEN=local-dev-token
+
+# Tier 2 (net worth, savings goals, briefs) only answers from these networks.
+# Comma-separated CIDRs, IPv4 or IPv6. A /0 entry is ignored by design.
+# In production this is your home broadband IP, e.g. 84.202.5.9/32,2001:db8:1::/56
+HOME_NETWORKS=203.0.113.10/32
+
+# Dev only. wrangler dev sets no CF-Connecting-IP, so the home-network check has
+# no address to test. This pretends the request came from one. NEVER set this as
+# a production secret — it would override the real client IP.
+DEV_CLIENT_IP=203.0.113.10
+
+# OAuth apps — only needed when working on the sensors or lights widgets.
+NETATMO_CLIENT_ID=
+NETATMO_CLIENT_SECRET=
+HUE_CLIENT_ID=
+HUE_CLIENT_SECRET=
+HUE_APP_ID=

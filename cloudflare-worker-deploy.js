@@ -359,14 +359,41 @@ async function handleRequest(request) {
       return new Response(JSON.stringify({error: "Missing gatekode"}), {status: 400, headers: {"Content-Type": "application/json", "Access-Control-Allow-Origin": "*"}});
     }
 
-    // Oslo has its own API
+    // Oslo has its own API. The old xmlhttprequest.php endpoint was removed by
+    // the kommune and 404s for every address; this is the endpoint their own
+    // renovation search now uses. It wants the house number and its letter as
+    // SEPARATE parameters, and returns nothing unless all four are supplied.
     if (kommunenr === "0301" || kommunenr === "301") {
-      var osloUrl = "https://www.oslo.kommune.no/xmlhttprequest.php?service=ren.search&street=" + encodeURIComponent(gatenavn) + "&number=" + encodeURIComponent(husnr) + "&street_id=" + encodeURIComponent(gatekode);
+      var split = splitHouseNumber(husnr);
+      var osloUrl = "https://www.oslo.kommune.no/actions/snap-lib-waste-complaint/search-by-address" +
+        "?street=" + encodeURIComponent(gatenavn) +
+        "&number=" + encodeURIComponent(split.number) +
+        "&letter=" + encodeURIComponent(split.letter) +
+        "&street_id=" + encodeURIComponent(gatekode);
       var resp = await fetch(osloUrl, {
-        headers: {"User-Agent": "Mozilla/5.0"}
+        headers: {"User-Agent": "Mozilla/5.0", "Accept": "application/json"}
       });
       var body = await resp.text();
-      return new Response(body, {status: resp.status, headers: {"Content-Type": "application/json", "Access-Control-Allow-Origin": "*"}});
+      if (!resp.ok) {
+        return jsonResponse({error: "Oslo waste API returned " + resp.status, result: []}, 502);
+      }
+      var parsed;
+      try {
+        parsed = JSON.parse(body);
+      } catch (err) {
+        // The kommune serves an HTML error page on failure. Never pass that to
+        // the dashboard, which would throw on res.json().
+        return jsonResponse({error: "Oslo waste API did not return JSON", result: []}, 502);
+      }
+      // A search returns neighbouring addresses too (12B also yields 12C), so
+      // narrow to the exact house before the dashboard sees it. If nothing
+      // matches exactly, hand back everything rather than an empty widget.
+      var all = parsed.result || [];
+      var exact = all.filter(function(r) {
+        return String(r.Husnummer) === String(split.number) &&
+               String(r.Bokstav || "").toUpperCase() === split.letter.toUpperCase();
+      });
+      return jsonResponse({result: exact.length ? exact : all, matched: exact.length > 0});
     }
 
     // All other municipalities: Norkart Min Renovasjon
@@ -397,7 +424,8 @@ async function handleRequest(request) {
         var s = INDEX_SOURCES[k];
         return {
           name: k, label: s.label, emoji: s.emoji || "", unit: s.unit || "",
-          scale: s.scale || null, ttl: s.ttl, unverified: !!s.unverified
+          category: s.category || "other", scale: s.scale || null,
+          ttl: s.ttl, unverified: !!s.unverified
         };
       })});
     }
@@ -527,9 +555,12 @@ function generateCode() {
 //   captionPick dot path to a short label shown under the value
 //   column      whitespace-column index, for text-column sources
 //   scale       [min, max] to draw a gauge bar; omit for open-ended series
+//   category    groups the source in the dashboard picker:
+//               geopolitics | markets | planet | norge | tull
 //   unverified  endpoint not yet confirmed end-to-end from a Worker
 var INDEX_SOURCES = {
   "crypto-fng": {
+    category: "markets",
     label: "Crypto Fear & Greed",
     emoji: "₿",
     url: "https://api.alternative.me/fng/?limit=1",
@@ -541,6 +572,7 @@ var INDEX_SOURCES = {
     ttl: 3600
   },
   "co2": {
+    category: "planet",
     label: "CO₂ Mauna Loa",
     emoji: "🌍",
     url: "https://gml.noaa.gov/webdata/ccgg/trends/co2/co2_weekly_mlo.txt",
@@ -551,6 +583,7 @@ var INDEX_SOURCES = {
     ttl: 86400
   },
   "eurnok": {
+    category: "norge",
     label: "EUR/NOK",
     emoji: "💱",
     url: "https://data.norges-bank.no/api/data/EXR/B.EUR.NOK.SP?format=sdmx-json&lastNObservations=1",
@@ -559,6 +592,7 @@ var INDEX_SOURCES = {
     ttl: 21600
   },
   "styringsrente": {
+    category: "norge",
     label: "Styringsrente",
     emoji: "🏦",
     url: "https://data.norges-bank.no/api/data/IR/B.KPRA.SD.R?format=sdmx-json&lastNObservations=1",
@@ -567,10 +601,88 @@ var INDEX_SOURCES = {
     decimals: 2,
     ttl: 86400
   },
+  // Trump pressure index. Next.js server-renders the numbers into the flight
+  // payload, so a loose regex beats unescaping the JSON out of the HTML.
+  "salsa": {
+    category: "geopolitics",
+    label: "SALSA Index",
+    emoji: "🌶",
+    url: "https://www.salsa-index.com/",
+    type: "regex",
+    regex: "indexValue[^0-9]{0,4}([0-9.]+)",
+    caption: "presidential pressure",
+    scale: [0, 100],
+    decimals: 1,
+    ttl: 3600,
+    ua: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0 Safari/537.36"
+  },
+  "salsa-taco": {
+    category: "geopolitics",
+    label: "TACO Probability",
+    emoji: "🌮",
+    url: "https://www.salsa-index.com/",
+    type: "regex",
+    regex: "tacoProbability[^0-9]{0,4}([0-9.]+)",
+    caption: "chance he blinks",
+    unit: " %",
+    scale: [0, 100],
+    decimals: 0,
+    ttl: 3600,
+    ua: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0 Safari/537.36"
+  },
+  // One JSON call carries six sub-indices; each is exposed as its own tile.
+  "ai-bubble": {
+    category: "markets",
+    label: "AI Bubble",
+    emoji: "🫧",
+    url: "https://aibubblemonitor.com/api/index/current",
+    type: "json",
+    pick: "overall",
+    captionPick: "label",
+    scale: [0, 100],
+    decimals: 0,
+    ttl: 3600
+  },
+  "ai-bubble-valuation": {
+    category: "markets",
+    label: "AI Valuation",
+    emoji: "💸",
+    url: "https://aibubblemonitor.com/api/index/current",
+    type: "json",
+    pick: "valuation",
+    scale: [0, 100],
+    decimals: 0,
+    ttl: 3600
+  },
+  "ai-bubble-systemic": {
+    category: "markets",
+    label: "AI Systemic Risk",
+    emoji: "⚠",
+    url: "https://aibubblemonitor.com/api/index/current",
+    type: "json",
+    pick: "systemicRisk",
+    scale: [0, 100],
+    decimals: 1,
+    ttl: 3600
+  },
+  // Average tone of world coverage matching a query; more negative = grimmer.
+  // The query is the point: one source becomes many trackers. GDELT rate-limits
+  // to one request per 5s, which the KV cache absorbs.
+  "gdelt-conflict": {
+    category: "geopolitics",
+    label: "World Mood: Conflict",
+    emoji: "🌐",
+    url: "https://api.gdeltproject.org/api/v2/doc/doc?query=(war%20OR%20conflict)&mode=timelinetone&timespan=3d&format=json",
+    type: "gdelt",
+    scale: [-10, 10],
+    decimals: 2,
+    ttl: 3600
+  },
   // Bot-protected. Parses correctly and only answers with a full browser UA
   // (a short UA gets "I'm a teapot"). Verified from a residential IP; Cloudflare
   // egress IPs are likelier to be challenged, so confirm after deploying.
   "cnn-fng": {
+    category: "markets",
     label: "CNN Fear & Greed",
     emoji: "📈",
     url: "https://production.dataviz.cnn.io/index/fearandgreed/graphdata",
@@ -586,6 +698,7 @@ var INDEX_SOURCES = {
   // HTTP-only origin — it serves no TLS at all, so https fails outright.
   // Parses correctly over http; confirm a Worker subrequest is not upgraded.
   "people-in-space": {
+    category: "planet",
     label: "People in space",
     emoji: "🚀",
     url: "http://api.open-notify.org/astros.json",
@@ -647,6 +760,14 @@ async function fetchIndexValue(source) {
   var body = await resp.text();
 
   if (source.type === "sdmx") return parseSdmxLatest(body);
+
+  if (source.type === "gdelt") {
+    var tl = JSON.parse(body).timeline || [];
+    var series = tl.length ? tl[0].data || [] : [];
+    if (!series.length) throw new Error("Empty timeline");
+    var last = series[series.length - 1];
+    return {value: Number(last.value), caption: String(last.date || "").slice(0, 8)};
+  }
 
   if (source.type === "text-column") {
     var row = parseTextColumn(body, source.column);
@@ -950,4 +1071,12 @@ async function expandNetworks(list) {
     }
   }
   return out;
+}
+
+// "12B", "33 e" and "33" all have to reach the Oslo API as a number plus a
+// separate letter. Anything unparseable degrades to the digits it can find.
+function splitHouseNumber(raw) {
+  var m = String(raw == null ? "" : raw).trim().match(/^(\d+)\s*([A-Za-z]?)/);
+  if (!m) return {number: "", letter: ""};
+  return {number: m[1], letter: (m[2] || "").toUpperCase()};
 }

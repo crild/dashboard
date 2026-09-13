@@ -3690,8 +3690,22 @@
           return;
         }
 
-        const res = await fetch(`${WORKER}/waste/calendar?kommunenr=${wasteCfg.kommunenr}&gatekode=${wasteCfg.gatekode}&gatenavn=${encodeURIComponent(wasteCfg.gatenavn || '')}&husnr=${wasteCfg.husnr || '1'}`);
-        const data = await res.json();
+        const res = await fetch(`${WORKER}/waste/calendar?kommunenr=${wasteCfg.kommunenr}&gatekode=${wasteCfg.gatekode}&gatenavn=${encodeURIComponent(wasteCfg.gatenavn || '')}&husnr=${encodeURIComponent(wasteCfg.husnr || '1')}`);
+        let data;
+        try {
+          data = await res.json();
+        } catch (parseErr) {
+          // The upstream kommune API serves HTML on failure; res.json() would
+          // throw and take the whole widget down.
+          document.getElementById('waste-content').innerHTML =
+            '<div class="error">Waste service returned an unexpected response. It may be temporarily down.</div>';
+          return;
+        }
+        if (data && data.error) {
+          document.getElementById('waste-content').innerHTML =
+            `<div class="error">${String(data.error).replace(/[<>&]/g, '')}</div>`;
+          return;
+        }
 
         const now = new Date();
         now.setHours(0, 0, 0, 0);
@@ -3702,9 +3716,15 @@
         const upcoming = [];
         const past = [];
         const isOslo = wasteCfg.kommunenr === '0301' || wasteCfg.kommunenr === '301';
+        let approximateAddress = false;
 
         if (isOslo) {
-          const results = data?.data?.result || [];
+          const results = data?.result || data?.data?.result || [];
+          // The search returns neighbouring houses when the exact address is
+          // not found, so say so rather than silently showing next door's bins.
+          if (data && data.matched === false && results.length) {
+            approximateAddress = true;
+          }
           const seenNext = new Map();
           const seenPast = new Map();
           results.forEach(r => {
@@ -3837,7 +3857,12 @@
           + upcoming.map(u => renderWasteItem(u, false)).join('');
 
         document.getElementById('waste-content').innerHTML = html;
-        document.getElementById('waste-status').textContent = 'Updated ' + new Date().toLocaleTimeString('nb-NO', { hour: '2-digit', minute: '2-digit' });
+        const wasteStamp = 'Updated ' + new Date().toLocaleTimeString('nb-NO', { hour: '2-digit', minute: '2-digit' });
+        const wasteStatusEl = document.getElementById('waste-status');
+        wasteStatusEl.textContent = approximateAddress ? 'Nearest address · ' + wasteStamp : wasteStamp;
+        wasteStatusEl.title = approximateAddress
+          ? 'No exact match for this house number — showing the closest address the kommune returned.'
+          : '';
       } catch (e) {
         document.getElementById('waste-content').innerHTML = '<div class="error">Could not load waste schedule.</div>';
       }

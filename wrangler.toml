@@ -12,8 +12,8 @@ name = "yahoopull"
 main = "cloudflare-worker-deploy.js"
 compatibility_date = "2026-09-13"
 
-# Replace `id` with the real namespace id from the Cloudflare dashboard before
-# deploying. `wrangler dev` ignores it and uses a local simulation.
+# The live `dashboard_kv` namespace. `wrangler dev` ignores this and uses a
+# local simulation, so development never touches production data.
 kv_namespaces = [
-  { binding = "KV", id = "0000000000000000000000000000000f" }
+  { binding = "KV", id = "eaa088f56ce6452097707211cc318762" }
 ]

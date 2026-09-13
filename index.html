@@ -87,7 +87,22 @@
       display: grid;
       grid-template-columns: repeat(2, 1fr);
       gap: 16px;
+      /* Cards size to their content instead of stretching to the tallest in
+         the row, which left short cards wrapping a big empty space. */
+      align-items: start;
+      /* Plain value first so a browser without clamp() still resolves the var;
+         an unresolvable var() makes every dependent property compute to its
+         initial value. */
+      --row-unit: 190px;
+      --row-unit: clamp(140px, 22vh, 260px);
     }
+
+    /* These two have flex:1 chart areas with ResizeObservers that redraw on
+       height change, so they are the cards that actually want the row height. */
+    .grid > .card[data-widget="power"],
+    .grid > .card[data-widget="sensors"] { align-self: stretch; }
+
+    .grid .card.collapsed { align-self: start; }
 
     /* Adaptive layout spans assigned by JS */
     .card.span-full { grid-column: 1 / -1; }
@@ -596,7 +611,7 @@
     }
 
     .news-list {
-      max-height: 400px;
+      max-height: var(--news-h, calc(var(--row-unit) * 2.2));
       overflow-y: auto;
       scrollbar-width: thin;
     }
@@ -1067,9 +1082,20 @@
 
     .mobility-map {
       width: 100%;
-      height: 300px;
+      height: var(--map-h, 300px);
       border-radius: 10px;
       z-index: 1;
+    }
+
+    /* Where aspect-ratio is supported the map scales with its column instead of
+       being a fixed 300px slab. Capped so it cannot dominate a tall screen. */
+    @supports (aspect-ratio: 1) {
+      .mobility-map {
+        height: auto;
+        aspect-ratio: 16 / 10;
+        min-height: 200px;
+        max-height: calc(var(--row-unit) * 2.2);
+      }
     }
 
     .mobility-walk-overlay {
@@ -1637,6 +1663,7 @@
     }
 
     /* Grid column overrides */
+    .grid.cols-1 { grid-template-columns: 1fr; }
     .grid.cols-2 { grid-template-columns: repeat(2, 1fr); }
     .grid.cols-3 { grid-template-columns: repeat(3, 1fr); }
     .grid.cols-4 { grid-template-columns: repeat(4, 1fr); }
@@ -1653,10 +1680,11 @@
     .container.width-narrow { max-width: 1000px; }
     .container.width-default { max-width: 1200px; }
     .container.width-wide { max-width: 1600px; }
+    .container.width-xwide { max-width: 2200px; }
     .container.width-full { max-width: 100%; }
 
     @media (max-width: 700px) {
-      .grid.cols-2, .grid.cols-3, .grid.cols-4 {
+      .grid.cols-1, .grid.cols-2, .grid.cols-3, .grid.cols-4 {
         grid-template-columns: 1fr;
       }
     }
@@ -1691,7 +1719,7 @@
 
     <div class="grid">
       <!-- Weather -->
-      <div class="card card-narrow" data-widget="weather">
+      <div class="card" data-widget="weather">
         <div class="card-header">
           <span class="card-title">Weather</span>
           <div class="card-header-right">
@@ -1705,7 +1733,7 @@
       </div>
 
       <!-- Sensors -->
-      <div class="card card-narrow" data-widget="sensors">
+      <div class="card" data-widget="sensors">
         <div class="card-header">
           <span class="card-title">Home</span>
           <span class="card-status" id="sensors-status"></span>
@@ -1716,7 +1744,7 @@
       </div>
 
       <!-- Hue Lights -->
-      <div class="card card-narrow" data-widget="hue">
+      <div class="card" data-widget="hue">
         <div class="card-header">
           <span class="card-title">Lights</span>
           <div class="card-header-right">
@@ -1730,7 +1758,7 @@
       </div>
 
       <!-- Stocks -->
-      <div class="card card-wide" data-widget="stocks">
+      <div class="card" data-widget="stocks">
         <div class="card-header">
           <span class="card-title">Markets</span>
           <div class="card-header-right">
@@ -1744,7 +1772,7 @@
       </div>
 
       <!-- Vibes indexes -->
-      <div class="card card-wide" data-widget="indexes">
+      <div class="card" data-widget="indexes">
         <div class="card-header">
           <span class="card-title">Vibes</span>
           <div class="card-header-right">
@@ -1758,7 +1786,7 @@
       </div>
 
       <!-- Power prices -->
-      <div class="card card-narrow" data-widget="power">
+      <div class="card" data-widget="power">
         <div class="card-header">
           <span class="card-title" id="power-title">Power price &mdash; Oslo</span>
           <span class="card-status" id="power-status"></span>
@@ -1769,7 +1797,7 @@
       </div>
 
       <!-- News -->
-      <div class="card card-wide" data-widget="news">
+      <div class="card" data-widget="news">
         <div class="card-header">
           <span class="card-title">News</span>
           <div class="card-header-right">
@@ -1784,7 +1812,7 @@
       </div>
 
       <!-- Transit -->
-      <div class="card card-wide" data-widget="transit">
+      <div class="card" data-widget="transit">
         <div class="card-header">
           <span class="card-title">Departures</span>
           <div class="card-header-right">
@@ -1798,7 +1826,7 @@
       </div>
 
       <!-- Waste collection -->
-      <div class="card card-narrow" data-widget="waste">
+      <div class="card" data-widget="waste">
         <div class="card-header">
           <span class="card-title">Waste collection</span>
           <div class="card-header-right">
@@ -1812,7 +1840,7 @@
       </div>
 
       <!-- Mobility -->
-      <div class="card card-wide" data-widget="mobility">
+      <div class="card" data-widget="mobility">
         <div class="card-header">
           <span class="card-title">Nearby mobility</span>
           <div class="card-header-right">
@@ -1920,10 +1948,45 @@
       ]
     };
 
+    // Single source of truth for widget identity, size class and default
+    // visibility. cls drives layout spans; w is a relative width weight and
+    // minW the width below which a card stops being readable.
+    const WIDGETS = {
+      weather:  { label: 'Weather',          cls: 'S',  w: 2, minW: 260 },
+      sensors:  { label: 'Home sensors',     cls: 'S',  w: 2, minW: 240, defaultHidden: true },
+      hue:      { label: 'Lights',           cls: 'S',  w: 2, minW: 260, defaultHidden: true },
+      stocks:   { label: 'Markets',          cls: 'M',  w: 3, minW: 370 },
+      indexes:  { label: 'Vibes',            cls: 'M',  w: 3, minW: 310, defaultHidden: true },
+      power:    { label: 'Power price',      cls: 'M',  w: 3, minW: 300 },
+      news:     { label: 'News',             cls: 'L',  w: 5, minW: 380 },
+      transit:  { label: 'Departures',       cls: 'M',  w: 4, minW: 300 },
+      waste:    { label: 'Waste collection', cls: 'S',  w: 2, minW: 240 },
+      mobility: { label: 'Nearby mobility',  cls: 'XL', w: 6, minW: 420 }
+    };
+    // Anything added to the DOM but not the registry still lays out sanely.
+    const WIDGET_FALLBACK = { cls: 'M', w: 3, minW: 320 };
+    function widgetMeta(name) { return WIDGETS[name] || WIDGET_FALLBACK; }
+
+    // localStorage can hold corrupt JSON — a half-written value, a hand-edited
+    // key, a quota failure mid-write. An unguarded JSON.parse used to throw and
+    // take a whole widget down, so every read goes through this and the bad key
+    // is dropped rather than breaking again on the next load.
+    function safeParse(raw, fallback, key) {
+      if (raw === null || raw === undefined) return fallback;
+      try {
+        const parsed = JSON.parse(raw);
+        return (parsed === null || parsed === undefined) ? fallback : parsed;
+      } catch (e) {
+        if (key) { try { localStorage.removeItem(key); } catch (e2) {} }
+        return fallback;
+      }
+    }
+
     function loadConfig() {
       const saved = localStorage.getItem('dashboard-config');
       if (!saved) return null;
-      const cfg = JSON.parse(saved);
+      const cfg = safeParse(saved, null, 'dashboard-config');
+      if (!cfg) return null;
       // Migrate old separate weather/waste/powerZone into unified location
       if (!cfg.location && (cfg.weather || cfg.waste)) {
         const w = cfg.weather || DEFAULTS.location;
@@ -2126,7 +2189,7 @@
 
     // ── Widget collapse/expand ──
     (function initCollapse() {
-      const collapsed = JSON.parse(localStorage.getItem('dashboard-collapsed') || '[]');
+      const collapsed = safeParse(localStorage.getItem('dashboard-collapsed'), [], 'dashboard-collapsed');
       document.querySelectorAll('.card').forEach(card => {
         const widget = card.getAttribute('data-widget');
         if (!widget) return;
@@ -2150,6 +2213,9 @@
       const collapsed = [...document.querySelectorAll('.card.collapsed')]
         .map(c => c.getAttribute('data-widget')).filter(Boolean);
       localStorage.setItem('dashboard-collapsed', JSON.stringify(collapsed));
+      // Collapsing changes a card's layout weight, so re-pack. scheduleLayout
+      // is a hoisted declaration further down this same <script> block.
+      scheduleLayout();
     }
 
     // ── Keyboard shortcuts ──
@@ -6194,15 +6260,23 @@
     }
 
     // ── Layout Settings ──
-    const ALL_WIDGETS = ['weather', 'sensors', 'hue', 'stocks', 'indexes', 'power', 'news', 'transit', 'waste', 'mobility'];
-    const WIDGET_LABELS = { weather: 'Weather', sensors: 'Home sensors', hue: 'Lights', stocks: 'Markets', indexes: 'Vibes', power: 'Power price', news: 'News', transit: 'Departures', waste: 'Waste collection', mobility: 'Nearby mobility' };
+    const ALL_WIDGETS = Object.keys(WIDGETS);
+    const WIDGET_LABELS = Object.fromEntries(ALL_WIDGETS.map(w => [w, WIDGETS[w].label]));
+    const DEFAULT_HIDDEN = ALL_WIDGETS.filter(w => WIDGETS[w].defaultHidden);
 
     const DEFAULT_WIDGET_ORDER = ['weather', 'transit', 'mobility', 'power', 'news', 'stocks', 'indexes', 'waste', 'sensors', 'hue'];
 
     function getLayoutConfig() {
-      const saved = localStorage.getItem('dashboard-layout');
-      if (saved) return JSON.parse(saved);
-      return { columns: 2, spacing: 'comfortable', width: 'default', hiddenWidgets: ['sensors', 'hue', 'indexes'] };
+      // Merge rather than return stored config verbatim: a config written by an
+      // older version is missing keys the current code reads, and reading
+      // undefined.columns silently produced a broken grid.
+      const stored = safeParse(localStorage.getItem('dashboard-layout'), null, 'dashboard-layout');
+      const cfg = Object.assign({
+        columns: 2, spacing: 'comfortable', width: 'default',
+        hiddenWidgets: DEFAULT_HIDDEN.slice(), smart: false, smartBias: 0
+      }, stored || {});
+      if (!Array.isArray(cfg.hiddenWidgets)) cfg.hiddenWidgets = DEFAULT_HIDDEN.slice();
+      return cfg;
     }
 
     function saveLayoutConfig(cfg) {
@@ -6215,17 +6289,21 @@
       const container = document.querySelector('.container');
       if (!grid || !container) return;
 
-      // Columns
-      grid.classList.remove('cols-2', 'cols-3', 'cols-4');
-      grid.classList.add('cols-' + cfg.columns);
+      // Smart owns these three while it is on, and never writes cfg.columns /
+      // spacing / width, so switching back restores exactly what was set before.
+      if (!cfg.smart) {
+        // Columns
+        grid.classList.remove('cols-1', 'cols-2', 'cols-3', 'cols-4');
+        grid.classList.add('cols-' + cfg.columns);
 
-      // Spacing
-      grid.classList.remove('spacing-compact', 'spacing-comfortable', 'spacing-spacious');
-      grid.classList.add('spacing-' + cfg.spacing);
+        // Spacing
+        grid.classList.remove('spacing-compact', 'spacing-comfortable', 'spacing-spacious');
+        grid.classList.add('spacing-' + cfg.spacing);
 
-      // Width
-      container.classList.remove('width-narrow', 'width-default', 'width-wide', 'width-full');
-      container.classList.add('width-' + cfg.width);
+        // Width
+        container.classList.remove('width-narrow', 'width-default', 'width-wide', 'width-xwide', 'width-full');
+        container.classList.add('width-' + cfg.width);
+      }
 
       // Widget visibility
       const hidden = cfg.hiddenWidgets || [];
@@ -6252,6 +6330,24 @@
       popup.innerHTML = `
         <h3>Layout Settings</h3>
 
+        <div class="layout-option-group">
+          <label>Layout mode</label>
+          <div class="layout-choices">
+            <button class="layout-choice${cfg.smart ? '' : ' selected'}" onclick="setLayoutMode(false)">Manual</button>
+            <button class="layout-choice${cfg.smart ? ' selected' : ''}" onclick="setLayoutMode(true)">Smart</button>
+          </div>
+          <p class="hint" style="margin-top:6px;">Smart picks columns, spacing and page width for you, and re-packs when you show, hide, collapse or reorder a card.</p>
+          ${cfg.smart ? `
+          <div style="display:flex;align-items:center;gap:8px;margin-top:8px;">
+            <span style="font-size:0.78rem;color:var(--text-secondary);">Card size</span>
+            <button class="layout-choice" style="padding:4px 10px;font-size:0.75rem;" onclick="setSmartBias(-1)">Smaller</button>
+            <button class="layout-choice" style="padding:4px 10px;font-size:0.75rem;" onclick="setSmartBias(1)">Bigger</button>
+            ${cfg.smartBias ? `<span style="font-size:0.72rem;color:var(--text-secondary);">${cfg.smartBias > 0 ? '+' : ''}${cfg.smartBias}</span>` : ''}
+          </div>
+          <div id="smart-readout" style="font-size:0.72rem;color:var(--text-secondary);margin-top:6px;"></div>` : ''}
+        </div>
+
+        <div id="manual-knobs"${cfg.smart ? ' style="opacity:.4;pointer-events:none;"' : ''}>
         <div class="layout-option-group">
           <label>Columns</label>
           <div class="layout-choices">
@@ -6286,6 +6382,8 @@
           </div>
         </div>
 
+        </div>
+
         <div class="layout-option-group">
           <label>Widgets</label>
           <div style="display:flex;flex-wrap:wrap;gap:6px;">
@@ -6302,14 +6400,51 @@
         </div>`;
 
       overlay.classList.add('open');
+      renderSmartReadout();
+    }
+
+    // Smart mode leaves the manual knobs visible but inert, so the panel still
+    // reads as a live description of the current layout.
+    function renderSmartReadout() {
+      const el = document.getElementById('smart-readout');
+      if (!el) return;
+      if (smartDegraded) {
+        el.textContent = 'Smart unavailable — using the manual layout.';
+        return;
+      }
+      const t = smartLastTrace;
+      el.textContent = t
+        ? `Now: ${t.cols} column${t.cols === 1 ? '' : 's'}, ${t.spacing}, ${t.widthKey} width · ${t.band}/${t.density}`
+        : '';
+    }
+
+    function setLayoutMode(smart) {
+      const cfg = getLayoutConfig();
+      cfg.smart = !!smart;
+      saveLayoutConfig(cfg);
+      // Manual values were never overwritten while Smart was on, so turning it
+      // off restores exactly the layout the user last chose by hand.
+      applyLayoutConfig();
+      relayout();
+      openLayoutSettings();
+    }
+
+    function setSmartBias(delta) {
+      const cfg = getLayoutConfig();
+      cfg.smartBias = Math.max(-2, Math.min(2, (cfg.smartBias | 0) + delta));
+      saveLayoutConfig(cfg);
+      relayout();
+      openLayoutSettings();
     }
 
     function setLayoutOption(key, value, btn) {
       const cfg = getLayoutConfig();
+      // Smart owns columns/spacing/width; ignore stray clicks on the dimmed knobs.
+      if (cfg.smart && key !== 'smart' && key !== 'smartBias') return;
       cfg[key] = value;
       saveLayoutConfig(cfg);
       applyLayoutConfig();
-      applyAdaptiveLayout();
+      relayout();
 
       // Update selected state in the group
       const group = btn.closest('.layout-choices');
@@ -6328,19 +6463,19 @@
         cfg.hiddenWidgets.push(widget);
         btn.classList.remove('selected');
         // Remove from collapsed state when hidden
-        const collapsed = JSON.parse(localStorage.getItem('dashboard-collapsed') || '[]');
+        const collapsed = safeParse(localStorage.getItem('dashboard-collapsed'), [], 'dashboard-collapsed');
         const ci = collapsed.indexOf(widget);
         if (ci >= 0) { collapsed.splice(ci, 1); localStorage.setItem('dashboard-collapsed', JSON.stringify(collapsed)); }
       }
       saveLayoutConfig(cfg);
       applyLayoutConfig();
-      applyAdaptiveLayout();
+      relayout();
     }
 
     function resetLayout() {
       localStorage.removeItem('dashboard-layout');
       applyLayoutConfig();
-      applyAdaptiveLayout();
+      relayout();
       closeWidgetPopup();
       showToast('Layout reset to default');
     }
@@ -6349,52 +6484,319 @@
     applyLayoutConfig();
 
     // ── Adaptive Grid Layout ──
+    // ── Smart layout ─────────────────────────────────────────────────────────
+    // Opt-in mode replacing the three manual knobs (columns / spacing / page
+    // width) with one decision recomputed from the viewport and the visible
+    // widget set.
+    //
+    // It is a pure step function. It READS innerWidth/innerHeight/devicePixel-
+    // Ratio, the hidden and collapsed sets, and DOM order. It WRITES only
+    // grid-template-columns (cols-N), gap and padding (spacing-N), container
+    // max-width (width-N), grid-column (span classes) and two custom
+    // properties. None of those can alter any input, so there is no feedback
+    // edge: the map is monotone in width and settles in a single pass.
+    //
+    // window.innerWidth is deliberate - it INCLUDES the scrollbar, so a
+    // scrollbar appearing or vanishing cannot move the resolver's own input.
+    // grid.clientWidth would, and that is the classic layout oscillation.
+
+    const SMART_WIDTH_EDGES  = [480, 701, 1001, 1360, 1800, 2400];
+    const SMART_WIDTH_BANDS  = ['xs', 'sm', 'md', 'lg', 'xl', 'xxl', 'uhd'];
+    const SMART_HEIGHT_EDGES = [601, 901];
+    const SMART_HEIGHT_BANDS = ['short', 'mid', 'tall'];
+    const SPACING_STEPS      = ['compact', 'comfortable', 'spacious'];
+    const SMART_GROW_CAP     = { S: 2, M: 2, L: 2, XL: 3 };
+    const SMART_STICKY_PX    = 12;
+    // Must mirror the CSS at .grid.spacing-* and .container.width-*.
+    const SMART_GAP  = { compact: 8, comfortable: 16, spacious: 24 };
+    const SMART_MAXW = { narrow: 1000, default: 1200, wide: 1600, xwide: 2200, full: Infinity };
+
+    // band -> density -> [columns, pageWidth, spacing]
+    const SMART_TABLE = {
+      xs:  { light: [1, 'full',    'comfortable'], normal: [1, 'full',  'compact'],     heavy: [1, 'full',  'compact'] },
+      sm:  { light: [1, 'full',    'spacious'],    normal: [1, 'full',  'comfortable'], heavy: [1, 'full',  'compact'] },
+      md:  { light: [2, 'full',    'spacious'],    normal: [2, 'full',  'comfortable'], heavy: [2, 'full',  'compact'] },
+      lg:  { light: [2, 'wide',    'spacious'],    normal: [2, 'wide',  'comfortable'], heavy: [2, 'wide',  'compact'] },
+      xl:  { light: [2, 'default', 'spacious'],    normal: [3, 'wide',  'comfortable'], heavy: [3, 'wide',  'compact'] },
+      xxl: { light: [3, 'xwide',   'spacious'],    normal: [4, 'xwide', 'comfortable'], heavy: [4, 'xwide', 'comfortable'] },
+      uhd: { light: [4, 'xwide',   'spacious'],    normal: [4, 'xwide', 'spacious'],    heavy: [4, 'xwide', 'comfortable'] }
+    };
+
+    const SMART_BASE_SPAN = {
+      S:  { xs: 1, sm: 1, md: 1, lg: 1, xl: 1, xxl: 1, uhd: 1 },
+      M:  { xs: 1, sm: 1, md: 1, lg: 1, xl: 1, xxl: 2, uhd: 2 },
+      L:  { xs: 1, sm: 1, md: 1, lg: 1, xl: 1, xxl: 1, uhd: 1 },
+      XL: { xs: 1, sm: 1, md: 2, lg: 2, xl: 2, xxl: 2, uhd: 2 }
+    };
+
+    let smartPrevBand = null, smartPrevHBand = null;
+    let smartLastSignature = null, smartLastTrace = null, smartDegraded = false;
+
+    function smartBandFor(value, edges, names, prev) {
+      let i = 0;
+      while (i < edges.length && value >= edges[i]) i++;
+      // Sticky edges: hold the previous band while within a few px of the
+      // boundary just crossed, so a slow drag cannot flip back and forth.
+      if (prev) {
+        const prevIdx = names.indexOf(prev);
+        if (prevIdx >= 0 && Math.abs(prevIdx - i) === 1) {
+          const edge = edges[Math.min(prevIdx, i)];
+          if (Math.abs(value - edge) <= SMART_STICKY_PX) return prev;
+        }
+      }
+      return names[i];
+    }
+
+    function smartGridWidth(innerW, widthKey) {
+      const maxW = SMART_MAXW[widthKey] || Infinity;
+      const pad = innerW <= 400 ? 12 : 16;   // .container horizontal padding
+      return Math.max(200, Math.min(innerW, maxW) - pad * 2);
+    }
+
+    // Pack spans over the user's chosen order. Order is read, never rewritten:
+    // grid-auto-flow:dense is deliberately NOT used, because it visually
+    // reorders cards and would fight drag-to-reorder.
+    function smartPack(items, spans, cols) {
+      const out = spans.map(v => Math.max(1, Math.min(v, cols)));
+      let row = [], used = 0;
+      for (let i = 0; i < out.length; i++) {
+        const minSpan = items[i].cls === 'XL' ? Math.min(2, cols) : 1;
+        const slack = cols - used;
+        if (out[i] > slack) {
+          if (slack >= minSpan && slack > 0) {
+            out[i] = slack;                       // shrink into the slack
+          } else {
+            if (row.length && slack > 0) {        // donate slack backwards
+              const last = row[row.length - 1];
+              const cap = SMART_GROW_CAP[items[last].cls] || 2;
+              out[last] = Math.min(cols, out[last] + slack, cap);
+            }
+            row = []; used = 0;
+          }
+        }
+        row.push(i); used += out[i];
+        if (used >= cols) { row = []; used = 0; }
+      }
+      if (row.length) {
+        // Last row: grow trailing cards into the leftover, capped. A residual
+        // hole of one column is accepted rather than stretching a waste card
+        // across an entire wall.
+        let slack = cols - row.reduce((a, i) => a + out[i], 0);
+        for (let k = row.length - 1; k >= 0 && slack > 0; k--) {
+          const i = row[k];
+          const cap = SMART_GROW_CAP[items[i].cls] || 2;
+          const add = Math.min(slack, Math.max(0, cap - out[i]));
+          out[i] += add; slack -= add;
+        }
+      }
+      return out;
+    }
+
+    function applySmartLayout() {
+      const cfg = getLayoutConfig();
+      if (!cfg.smart) return false;
+      try {
+        const grid = document.querySelector('.grid');
+        const container = document.querySelector('.container');
+        if (!grid || !container) return false;
+
+        const innerW = window.innerWidth, innerH = window.innerHeight;
+        const dpr = window.devicePixelRatio || 1;
+        const hidden = new Set(cfg.hiddenWidgets || []);
+        const collapsed = new Set(safeParse(localStorage.getItem('dashboard-collapsed'), [], 'dashboard-collapsed'));
+
+        const allCards = Array.from(grid.querySelectorAll('.card[data-widget]'));
+        const cards = allCards.filter(c => !hidden.has(c.dataset.widget));
+        if (!cards.length) return false;
+
+        const band  = smartBandFor(innerW, SMART_WIDTH_EDGES, SMART_WIDTH_BANDS, smartPrevBand);
+        const hband = smartBandFor(innerH, SMART_HEIGHT_EDGES, SMART_HEIGHT_BANDS, smartPrevHBand);
+        smartPrevBand = band; smartPrevHBand = hband;
+
+        const items = cards.map(c => {
+          const meta = widgetMeta(c.dataset.widget);
+          const isCollapsed = collapsed.has(c.dataset.widget);
+          return { card: c, name: c.dataset.widget, cls: meta.cls, minW: meta.minW,
+                   w: isCollapsed ? 1 : meta.w, collapsed: isCollapsed };
+        });
+
+        const load = items.reduce((n, it) => n + it.w, 0);
+        const density = load <= 15 ? 'light' : (load <= 26 ? 'normal' : 'heavy');
+
+        let [cols, widthKey, spacing] = SMART_TABLE[band][density];
+        const fired = [];
+        const stepSpacing = d => {
+          const i = SPACING_STEPS.indexOf(spacing);
+          spacing = SPACING_STEPS[Math.max(0, Math.min(SPACING_STEPS.length - 1, i + d))];
+        };
+
+        if (hband === 'short') { stepSpacing(-1); fired.push('R1 short'); }
+        if (hband === 'tall' && density === 'light') { stepSpacing(1); fired.push('R2 tall+light'); }
+
+        // A large low-DPI panel is a wall display read from 1-3 metres, so give
+        // it fewer, larger cards. Scaling the page instead (zoom / transform)
+        // would change layout width and reintroduce a feedback edge.
+        if (innerW >= 1800 && dpr < 1.5) { cols = Math.max(2, cols - 1); fired.push('R3 wall'); }
+
+        const bigBand = ['lg', 'xl', 'xxl', 'uhd'].includes(band);
+        const collapsedFraction = items.filter(it => it.collapsed).length / items.length;
+        if (collapsedFraction >= 0.6 && bigBand) { cols = Math.min(4, cols + 1); fired.push('R4 collapsed'); }
+
+        const bias = cfg.smartBias | 0;
+        if (bias) { cols = Math.max(1, Math.min(4, cols - bias)); fired.push('bias ' + bias); }
+
+        const computeSpans = () => {
+          const gap = SMART_GAP[spacing];
+          const track = (smartGridWidth(innerW, widthKey) - (cols - 1) * gap) / cols;
+          return items.map(it => {
+            let span = it.collapsed ? 1 : (SMART_BASE_SPAN[it.cls] || SMART_BASE_SPAN.M)[band];
+            span = Math.min(span, cols);
+            // Grow while the card would be narrower than it can be read at.
+            while (span < cols && (span * track + (span - 1) * gap) < it.minW) span++;
+            return span;
+          });
+        };
+
+        let spans = computeSpans();
+
+        const totalBase = spans.reduce((a, b) => a + b, 0);
+        if (totalBase < cols) { cols = Math.max(1, totalBase); spans = computeSpans(); fired.push('R6 sparse'); }
+
+        // Fold awareness: prefer more columns over pushing cards below the fold,
+        // since nothing scrolls an untouched display.
+        //
+        // Two constraints, both learned the hard way:
+        //  - It must not fire on a wall panel. R3 deliberately REDUCED columns
+        //    there for legibility at 1-3 metres, and letting this undo that
+        //    gives back the cramped layout R3 exists to prevent.
+        //  - It must use base spans, not the minW-grown ones. Grown spans
+        //    shrink as the viewport widens, so folding off them made the column
+        //    count DECREASE on widening - a visible jump mid-drag.
+        const wallPanel = fired.includes('R3 wall');
+        if (bigBand && !wallPanel) {
+          const rowUnit = Math.min(260, Math.max(140, 0.22 * innerH)); // mirrors the CSS clamp
+          const headerEl = document.querySelector('header');
+          const headerH = (headerEl && headerEl.offsetHeight) || 64;
+          const gapPx = SMART_GAP[spacing];
+          const fits = Math.max(1, Math.floor((innerH - headerH - 24) / (rowUnit + gapPx)));
+          // Width-independent: base span per class for this band, capped at cols.
+          const baseTotal = items.reduce((n, it) => n + Math.min(
+            it.collapsed ? 1 : (SMART_BASE_SPAN[it.cls] || SMART_BASE_SPAN.M)[band], cols), 0);
+          let guard = 0;
+          while (Math.ceil(baseTotal / cols) > fits && cols < 4 && guard++ < 2) {
+            cols++; spans = computeSpans(); fired.push('R8 fold');
+          }
+        }
+
+        spans = smartPack(items, spans, cols);
+
+        const signature = cols + '|' + widthKey + '|' + spacing + '|' + spans.join(',');
+        smartLastTrace = { band, hband, density, load, dpr, innerW, innerH,
+                           cols, widthKey, spacing, rules: fired,
+                           spans: items.map((it, i) => it.name + ':' + spans[i]) };
+        smartDegraded = false;
+        // Nothing changed, so do not touch the DOM at all: an in-band resize
+        // costs one integer pass and zero reflows.
+        if (signature === smartLastSignature) return true;
+        smartLastSignature = signature;
+
+        grid.classList.remove('cols-1', 'cols-2', 'cols-3', 'cols-4');
+        grid.classList.add('cols-' + cols);
+        grid.classList.remove('spacing-compact', 'spacing-comfortable', 'spacing-spacious');
+        grid.classList.add('spacing-' + spacing);
+        container.classList.remove('width-narrow', 'width-default', 'width-wide', 'width-xwide', 'width-full');
+        container.classList.add('width-' + widthKey);
+
+        allCards.forEach(c => {
+          c.classList.remove('span-full', 'span-half', 'span-2', 'span-3');
+          c.style.removeProperty('--map-h');
+          c.style.removeProperty('--news-h');
+        });
+        const SPAN_CLASS = ['', 'span-half', 'span-2', 'span-3'];
+        items.forEach((it, i) => {
+          const cls = spans[i] >= cols ? 'span-full' : SPAN_CLASS[spans[i]];
+          if (cls) it.card.classList.add(cls);
+          // Elastic heights: a wide map earns more height; a wall display keeps
+          // the news list tall because nobody is going to scroll it.
+          if (it.name === 'mobility' && spans[i] >= 2) {
+            it.card.style.setProperty('--map-h', 'calc(var(--row-unit) * 1.8)');
+          }
+          if (it.name === 'news' && innerW >= 1800 && dpr < 1.5) {
+            it.card.style.setProperty('--news-h', 'max(360px, calc(var(--row-unit) * 2.2))');
+          }
+        });
+
+        if (typeof mobilityMap !== 'undefined' && mobilityMap && !hidden.has('mobility')) {
+          setTimeout(() => mobilityMap.invalidateSize(), 60);
+        }
+        return true;
+      } catch (e) {
+        // Any throw degrades to the manual path rather than leaving a half-
+        // applied layout; the settings panel surfaces this.
+        smartDegraded = true;
+        return false;
+      }
+    }
+
+    // Why a bad layout looks the way it does, for a wall tablet with no devtools.
+    window.__smartExplain = () => smartLastTrace;
+
+    function relayout() {
+      if (!applySmartLayout()) applyAdaptiveLayout();
+    }
+
+    // Trailing debounce plus one rAF: a drag-resize costs one layout pass at
+    // the end, not one per mousemove.
+    let layoutTimer = null, layoutFrame = null;
+    function scheduleLayout() {
+      if (layoutTimer) clearTimeout(layoutTimer);
+      layoutTimer = setTimeout(() => {
+        layoutTimer = null;
+        if (layoutFrame) cancelAnimationFrame(layoutFrame);
+        layoutFrame = requestAnimationFrame(() => { layoutFrame = null; relayout(); });
+      }, 120);
+    }
+
     function applyAdaptiveLayout() {
       const grid = document.querySelector('.grid');
       if (!grid) return;
-      const cards = Array.from(grid.querySelectorAll('.card[data-widget]'));
-      const smallWidgets = new Set(['clock', 'weather', 'sensors', 'hue', 'power', 'waste']);
-      const mediumWidgets = new Set(['stocks', 'news', 'transit', 'mobility']);
       const layoutCfg = getLayoutConfig();
       const cols = layoutCfg.columns;
+      const hidden = new Set(layoutCfg.hiddenWidgets || []);
+      const allCards = Array.from(grid.querySelectorAll('.card[data-widget]'));
 
-      // Clear previous layout spans
-      cards.forEach(c => {
+      // Clear spans on EVERY card, including hidden ones — a card that is
+      // re-shown later must not still carry a span from a previous layout.
+      allCards.forEach(c => {
         c.classList.remove('span-full', 'span-half', 'span-2', 'span-3');
       });
 
-      if (cols === 4) {
-        // 4 columns: small = 1 col, medium = 2 cols
+      // Hidden cards are display:none but still in the DOM. Pairing against
+      // them used to leave a visible gap where an invisible neighbour sat.
+      const cards = allCards.filter(c => !hidden.has(c.dataset.widget));
+      const isSmall = c => widgetMeta(c.dataset.widget).cls === 'S';
+
+      if (cols === 4 || cols === 3) {
         cards.forEach(c => {
-          if (mediumWidgets.has(c.dataset.widget)) {
-            c.classList.add('span-2');
-          }
-        });
-      } else if (cols === 3) {
-        // 3 columns: small = 1 col, medium = 2 cols
-        cards.forEach(c => {
-          if (mediumWidgets.has(c.dataset.widget)) {
-            c.classList.add('span-2');
-          }
+          if (!isSmall(c)) c.classList.add('span-2');
         });
       } else {
-        // 2 columns: pair small widgets, medium/wide take full
+        // 2 columns: pair adjacent small widgets, anything larger takes the row
         let i = 0;
         while (i < cards.length) {
           const card = cards[i];
-          const isSmall = smallWidgets.has(card.dataset.widget);
           const next = cards[i + 1];
-          const nextIsSmall = next ? smallWidgets.has(next.dataset.widget) : false;
-
-          if (isSmall && next && nextIsSmall) {
+          if (isSmall(card) && next && isSmall(next)) {
             card.classList.add('span-half');
             next.classList.add('span-half');
             i += 2;
-          } else if (!isSmall) {
+          } else if (!isSmall(card)) {
             card.classList.add('span-full');
             i += 1;
           } else {
-            card.classList.add('span-full');
+            // A small widget with no small neighbour: leave it unspanned so it
+            // occupies one column. Forcing span-full stretched a clock or a
+            // waste card across the whole page for no reason.
             i += 1;
           }
         }
@@ -6402,8 +6804,9 @@
     }
 
     // Run layout on load and resize
-    applyAdaptiveLayout();
-    window.addEventListener('resize', applyAdaptiveLayout);
+    relayout();
+    window.addEventListener('resize', scheduleLayout);
+    window.addEventListener('orientationchange', scheduleLayout);
 
     // ── Drag and Drop Reordering ──
     (function initDragAndDrop() {
@@ -6418,8 +6821,13 @@
 
       // Restore saved order on page load (or apply default order)
       function restoreOrder() {
-        const saved = localStorage.getItem('dashboard-widget-order');
-        const order = saved ? JSON.parse(saved) : DEFAULT_WIDGET_ORDER;
+        // A saved order predates any widget added since. Appending the
+        // missing ones keeps them in their intended default position instead
+        // of letting them float to the top-left.
+        const parsed = safeParse(localStorage.getItem('dashboard-widget-order'), [], 'dashboard-widget-order');
+        const order = Array.isArray(parsed) && parsed.length
+          ? parsed.concat(DEFAULT_WIDGET_ORDER.filter(w => !parsed.includes(w)))
+          : DEFAULT_WIDGET_ORDER;
         try {
           const cards = Array.from(grid.querySelectorAll('.card[data-widget]'));
           const cardMap = {};
@@ -6435,7 +6843,7 @@
         const cards = Array.from(grid.querySelectorAll('.card[data-widget]'));
         const order = cards.map(c => c.dataset.widget);
         localStorage.setItem('dashboard-widget-order', JSON.stringify(order));
-        applyAdaptiveLayout();
+        relayout();
       }
 
       // Make card headers draggable
@@ -6582,7 +6990,7 @@
       // Set up all cards
       grid.querySelectorAll('.card[data-widget]').forEach(setupCard);
       restoreOrder();
-      applyAdaptiveLayout();
+      relayout();
     })();
   </script>
 </body>

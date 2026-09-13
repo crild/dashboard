@@ -114,9 +114,10 @@ async function handleRequest(request) {
   if (path === "/session") {
     var sessionIp = clientIp(request);
     var nets = await homeNetworks();
+    var resolvedNets = await expandNetworks(nets);
     return jsonResponse({
       token: true,
-      home: nets.length > 0 && ipInList(sessionIp, nets),
+      home: resolvedNets.length > 0 && ipInList(sessionIp, resolvedNets),
       ip: sessionIp,
       configured: nets.length > 0
     });
@@ -142,9 +143,11 @@ async function handleRequest(request) {
       await KV.put("home_networks", kept.join(","));
       return jsonResponse({networks: kept, removed: toDrop});
     }
+    var allNets = await homeNetworks();
     return jsonResponse({
       networks: await kvHomeNetworks(),
       bootstrap: configuredHomeNetworks(),
+      resolved: await expandNetworks(allNets),
       current: clientIp(request)
     });
   }
@@ -871,8 +874,80 @@ async function requireHomeNetwork(request) {
   }
   var ip = clientIp(request);
   if (!ip) return jsonResponse({error: "Client IP unavailable", tier: "remote"}, 503);
-  if (!ipInList(ip, nets)) {
+  // Hostnames are resolved here, so a DDNS name tracks the lease by itself.
+  if (!ipInList(ip, await expandNetworks(nets))) {
     return jsonResponse({error: "Only available on the home network", tier: "remote"}, 403);
   }
   return null;
+}
+
+// ── Dynamic DNS support ──────────────────────────────────────────────────────
+// A HOME_NETWORKS entry may be a hostname instead of a CIDR. The router's DDNS
+// client keeps that hostname pointed at the current lease, and the Worker
+// follows it, so an ISP rotation stops being something to fix by hand.
+//
+// Resolution goes over DNS-over-HTTPS (Workers have no DNS API) and is cached
+// in KV. A lookup that fails contributes no addresses at all, so a DNS outage
+// closes the gate rather than opening it.
+var DNS_CACHE_TTL = 300;
+
+function looksLikeHostname(entry) {
+  if (!entry || entry.indexOf("/") >= 0) return false;
+  if (parseIp(entry)) return false;
+  return /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/i.test(entry);
+}
+
+async function dohQuery(host, type) {
+  var resp = await fetch(
+    "https://cloudflare-dns.com/dns-query?name=" + encodeURIComponent(host) + "&type=" + type,
+    {headers: {"Accept": "application/dns-json"}}
+  );
+  if (!resp.ok) throw new Error("DoH HTTP " + resp.status);
+  var data = await resp.json();
+  var answers = data.Answer || [];
+  var addrs = [];
+  var ttl = 0;
+  for (var i = 0; i < answers.length; i++) {
+    // 1 = A, 28 = AAAA. CNAME hops in the chain are ignored; only addresses count.
+    if ((answers[i].type === 1 || answers[i].type === 28) && parseIp(answers[i].data)) {
+      addrs.push(answers[i].data);
+      if (!ttl || answers[i].TTL < ttl) ttl = answers[i].TTL;
+    }
+  }
+  return {addrs: addrs, ttl: ttl};
+}
+
+async function resolveHostname(host) {
+  var key = "dns_" + host.toLowerCase();
+  var cached = await KV.get(key);
+  if (cached !== null) return splitList(cached);
+
+  var found, ttl;
+  try {
+    var a = await dohQuery(host, "A");
+    var aaaa = await dohQuery(host, "AAAA");
+    found = a.addrs.concat(aaaa.addrs);
+    var ttls = [a.ttl, aaaa.ttl].filter(function(t) { return t > 0; });
+    ttl = ttls.length ? Math.min.apply(null, ttls.concat([DNS_CACHE_TTL])) : DNS_CACHE_TTL;
+  } catch (e) {
+    // Transient failure: grant nothing, and do not cache the emptiness.
+    return [];
+  }
+  // KV refuses any expiration under 60 seconds.
+  await KV.put(key, found.join(","), {expirationTtl: Math.max(60, ttl)});
+  return found;
+}
+
+// Turns a mixed list of CIDRs, bare IPs and hostnames into addresses only.
+async function expandNetworks(list) {
+  var out = [];
+  for (var i = 0; i < list.length; i++) {
+    if (looksLikeHostname(list[i])) {
+      var addrs = await resolveHostname(list[i]);
+      for (var j = 0; j < addrs.length; j++) out.push(addrs[j]);
+    } else {
+      out.push(list[i]);
+    }
+  }
+  return out;
 }

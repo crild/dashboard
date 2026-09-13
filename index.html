@@ -1982,6 +1982,51 @@
       }
     }
 
+    // Every upstream call in this file used to be `await (await fetch(u)).json()`
+    // with no timeout, no res.ok check and no guard on the parse. An API serving
+    // an HTML error page under Content-Type: application/json therefore threw
+    // and took the whole widget down — exactly how the waste card died when
+    // Oslo kommune deleted its endpoint. This returns a result instead of
+    // throwing, so callers can show an honest reason and keep last-good data.
+    async function safeJson(url, opts) {
+      const o = opts || {};
+      const timeout = o.timeout || 12000;
+      let res;
+      try {
+        const init = {};
+        if (o.headers) init.headers = o.headers;
+        if (o.cache) init.cache = o.cache;
+        // The timeout is the point: without it a hung upstream leaves the
+        // request pending forever on a tablet nobody ever reloads.
+        if (typeof AbortSignal !== 'undefined' && AbortSignal.timeout) {
+          init.signal = AbortSignal.timeout(timeout);
+        }
+        res = await fetch(url, init);
+      } catch (e) {
+        const timedOut = e && (e.name === 'TimeoutError' || e.name === 'AbortError');
+        return { ok: false, status: 0, reason: timedOut ? 'timed out' : 'network error' };
+      }
+      if (!res.ok) return { ok: false, status: res.status, reason: 'HTTP ' + res.status };
+      let text;
+      try { text = await res.text(); }
+      catch (e) { return { ok: false, status: res.status, reason: 'unreadable response' }; }
+      if (!text.trim()) return { ok: false, status: res.status, reason: 'empty response' };
+      try { return { ok: true, status: res.status, data: JSON.parse(text) }; }
+      catch (e) {
+        return { ok: false, status: res.status,
+                 reason: /^\s*</.test(text) ? 'upstream returned a web page, not data' : 'unreadable data' };
+      }
+    }
+
+    // No escaping helper existed anywhere in this file, yet upstream strings —
+    // kommune waste fractions, feed titles, station names — go straight into
+    // innerHTML on an origin that holds the Worker token in localStorage.
+    function escapeHtml(v) {
+      return String(v === null || v === undefined ? '' : v).replace(/[&<>"']/g, c => (
+        { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
+      ));
+    }
+
     function loadConfig() {
       const saved = localStorage.getItem('dashboard-config');
       if (!saved) return null;
@@ -2226,9 +2271,7 @@
 
       if (key === 'r') {
         e.preventDefault();
-        fetchWeather(); fetchStocks(); fetchPower(); fetchSensors();
-        fetchHue(); fetchWaste(); fetchNews(); fetchTransit(); fetchIndexes();
-        refreshMobilityData(true);
+        refreshAllWidgets(true);
         showToast('Refreshing all widgets');
       } else if (key === 'd') {
         e.preventDefault();
@@ -3950,8 +3993,13 @@
     let mobilityInitialLoad = true;
     const mobilityHidden = new Set(); // provider names toggled off
 
+    // Entur rate-limits anonymous GBFS callers: without this header the house
+    // IP gets HTTP 429, whose body is valid JSON, so data.data.bikes silently
+    // reads as an empty fleet and the map just says nothing is nearby.
+    const ENTUR_HEADERS = { 'ET-Client-Name': 'crild-dashboard' };
     const MOBILITY_PROVIDERS = [
-      { id: 'voioslo', name: 'Voi', color: '#f46c63', type: 'scooter' },
+      // Voi wound down its Oslo fleet: the feed still answers 200 but with an
+      // empty bikes array and no vehicle_types, which no live operator does.
       { id: 'boltoslo', name: 'Bolt', color: '#34d399', type: 'scooter' },
       { id: 'rydeoslo', name: 'Ryde', color: '#a78bfa', type: 'scooter' }
     ];
@@ -4486,8 +4534,40 @@
       showNearestWalkRoute();
     }
 
+    function refreshAllWidgets(manual) {
+      fetchWeather(); fetchStocks(); fetchPower(); fetchSensors();
+      fetchHue(); fetchWaste(); fetchNews(); fetchTransit(); fetchIndexes();
+      refreshMobilityData(manual);
+    }
+
+    // A wall tablet sleeps for days and is never reloaded. setInterval was the
+    // only refresh path, and browsers throttle or suspend timers in a hidden or
+    // sleeping tab, so the display could wake showing hours-old data with a
+    // confident "Updated" stamp. These two listeners are what make it
+    // self-healing without anyone touching it.
+    let lastWakeRefresh = Date.now();
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) return;
+      // Only if it has actually been asleep a while; a tab switch is not a wake.
+      if (Date.now() - lastWakeRefresh < 60000) return;
+      lastWakeRefresh = Date.now();
+      refreshAllWidgets(false);
+      scheduleLayout();
+    });
+    window.addEventListener('online', () => {
+      lastWakeRefresh = Date.now();
+      refreshAllWidgets(false);
+    });
+
     async function refreshMobilityData(manual) {
       if (!mobilityMap || !mobilityCenter) return;
+      // Hiding the card only set display:none — the interval kept fetching the
+      // full city fleet, several MB every 30 seconds, for pixels nobody can
+      // see. Skip unless the user explicitly asked.
+      if (!manual) {
+        if (document.hidden) return;
+        if ((getLayoutConfig().hiddenWidgets || []).includes('mobility')) return;
+      }
       // Reset provider toggles only on manual refresh (unless disabled in settings)
       if (manual) {
         const cfg = loadConfig();
@@ -4518,9 +4598,10 @@
         // Fetch scooters from all providers
         const scooterResults = await Promise.all(MOBILITY_PROVIDERS.map(async (prov) => {
           try {
-            const res = await fetch(`https://api.entur.io/mobility/v2/gbfs/v2/${prov.id}/free_bike_status`);
-            const data = await res.json();
-            const bikes = data?.data?.bikes || [];
+            const r = await safeJson(`https://api.entur.io/mobility/v2/gbfs/v2/${prov.id}/free_bike_status`,
+              { headers: ENTUR_HEADERS, timeout: 15000 });
+            if (!r.ok) return [];
+            const bikes = r.data?.data?.bikes || [];
             return bikes
               .filter(b => !b.is_reserved && !b.is_disabled)
               .filter(b => distanceKm(centerLat, centerLon, b.lat, b.lon) <= radiusKm)
@@ -4531,12 +4612,15 @@
         // Fetch city bikes (stations)
         let bikeStations = [];
         try {
-          const [infoRes, statusRes] = await Promise.all([
-            fetch('https://api.entur.io/mobility/v2/gbfs/v2/oslobysykkel/station_information'),
-            fetch('https://api.entur.io/mobility/v2/gbfs/v2/oslobysykkel/station_status')
+          const [infoR, statusR] = await Promise.all([
+            safeJson('https://api.entur.io/mobility/v2/gbfs/v2/oslobysykkel/station_information',
+              { headers: ENTUR_HEADERS, timeout: 15000 }),
+            safeJson('https://api.entur.io/mobility/v2/gbfs/v2/oslobysykkel/station_status',
+              { headers: ENTUR_HEADERS, timeout: 15000 })
           ]);
-          const infoData = await infoRes.json();
-          const statusData = await statusRes.json();
+          if (!infoR.ok || !statusR.ok) throw new Error(infoR.reason || statusR.reason);
+          const infoData = infoR.data;
+          const statusData = statusR.data;
           const statusMap = {};
           (statusData?.data?.stations || []).forEach(s => { statusMap[s.station_id] = s; });
           bikeStations = (infoData?.data?.stations || [])
@@ -4654,7 +4738,7 @@
       refreshMobilityData();
     }
     fetchMobility();
-    setInterval(refreshMobilityData, 30 * 1000);
+    setInterval(refreshMobilityData, 120 * 1000);
 
     // ── News (RSS) ──
     const PROXY = WORKER_URL + '/?url=';
@@ -6125,13 +6209,6 @@
       return cfg?.indexes ?? DEFAULTS.indexes;
     }
 
-    // Values are third-party, and go in via innerHTML.
-    function escIndex(v) {
-      return String(v ?? '').replace(/[&<>"']/g, c => (
-        { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
-      ));
-    }
-
     async function fetchIndexCatalog(force) {
       if (indexCatalog && !force) return indexCatalog;
       const res = await workerFetch('/index/_list');
@@ -6186,15 +6263,15 @@
           gauge = `<div class="index-gauge"><div class="index-gauge-fill" style="width:${pct}%"></div></div>`;
         }
         const when = indexTimestamp(r.ts);
-        const caption = r.stale ? 'Stale &middot; ' + escIndex(when) : escIndex(r.caption || '');
-        const title = `${escIndex(r.label)} — updated ${escIndex(when)}${r.error ? ' — ' + escIndex(r.error) : ''}`;
+        const caption = r.stale ? 'Stale &middot; ' + escapeHtml(when) : escapeHtml(r.caption || '');
+        const title = `${escapeHtml(r.label)} — updated ${escapeHtml(when)}${r.error ? ' — ' + escapeHtml(r.error) : ''}`;
         return `
           <div class="index-tile${r.stale ? ' stale' : ''}" title="${title}">
             <div class="index-tile-top">
-              <span>${escIndex(r.emoji || '')}</span>
-              <span class="index-tile-label">${escIndex(r.label)}</span>
+              <span>${escapeHtml(r.emoji || '')}</span>
+              <span class="index-tile-label">${escapeHtml(r.label)}</span>
             </div>
-            <div class="index-tile-value">${r.display === null || r.display === undefined ? '&mdash;' : escIndex(r.display) + escIndex(r.unit || '')}</div>
+            <div class="index-tile-value">${r.display === null || r.display === undefined ? '&mdash;' : escapeHtml(r.display) + escapeHtml(r.unit || '')}</div>
             ${gauge}
             <div class="index-tile-caption">${caption}</div>
           </div>`;
@@ -6233,7 +6310,7 @@
         el.innerHTML = '<div style="display:flex;flex-wrap:wrap;gap:6px;">' + catalog.map(c => {
           const on = picked.includes(c.name);
           const warn = c.unverified ? ' *' : '';
-          return `<button class="layout-choice${on ? ' selected' : ''}" onclick="toggleIndex('${escIndex(c.name)}', this)" style="font-size:0.75rem;padding:6px 12px;">${escIndex(c.emoji || '')} ${escIndex(c.label)}${warn}</button>`;
+          return `<button class="layout-choice${on ? ' selected' : ''}" onclick="toggleIndex('${escapeHtml(c.name)}', this)" style="font-size:0.75rem;padding:6px 12px;">${escapeHtml(c.emoji || '')} ${escapeHtml(c.label)}${warn}</button>`;
         }).join('') + '</div>' +
         (catalog.some(c => c.unverified)
           ? '<p class="hint" style="margin-top:8px;">* source not yet confirmed from the Worker.</p>'

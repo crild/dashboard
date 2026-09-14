@@ -2909,12 +2909,15 @@
         sevenDaysAgo.setHours(0, 0, 0, 0);
         const cutoff = sevenDaysAgo.getTime();
 
-        const results = await Promise.all(stocks.map(async (s) => {
+        // Per-symbol isolation: Promise.all rejects on the first throw, so a
+        // single delisted ticker or a Yahoo hiccup used to wipe the entire card.
+        const settled = await Promise.all(stocks.map(async (s) => {
+          try {
           // Use 1mo range with 30m interval to ensure we get 7+ days for all instruments
           const yahooUrl = `https://query2.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(s.symbol)}?interval=30m&range=1mo`;
-          const res = await fetch(`${WORKER_URL}/?url=${encodeURIComponent(yahooUrl)}`);
-          if (!res.ok) throw new Error(`HTTP ${res.status}`);
-          const data = await res.json();
+          const r = await safeJson(`${WORKER_URL}/?url=${encodeURIComponent(yahooUrl)}`, { timeout: 12000 });
+          if (!r.ok) throw new Error(r.reason);
+          const data = r.data;
           const result = data.chart.result[0];
           const meta = result.meta;
           const price = meta.regularMarketPrice;
@@ -2947,7 +2950,18 @@
 
           return { ...s, price, currency: meta.currency, closes: points.map(p => p.value), points,
             oneDayChange, oneDayPct, intraDayChange, intraDayPct, weekChange, weekPct };
+          } catch (err) {
+            return { ...s, failed: true, reason: err && err.message };
+          }
         }));
+        const results = settled.filter(r => !r.failed && isFinite(r.price));
+        const failedSymbols = settled.filter(r => r.failed || !isFinite(r.price)).map(r => r.label || r.symbol);
+        if (!results.length) {
+          document.getElementById('stocks-content').innerHTML =
+            `<div class="error">No market data available right now.</div>`;
+          setCardStatus('stocks', false, failedSymbols.join(', '));
+          return;
+        }
 
         document.getElementById('stocks-content').innerHTML = '<div class="stocks-grid">' + results.map((s, i) => {
           const priceStr = s.price.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -3009,6 +3023,11 @@
         });
 
         setCardStatus('stocks', true);
+        if (failedSymbols.length) {
+          const el = document.getElementById('stocks-status');
+          el.textContent = failedSymbols.length + ' unavailable · ' + el.textContent;
+          el.title = 'No data for: ' + failedSymbols.join(', ');
+        }
       } catch (e) {
         document.getElementById('stocks-content').innerHTML = `<div class="error">Could not load market data. The CORS proxy may be temporarily unavailable.</div>`;
       }

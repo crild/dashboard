@@ -1626,7 +1626,10 @@ function newsDataSource(query) {
   return {
     id: "newsdata", json: true,
     url: "https://newsdata.io/api/1/latest?apikey=" + encodeURIComponent(key) +
-         "&qInTitle=" + encodeURIComponent('"' + query + '"') + "&language=no,en"
+         // q searches title AND body. qInTitle matched almost nothing, because the
+// free tier only covers a recent window and a company is far more often
+// mentioned in the body than named in a headline.
+         "&q=" + encodeURIComponent(query) + "&language=no,en"
   };
 }
 

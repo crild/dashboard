@@ -1529,8 +1529,14 @@ function nwEvaluate(cfg, ym, housing) {
   if (pol.indexNextPurchase && priceIdx && idxAt) nextPrice *= idxAt / priceIdx;
 
   var years = Math.max(0, nwMonthsBetween(pol.priceSetOn, ym)) / 12;
-  var grossIncome = (Number(pol.grossHouseholdIncomeNok) || 0) *
-                    Math.pow(1 + (Number(pol.incomeGrowthPct) || 0) / 100, years);
+  var growth = Math.pow(1 + (Number(pol.incomeGrowthPct) || 0) / 100, years);
+  var baseIncome = (Number(pol.grossHouseholdIncomeNok) || 0) * growth;
+  // Banks will count bonus toward gjeldsgrad once there is a documented
+  // history of it, typically three payouts. Kept as its own figure rather
+  // than folded into salary, so the card can say whether the plan is leaning
+  // on it — and so it can be zeroed if the history does not materialise.
+  var bonusIncome = (Number(pol.documentedBonusNok) || 0) * growth;
+  var grossIncome = baseIncome + bonusIncome;
 
   // The constraint the bank actually applies. Equity is often NOT what binds:
   // utlånsforskriften caps total debt at 5x gross income, so a tracker that
@@ -1559,6 +1565,10 @@ function nwEvaluate(cfg, ym, housing) {
     // withdrawn first and tax-free. None of the source designs produced this.
     taxFreeTranche: sum(assets, function (a) { return a.taxFree; }),
     nextPrice: nextPrice, grossIncome: grossIncome,
+    baseIncome: baseIncome, bonusIncome: bonusIncome,
+    // What the cap would be without the bonus history, so the dependency is
+    // visible rather than implied.
+    maxLoanByIncomeExBonus: baseIncome * (Number(pol.gjeldsgradMax) || 5),
     maxLoanByLtv: maxLoanByLtv, maxLoanByIncome: maxLoanByIncome,
     maxLoan: maxLoan, binding: binding, costs: costs,
     equityNeeded: equityNeeded, equitySupply: equitySupply,

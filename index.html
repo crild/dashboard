@@ -4954,6 +4954,17 @@
     let newsCache = {};
     let activeTab = 0;
 
+    function newsTimeAgo(ts) {
+      if (!ts) return '';
+      const diff = Math.round((Date.now() - ts) / 60000);
+      if (diff < 1) return 'Just now';
+      if (diff < 60) return diff + 'm ago';
+      if (diff < 1440) return Math.floor(diff / 60) + 'h ago';
+      if (diff < 1440 * 14) return Math.floor(diff / 1440) + 'd ago';
+      // Past a fortnight "312d ago" stops meaning anything; give the date.
+      return new Date(ts).toLocaleDateString('nb-NO', { day: 'numeric', month: 'short', year: '2-digit' });
+    }
+
     function parseRSS(xml) {
       const parser = new DOMParser();
       const doc = parser.parseFromString(xml, 'text/xml');
@@ -5056,11 +5067,22 @@
       try {
         let items;
         if (feed.type === 'search') {
-          // Google News RSS search with deduplication
-          const gnUrl = `https://news.google.com/rss/search?q=${encodeURIComponent('"' + feed.query + '"')}&hl=en&gl=US&ceid=US:en`;
-          const res = await fetch(PROXY + encodeURIComponent(gnUrl));
-          const xml = await res.text();
-          items = dedupeArticles(parseRSS(xml));
+          // One Google edition was the only source. That both missed Norwegian
+          // coverage of a Norwegian company (the no/NO edition returns ~50
+          // items where en/US returns ~11) and emptied the tab entirely
+          // whenever Google blocked Cloudflare's egress, which it does
+          // intermittently. The Worker now merges several engines, windows to
+          // the last year, dedupes and sorts newest first, and keeps the last
+          // good result so one engine going dark costs coverage, not the tab.
+          const months = feed.months || 12;
+          const r = await safeJson(
+            `${WORKER_URL}/news/search?q=${encodeURIComponent(feed.query)}&months=${months}`,
+            { timeout: 25000 });
+          if (!r.ok) throw new Error(r.reason);
+          items = (r.data.items || []).map(it => ({
+            title: it.title, link: it.link, img: '',
+            timeAgo: newsTimeAgo(it.ts), source: it.publisher || ''
+          }));
         } else {
           const res = await fetch(PROXY + encodeURIComponent(feed.url));
           const xml = await res.text();

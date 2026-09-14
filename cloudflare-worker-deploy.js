@@ -436,6 +436,17 @@ async function handleRequest(request) {
     return new Response(body, {status: resp.status, headers: {"Content-Type": "application/json", "Access-Control-Allow-Origin": "*"}});
   }
 
+  // Public like the other read-only feeds: it exposes nothing personal, and a
+  // share-code recipient's news tabs should work too.
+  if (path === "/news/search") {
+    var nq = (url.searchParams.get("q") || "").trim();
+    if (!nq || nq.length > 120) {
+      return jsonResponse({error: "Missing or oversized query"}, 400);
+    }
+    var nm = Number(url.searchParams.get("months")) || 12;
+    return await newsSearch(nq, Math.max(1, Math.min(60, nm)));
+  }
+
   if (path === "/waste/calendar") {
     var kommunenr = url.searchParams.get("kommunenr") || "0301";
     var gatekode = url.searchParams.get("gatekode");
@@ -1551,4 +1562,153 @@ async function nwProjection(request) {
     housingError: housingError,
     generatedAt: Date.now()
   });
+}
+
+// ── News search ──────────────────────────────────────────────────────────────
+// A single company search used to hit ONE Google News edition and render
+// whatever came back. Two problems: Google blocks Cloudflare egress
+// intermittently (its "Sorry..." page, observed both working and blocked within
+// an hour), which silently emptied the tab; and one English-edition query misses
+// Norwegian coverage of a Norwegian company entirely.
+//
+// So: fan out across editions and engines, merge, dedupe, window, sort newest
+// first, and cache the last good result in KV. One source going dark costs
+// coverage, not the whole tab.
+function newsSearchSources(query) {
+  var q = encodeURIComponent(query);
+  var phrase = encodeURIComponent('"' + query + '"');
+  return [
+    {id: "google-no", url: "https://news.google.com/rss/search?q=" + phrase + "&hl=no&gl=NO&ceid=NO:no"},
+    {id: "google-en", url: "https://news.google.com/rss/search?q=" + phrase + "&hl=en&gl=US&ceid=US:en"},
+    {id: "bing",      url: "https://www.bing.com/news/search?q=" + phrase + "&format=RSS"},
+    {id: "yahoo",     url: "https://news.search.yahoo.com/rss?p=" + q}
+  ];
+}
+
+function newsUnescape(str) {
+  return String(str || "")
+    .replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, "$1")
+    .replace(/<[^>]+>/g, "")
+    .replace(/&lt;/g, "<").replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&apos;/g, "'")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&amp;/g, "&")
+    .trim();
+}
+
+function newsField(block, tag) {
+  var m = block.match(new RegExp("<" + tag + "[^>]*>([^]*?)</" + tag + ">"));
+  return m ? newsUnescape(m[1]) : "";
+}
+
+function newsParseRss(xml, sourceId) {
+  var out = [];
+  var blocks = xml.match(/<item[\s\S]*?<\/item>/g) || [];
+  for (var i = 0; i < blocks.length; i++) {
+    var b = blocks[i];
+    var title = newsField(b, "title");
+    if (!title) continue;
+    var link = newsField(b, "link");
+    var dateStr = newsField(b, "pubDate") || newsField(b, "published") || newsField(b, "updated");
+    var ts = Date.parse(dateStr);
+    // Google appends " - Publisher" to titles; keep the publisher, off the title.
+    var publisher = newsField(b, "source");
+    var dash = title.lastIndexOf(" - ");
+    if (publisher && dash > 0 && title.slice(dash + 3) === publisher) {
+      // <source> was present, so the suffix is redundant with the byline the
+      // card already renders. Strip it either way, not only when <source> was
+      // missing, or the title reads "Headline - Avis" next to "Avis".
+      title = title.slice(0, dash);
+    } else if (!publisher && dash > 20) {
+      publisher = title.slice(dash + 3);
+      title = title.slice(0, dash);
+    }
+    out.push({
+      title: title, link: link, publisher: publisher || "",
+      ts: isFinite(ts) ? ts : null, source: sourceId
+    });
+  }
+  return out;
+}
+
+// Same story reported twice is one story. Normalise hard: engines differ in
+// punctuation, casing and trailing publisher.
+function newsKey(item) {
+  return String(item.title || "").toLowerCase()
+    .replace(/[‘’“”'"`]/g, "")
+    .replace(/[^a-z0-9æøå]+/g, " ")
+    .trim().split(" ").slice(0, 12).join(" ");
+}
+
+async function newsSearch(query, months) {
+  var windowMs = (months || 12) * 30.44 * 86400000;
+  var cacheKey = "news_" + months + "_" + query.toLowerCase().replace(/[^a-z0-9]+/g, "_").slice(0, 60);
+
+  var cached = null;
+  try {
+    var raw = await KV.get(cacheKey);
+    if (raw) cached = JSON.parse(raw);
+  } catch (e) {}
+  // Only serve a cached answer that actually has something in it. Caching an
+  // empty result would make one transient failure stick for the full TTL.
+  if (cached && cached.items && cached.items.length && (Date.now() - cached.ts) < 30 * 60000) {
+    return jsonResponse({query: query, items: cached.items, sources: cached.sources,
+                         cached: true, ts: cached.ts});
+  }
+
+  var sources = newsSearchSources(query);
+  var results = await Promise.all(sources.map(async function (s) {
+    try {
+      var resp = await fetch(s.url, {
+        headers: {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0 Safari/537.36"}
+      });
+      if (!resp.ok) return {id: s.id, ok: false, reason: "HTTP " + resp.status, items: []};
+      var text = await resp.text();
+      // Google answers a block with 200 and an HTML "Sorry..." page, so a
+      // status check alone is not enough to tell success from refusal.
+      if (text.indexOf("<item") < 0) {
+        return {id: s.id, ok: false, reason: "no items (blocked or empty)", items: []};
+      }
+      return {id: s.id, ok: true, items: newsParseRss(text, s.id)};
+    } catch (err) {
+      return {id: s.id, ok: false, reason: err.message, items: []};
+    }
+  }));
+
+  var cutoff = Date.now() - windowMs;
+  var seen = {};
+  var merged = [];
+  for (var i = 0; i < results.length; i++) {
+    var items = results[i].items;
+    for (var j = 0; j < items.length; j++) {
+      var it = items[j];
+      // No date means it cannot be windowed honestly, so it is dropped rather
+      // than shown as if it were recent.
+      if (it.ts === null || it.ts < cutoff) continue;
+      var k = newsKey(it);
+      if (!k || seen[k]) continue;
+      seen[k] = true;
+      merged.push(it);
+    }
+  }
+  merged.sort(function (a, b) { return b.ts - a.ts; });   // newest first
+
+  var sourceReport = results.map(function (r) {
+    return {id: r.id, ok: r.ok, count: r.items.length, reason: r.reason || null};
+  });
+
+  // Every engine refused at once: keep the last good answer rather than
+  // blanking the tab, which is what used to happen on a Google block.
+  if (!merged.length && cached && cached.items && cached.items.length) {
+    return jsonResponse({query: query, items: cached.items, sources: sourceReport,
+                         stale: true, ts: cached.ts});
+  }
+
+  // Likewise, never store an empty answer: the next request should retry the
+  // engines rather than inherit a bad minute.
+  if (merged.length) {
+    await KV.put(cacheKey, JSON.stringify({items: merged, sources: sourceReport, ts: Date.now()}),
+                 {expirationTtl: 7 * 86400});
+  }
+  return jsonResponse({query: query, items: merged, sources: sourceReport, ts: Date.now()});
 }

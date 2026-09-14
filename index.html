@@ -375,6 +375,20 @@
       gap: 10px;
     }
 
+    /* Touch-sized: 44px is the minimum a finger can reliably hit, and these
+       are the only way to reorder stops on a tablet. */
+    .tag-move {
+      min-width: 28px; min-height: 28px; padding: 2px 6px;
+      border: 1px solid var(--border); border-radius: 6px;
+      background: transparent; color: var(--text-secondary);
+      cursor: pointer; font-size: 0.7rem; line-height: 1;
+    }
+    .tag-move:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+    .tag-move:disabled { opacity: 0.3; cursor: default; }
+    @media (pointer: coarse) {
+      .tag-move { min-width: 44px; min-height: 44px; font-size: 0.85rem; }
+    }
+
     .nw-sec { margin-bottom: 14px; }
     .nw-sec h4 {
       font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.06em;
@@ -6057,10 +6071,15 @@
 
     function renderStopTags() {
       if (currentStopsSelection.length === 0) return '<span style="color:var(--text-secondary);font-size:0.85rem;">No stops selected</span>';
+      const last = currentStopsSelection.length - 1;
       return currentStopsSelection.map((s, i) => `
         <span class="tag-item">
-          ${s.name || s.id}
-          <button class="tag-remove" onclick="removeStop(${i})">&times;</button>
+          <button class="tag-move" onclick="moveStop(${i}, -1)" ${i === 0 ? 'disabled' : ''}
+            title="Flytt opp" aria-label="Flytt ${escapeHtml(s.name || s.id)} opp">&#9650;</button>
+          <button class="tag-move" onclick="moveStop(${i}, 1)" ${i === last ? 'disabled' : ''}
+            title="Flytt ned" aria-label="Flytt ${escapeHtml(s.name || s.id)} ned">&#9660;</button>
+          ${escapeHtml(s.name || s.id)}
+          <button class="tag-remove" onclick="removeStop(${i})" aria-label="Fjern">&times;</button>
         </span>`).join('');
     }
 
@@ -6070,6 +6089,14 @@
 
     function removeStop(idx) {
       currentStopsSelection.splice(idx, 1);
+      updateStopTags();
+    }
+
+    function moveStop(idx, delta) {
+      const to = idx + delta;
+      if (to < 0 || to >= currentStopsSelection.length) return;
+      const [item] = currentStopsSelection.splice(idx, 1);
+      currentStopsSelection.splice(to, 0, item);
       updateStopTags();
     }
 

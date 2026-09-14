@@ -369,6 +369,42 @@
       gap: 10px;
     }
 
+    .nw-sec { margin-bottom: 14px; }
+    .nw-sec h4 {
+      font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.06em;
+      color: var(--text-secondary); margin-bottom: 6px; font-weight: 600;
+    }
+    .nw-f { display: flex; align-items: center; gap: 8px; margin-bottom: 5px; font-size: 0.8rem; }
+    .nw-f > span { flex: 1 1 46%; color: var(--text-secondary); min-width: 0; }
+    .nw-f > span em { font-style: normal; opacity: 0.7; }
+    .nw-f input[type="text"], .nw-f input[type="month"], .nw-f input[type="number"], .nw-f select {
+      flex: 1 1 54%; min-width: 0; padding: 5px 8px; font-size: 0.8rem;
+      border: 1px solid var(--border); border-radius: 7px;
+      background: var(--bg); color: var(--text); font-variant-numeric: tabular-nums;
+    }
+    .nw-f-check { gap: 6px; }
+    .nw-f-check input { flex: none; }
+    .nw-f-check > span { flex: 1; color: var(--text); }
+    .nw-item {
+      border: 1px solid var(--border); border-radius: 10px;
+      padding: 8px 10px; margin-bottom: 8px;
+    }
+    .nw-item-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+    .nw-item-kind {
+      font-size: 0.66rem; text-transform: uppercase; letter-spacing: 0.05em;
+      color: var(--accent); font-weight: 600;
+    }
+    .nw-btn-del {
+      padding: 0 7px; font-size: 1rem; line-height: 1.4; color: var(--text-secondary);
+    }
+    .nw-btn-del:hover { color: var(--negative); border-color: var(--negative); }
+    .nw-add { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 4px; }
+    .nw-note {
+      font-size: 0.7rem; color: var(--text-secondary); line-height: 1.4;
+      margin-top: 5px; padding-left: 2px;
+    }
+    .nw-note em { font-style: normal; color: var(--text); }
+
     .nw-placeholder {
       font-size: 0.72rem; color: var(--text-secondary);
       border: 1px dashed var(--border); border-radius: 8px;
@@ -6458,40 +6494,239 @@
         </div>`;
     }
 
-    // v1 editor: the config document itself. A field-by-field form is the right
-    // long-term answer, but this is honest about the shape, round-trips through
-    // the same tier-2 route, and does not pretend to validate what it cannot.
+    // ── Net worth setup form ─────────────────────────────────────────────────
+    // Edits a working copy, not the live config: nothing reaches the Worker
+    // until Save, and the revision from load travels with it so a second device
+    // cannot be silently overwritten.
+    let nwEditCfg = null;
+
+    function nwSet(path, value, kind) {
+      if (!nwEditCfg) return;
+      const parts = path.split('.');
+      let node = nwEditCfg;
+      for (let i = 0; i < parts.length - 1; i++) {
+        if (node[parts[i]] === undefined) node[parts[i]] = {};
+        node = node[parts[i]];
+      }
+      const key = parts[parts.length - 1];
+      if (kind === 'num') {
+        // Accept "1 200 000", "1.200.000" and "1,5" — nobody types raw floats.
+        const cleaned = String(value).replace(/[\s.](?=\d{3}\b)/g, '').replace(',', '.').replace(/[^0-9.-]/g, '');
+        node[key] = cleaned === '' ? null : Number(cleaned);
+      } else if (kind === 'pct01') {
+        const n = Number(String(value).replace(',', '.'));
+        node[key] = isFinite(n) ? Math.max(0, Math.min(100, n)) / 100 : null;
+      } else if (kind === 'bool') {
+        node[key] = !!value;
+      } else {
+        node[key] = value;
+      }
+    }
+
+    function nwField(label, path, value, kind, opts) {
+      const o = opts || {};
+      const shown = kind === 'pct01' && value !== null && value !== undefined
+        ? (Number(value) * 100) : (value === null || value === undefined ? '' : value);
+      const attrs = `oninput="nwSet('${path}', this.value, '${kind || ''}')"`;
+      return `<label class="nw-f">
+        <span>${escapeHtml(label)}${o.suffix ? ` <em>${escapeHtml(o.suffix)}</em>` : ''}</span>
+        <input type="${o.type || 'text'}" value="${escapeHtml(shown)}" ${attrs}
+          ${o.placeholder ? `placeholder="${escapeHtml(o.placeholder)}"` : ''} spellcheck="false">
+      </label>`;
+    }
+
+    function nwSelect(label, path, value, options) {
+      return `<label class="nw-f">
+        <span>${escapeHtml(label)}</span>
+        <select onchange="nwSet('${path}', this.value); renderNwForm();">
+          ${options.map(o => `<option value="${o[0]}"${o[0] === value ? ' selected' : ''}>${escapeHtml(o[1])}</option>`).join('')}
+        </select>
+      </label>`;
+    }
+
+    function nwCheck(label, path, value) {
+      return `<label class="nw-f nw-f-check">
+        <input type="checkbox" ${value ? 'checked' : ''} onchange="nwSet('${path}', this.checked, 'bool'); renderNwForm();">
+        <span>${escapeHtml(label)}</span>
+      </label>`;
+    }
+
+    function nwNewId(prefix) {
+      const used = new Set([...(nwEditCfg.assets || []), ...(nwEditCfg.liabilities || [])].map(x => x.id));
+      let n = 1;
+      while (used.has(prefix + n)) n++;
+      return prefix + n;
+    }
+
+    function nwAddAsset(kind) {
+      nwEditCfg.assets = nwEditCfg.assets || [];
+      const thisMonth = new Date().toISOString().slice(0, 7);
+      const base = { id: nwNewId(kind), kind: kind, label: '', anchorValueNok: null,
+                     anchorOn: thisMonth, ownershipShare: 1 };
+      if (kind === 'property') Object.assign(base, { isPrimaryHome: !(nwEditCfg.assets || []).some(a => a.isPrimaryHome), fellesgjeldNok: 0 });
+      if (kind === 'fund') Object.assign(base, { wrapper: 'ask', expectedReturnPct: 6, contributionNokPerMonth: 0, innskuttKapitalNok: null, akkumulertSkjermingNok: 0 });
+      if (kind === 'cash') Object.assign(base, { wrapper: 'none', expectedReturnPct: 3, contributionNokPerMonth: 0, restricted: false });
+      nwEditCfg.assets.push(base);
+      renderNwForm();
+    }
+
+    function nwAddLoan() {
+      nwEditCfg.liabilities = nwEditCfg.liabilities || [];
+      nwEditCfg.liabilities.push({ id: nwNewId('loan'), kind: 'annuitetslan', label: '',
+        anchorBalanceNok: null, anchorOn: new Date().toISOString().slice(0, 7),
+        ratePct: 5.4, termMonths: 300, extraPrincipalNokPerMonth: 0, ownershipShare: 1 });
+      renderNwForm();
+    }
+
+    function nwRemove(kind, idx) {
+      const list = kind === 'asset' ? nwEditCfg.assets : nwEditCfg.liabilities;
+      if (!list || !list[idx]) return;
+      if (!confirm('Fjerne "' + (list[idx].label || list[idx].id) + '"?')) return;
+      list.splice(idx, 1);
+      renderNwForm();
+    }
+
+    const NW_WRAPPERS = [
+      ['ask', 'ASK (aksjesparekonto)'],
+      ['fondskonto', 'Fondskonto'],
+      ['direkte', 'Direkte eie'],
+      ['none', 'Ingen / bankkonto']
+    ];
+
+    function nwAssetBlock(a, i) {
+      const p = 'assets.' + i;
+      const kindLabel = { property: 'Bolig', fund: 'Fond', cash: 'Kontanter' }[a.kind] || a.kind;
+      let extra = '';
+
+      if (a.kind === 'property') {
+        extra = nwCheck('Primærbolig (bor her nå)', p + '.isPrimaryHome', a.isPrimaryHome) +
+          nwField('Fellesgjeld', p + '.fellesgjeldNok', a.fellesgjeldNok, 'num', { suffix: 'kr' }) +
+          `<p class="nw-note">Verdien skaleres med SSB sin boligprisindeks for Oslo. Sett <em>anker</em> til datoen verdien gjaldt.</p>`;
+      } else if (a.kind === 'fund') {
+        extra = nwSelect('Kontotype', p + '.wrapper', a.wrapper || 'ask', NW_WRAPPERS) +
+          nwField('Forventet avkastning', p + '.expectedReturnPct', a.expectedReturnPct, 'num', { suffix: '% p.a.' }) +
+          nwField('Spareplan', p + '.contributionNokPerMonth', a.contributionNokPerMonth, 'num', { suffix: 'kr/mnd' }) +
+          (a.wrapper === 'ask'
+            ? nwField('Innskutt kapital', p + '.innskuttKapitalNok', a.innskuttKapitalNok, 'num', { suffix: 'kr' }) +
+              nwField('Akkumulert skjerming', p + '.akkumulertSkjermingNok', a.akkumulertSkjermingNok, 'num', { suffix: 'kr' }) +
+              `<p class="nw-note">Innskutt kapital tas ut først og skattefritt — derfor vet kortet hvor mye du kan flytte uten skatt.</p>`
+            : nwField('Kostpris (inngangsverdi)', p + '.costBasisNok', a.costBasisNok, 'num', { suffix: 'kr' }));
+      } else {
+        extra = nwField('Rente', p + '.expectedReturnPct', a.expectedReturnPct, 'num', { suffix: '% p.a.' }) +
+          nwField('Spareplan', p + '.contributionNokPerMonth', a.contributionNokPerMonth, 'num', { suffix: 'kr/mnd' }) +
+          nwCheck('Øremerket — holdes utenfor 2030-målet', p + '.restricted', a.restricted);
+      }
+
+      return `<div class="nw-item">
+        <div class="nw-item-head">
+          <span class="nw-item-kind">${kindLabel}</span>
+          <button class="nw-btn nw-btn-del" onclick="nwRemove('asset', ${i})" title="Fjern">×</button>
+        </div>
+        ${nwField('Navn', p + '.label', a.label, 'text', { placeholder: kindLabel })}
+        ${nwField('Verdi', p + '.anchorValueNok', a.anchorValueNok, 'num', { suffix: 'kr' })}
+        ${nwField('Anker (måned verdien gjaldt)', p + '.anchorOn', a.anchorOn, 'text', { type: 'month' })}
+        ${nwField('Din eierandel', p + '.ownershipShare', a.ownershipShare, 'pct01', { suffix: '%' })}
+        ${extra}
+      </div>`;
+    }
+
+    function nwLoanBlock(l, i) {
+      const p = 'liabilities.' + i;
+      return `<div class="nw-item">
+        <div class="nw-item-head">
+          <span class="nw-item-kind">Lån</span>
+          <button class="nw-btn nw-btn-del" onclick="nwRemove('loan', ${i})" title="Fjern">×</button>
+        </div>
+        ${nwField('Navn', p + '.label', l.label, 'text', { placeholder: 'Boligån' })}
+        ${nwField('Saldo', p + '.anchorBalanceNok', l.anchorBalanceNok, 'num', { suffix: 'kr' })}
+        ${nwField('Anker (måned saldoen gjaldt)', p + '.anchorOn', l.anchorOn, 'text', { type: 'month' })}
+        ${nwField('Rente', p + '.ratePct', l.ratePct, 'num', { suffix: '%' })}
+        ${nwField('Gjenstående løpetid', p + '.termMonths', l.termMonths, 'num', { suffix: 'mnd' })}
+        ${nwField('Ekstra avdrag', p + '.extraPrincipalNokPerMonth', l.extraPrincipalNokPerMonth, 'num', { suffix: 'kr/mnd' })}
+        ${nwField('Din andel av lånet', p + '.ownershipShare', l.ownershipShare, 'pct01', { suffix: '%' })}
+      </div>`;
+    }
+
+    function renderNwForm() {
+      const el = document.getElementById('nw-form');
+      if (!el || !nwEditCfg) return;
+      const pol = nwEditCfg.policy = nwEditCfg.policy || {};
+      el.innerHTML = `
+        <div class="nw-sec">
+          <h4>Målet</h4>
+          ${nwField('Målmåned', 'policy.targetMonth', pol.targetMonth, 'text', { type: 'month' })}
+          ${nwField('Pris på neste bolig', 'policy.nextPurchasePriceNok', pol.nextPurchasePriceNok, 'num', { suffix: 'kr i dag' })}
+          ${nwField('Prisen gjelder fra', 'policy.priceSetOn', pol.priceSetOn, 'text', { type: 'month' })}
+          ${nwCheck('Indeksreguler prisen med Oslo-indeksen', 'policy.indexNextPurchase', pol.indexNextPurchase)}
+          <p class="nw-note">Uten dette teller et boligrally som framgang, selv om gapet du skal over vokser raskere enn egenkapitalen din.</p>
+        </div>
+        <div class="nw-sec">
+          <h4>Hva banken tillater</h4>
+          ${nwField('Brutto husholdningsinntekt', 'policy.grossHouseholdIncomeNok', pol.grossHouseholdIncomeNok, 'num', { suffix: 'kr/år' })}
+          ${nwField('Forventet lønnsvekst', 'policy.incomeGrowthPct', pol.incomeGrowthPct, 'num', { suffix: '% p.a.' })}
+          ${nwField('Maks belåningsgrad', 'policy.ltvMax', pol.ltvMax, 'pct01', { suffix: '%' })}
+          ${nwField('Maks gjeldsgrad', 'policy.gjeldsgradMax', pol.gjeldsgradMax, 'num', { suffix: '× inntekt' })}
+          <p class="nw-note">Gjeldsgrad er oftest det som faktisk stopper et boligkjøp i Oslo, ikke egenkapitalen. Kortet sier hvilken av de to som binder.</p>
+        </div>
+        <div class="nw-sec">
+          <h4>Kjøpskostnader</h4>
+          ${nwField('Dokumentavgift', 'policy.dokumentavgiftPct', pol.dokumentavgiftPct, 'num', { suffix: '%' })}
+          ${nwField('Gebyrer', 'policy.purchaseFeesNok', pol.purchaseFeesNok, 'num', { suffix: 'kr' })}
+        </div>
+        <div class="nw-sec">
+          <h4>Eiendeler</h4>
+          ${(nwEditCfg.assets || []).map(nwAssetBlock).join('')}
+          <div class="nw-add">
+            <button class="nw-btn" onclick="nwAddAsset('property')">+ Bolig</button>
+            <button class="nw-btn" onclick="nwAddAsset('fund')">+ Fond</button>
+            <button class="nw-btn" onclick="nwAddAsset('cash')">+ Konto</button>
+          </div>
+        </div>
+        <div class="nw-sec">
+          <h4>Gjeld</h4>
+          ${(nwEditCfg.liabilities || []).map(nwLoanBlock).join('')}
+          <div class="nw-add"><button class="nw-btn" onclick="nwAddLoan()">+ Lån</button></div>
+        </div>`;
+    }
+
     function getNetWorthSettingsHTML() {
       setTimeout(loadNetWorthConfigIntoForm, 0);
       return `
-        <h3>Formue og m&aring;l</h3>
-        <p class="hint" style="margin-bottom:8px;">Lagres bare p&aring; hjemmenettet, aldri via delingskoder. Erstatt eksempeltallene med dine egne.</p>
-        <div id="nw-cfg-status" style="font-size:0.78rem;color:var(--text-secondary);margin-bottom:6px;">Laster...</div>
-        <textarea id="nw-cfg-text" spellcheck="false" style="width:100%;height:300px;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:0.72rem;line-height:1.45;padding:8px;border:1px solid var(--border);border-radius:8px;background:var(--bg);color:var(--text);"></textarea>
-        <p class="hint" style="margin-top:6px;">
-          <strong>ownershipShare</strong> 0&ndash;1 per post &middot; <strong>wrapper</strong> ask/fondskonto/direkte &middot;
-          <strong>contributionNokPerMonth</strong> er spareplanen som framskrives automatisk &middot;
-          <strong>restricted: true</strong> holdes utenfor m&aring;let.
-        </p>
+        <h3>Formue og mål</h3>
+        <p class="hint" style="margin-bottom:6px;">Lagres bare på hjemmenettet, og aldri via delingskoder.</p>
+        <div id="nw-cfg-status" style="font-size:0.78rem;color:var(--text-secondary);margin-bottom:8px;">Laster...</div>
+        <div id="nw-form" style="max-height:56vh;overflow-y:auto;"></div>
         <div class="widget-popup-actions">
+          <button class="btn" onclick="nwShowJson()" style="margin-right:auto;font-size:0.78rem;color:var(--text-secondary);">Vis JSON</button>
           <button class="btn" onclick="closeWidgetPopup()">Avbryt</button>
           <button class="btn btn-primary" onclick="saveNetWorthConfig()">Lagre</button>
         </div>`;
     }
 
+    // Escape hatch: the form covers the fields that matter, the document may
+    // carry more.
+    function nwShowJson() {
+      const el = document.getElementById('nw-form');
+      if (!el || !nwEditCfg) return;
+      el.innerHTML = `<textarea id="nw-cfg-text" spellcheck="false"
+        style="width:100%;height:44vh;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:0.72rem;line-height:1.45;padding:8px;border:1px solid var(--border);border-radius:8px;background:var(--bg);color:var(--text);"
+        oninput="try{nwEditCfg=JSON.parse(this.value);this.style.borderColor='';}catch(e){this.style.borderColor='var(--negative)';}"
+        >${escapeHtml(JSON.stringify(nwEditCfg, null, 2))}</textarea>
+        <div class="nw-add"><button class="nw-btn" onclick="renderNwForm()">Tilbake til skjema</button></div>`;
+    }
+
     async function loadNetWorthConfigIntoForm() {
       const st = document.getElementById('nw-cfg-status');
-      const ta = document.getElementById('nw-cfg-text');
-      if (!st || !ta) return;
+      if (!st) return;
       try {
         const res = await workerFetch('/private/nw/config');
         if (res.status === 403) { st.textContent = 'Bare tilgjengelig på hjemmenettet.'; return; }
         if (!res.ok) throw new Error('HTTP ' + res.status);
-        const cfg = await res.json();
-        ta.value = JSON.stringify(cfg, null, 2);
-        st.textContent = cfg.placeholder
-          ? 'Viser eksempeltall (rev ' + (cfg.rev || 0) + ').'
-          : 'Lagret konfigurasjon, rev ' + (cfg.rev || 0) + '.';
+        nwEditCfg = await res.json();
+        st.textContent = nwEditCfg.placeholder
+          ? 'Eksempeltall — erstatt med dine egne.'
+          : 'Lagret (rev ' + (nwEditCfg.rev || 0) + ').';
+        renderNwForm();
       } catch (e) {
         st.textContent = 'Kunne ikke laste: ' + e.message;
       }
@@ -6499,24 +6734,21 @@
 
     async function saveNetWorthConfig() {
       const st = document.getElementById('nw-cfg-status');
-      const ta = document.getElementById('nw-cfg-text');
-      let parsed;
-      try { parsed = JSON.parse(ta.value); }
-      catch (e) { st.textContent = 'Ugyldig JSON: ' + e.message; st.style.color = 'var(--negative)'; return; }
+      if (!nwEditCfg) return;
       try {
         const res = await workerFetch('/private/nw/config', {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(parsed)
+          body: JSON.stringify(nwEditCfg)
         });
         const out = await res.json();
         if (res.status === 409) {
-          // Someone else saved since this form loaded; do not clobber them.
           st.textContent = 'Endret på en annen enhet (rev ' + out.rev + '). Last inn på nytt.';
           st.style.color = 'var(--negative)';
           return;
         }
         if (!res.ok) throw new Error(out.error || ('HTTP ' + res.status));
+        nwEditCfg.rev = out.rev;
         st.textContent = 'Lagret (rev ' + out.rev + ').';
         st.style.color = 'var(--positive)';
         showToast('Formuestall lagret');

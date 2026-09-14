@@ -2,6 +2,14 @@ addEventListener("fetch", function(event) {
   event.respondWith(handleRequest(event.request));
 });
 
+// Static baseline for the /proxy host allowlist. Deliberately an allowlist and
+// not an open proxy: this Worker is public, and an open proxy is an SSRF and
+// abuse vector. It can be widened at runtime through /private/proxy-hosts,
+// which is tier-2 gated so only the owner, at home, can add a host.
+//
+// The news widget shipped with feeds whose hosts were never listed here (E24,
+// VG, TechCrunch, Hacker News are all named in CLAUDE.md), so those tabs had
+// never once loaded.
 var ALLOWED = [
   "https://query1.finance.yahoo.com/",
   "https://query2.finance.yahoo.com/",
@@ -12,8 +20,24 @@ var ALLOWED = [
   "https://query1.finance.yahoo.com/v1/finance/search",
   "https://query2.finance.yahoo.com/v1/finance/search",
   "https://ws.geonorge.no/",
-  "https://news.google.com/"
+  "https://news.google.com/",
+  "https://e24.no/",
+  "https://www.vg.no/",
+  "https://www.aftenposten.no/",
+  "https://www.dn.no/",
+  "https://techcrunch.com/",
+  "https://news.ycombinator.com/",
+  "https://hnrss.org/",
+  "https://www.nrk.no/nyheter/",
+  "https://api.entur.io/"
 ];
+
+// Static list plus anything the owner has added from home.
+async function allowedPrefixes() {
+  var extra = [];
+  try { extra = splitList(await KV.get("proxy_hosts")); } catch (e) {}
+  return ALLOWED.concat(extra);
+}
 
 function jsonResponse(obj, status) {
   return new Response(JSON.stringify(obj), {
@@ -125,6 +149,28 @@ async function handleRequest(request) {
 
   // Managing the allowlist is itself tier 2: you can only add a network while
   // already on a trusted one. HOME_NETWORKS bootstraps the first entry.
+  if (path === "/private/proxy-hosts") {
+    if (request.method === "POST") {
+      var body = await request.json().catch(function() { return {}; });
+      var prefix = String(body.prefix || "").trim();
+      // Must be an https origin prefix; anything looser re-opens the proxy.
+      if (!/^https:\/\/[a-z0-9.-]+\/[a-zA-Z0-9._~:\/?#\[\]@!$&'()*+,;=%-]*$/i.test(prefix)) {
+        return jsonResponse({error: "Expected an https:// prefix ending in a path, e.g. https://example.com/"}, 400);
+      }
+      var hosts = await kvProxyHosts();
+      if (hosts.indexOf(prefix) < 0) hosts.push(prefix);
+      await KV.put("proxy_hosts", hosts.join(","));
+      return jsonResponse({hosts: hosts, added: prefix});
+    }
+    if (request.method === "DELETE") {
+      var drop = url.searchParams.get("prefix") || "";
+      var kept = (await kvProxyHosts()).filter(function(h) { return h !== drop; });
+      await KV.put("proxy_hosts", kept.join(","));
+      return jsonResponse({hosts: kept, removed: drop});
+    }
+    return jsonResponse({hosts: await kvProxyHosts(), builtin: ALLOWED});
+  }
+
   if (path === "/private/home-networks") {
     if (request.method === "POST") {
       var body = await request.json().catch(function() { return {}; });
@@ -464,12 +510,21 @@ async function handleRequest(request) {
     return new Response("Missing url parameter", {status: 400, headers: {"Access-Control-Allow-Origin": "*"}});
   }
 
+  var prefixes = await allowedPrefixes();
   var allowed = false;
-  for (var i = 0; i < ALLOWED.length; i++) {
-    if (target.indexOf(ALLOWED[i]) === 0) { allowed = true; break; }
+  for (var i = 0; i < prefixes.length; i++) {
+    if (target.indexOf(prefixes[i]) === 0) { allowed = true; break; }
   }
   if (!allowed) {
-    return new Response("Forbidden", {status: 403, headers: {"Access-Control-Allow-Origin": "*"}});
+    // Say WHY. A bare "Forbidden" made an unlisted feed look like a broken one,
+    // and the settings UI happily accepted hosts this would always refuse.
+    var host = "";
+    try { host = new URL(target).host; } catch (e) {}
+    return jsonResponse({
+      error: "Host not allowed by the dashboard proxy",
+      host: host,
+      hint: "Add it from the dashboard while on the home network."
+    }, 403);
   }
 
   try {
@@ -1079,4 +1134,8 @@ function splitHouseNumber(raw) {
   var m = String(raw == null ? "" : raw).trim().match(/^(\d+)\s*([A-Za-z]?)/);
   if (!m) return {number: "", letter: ""};
   return {number: m[1], letter: (m[2] || "").toUpperCase()};
+}
+
+async function kvProxyHosts() {
+  return splitList(await KV.get("proxy_hosts"));
 }

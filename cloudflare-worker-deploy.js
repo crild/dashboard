@@ -1603,20 +1603,37 @@ async function nwProjection(request) {
   var now = nwEvaluate(cfg, nowYm, housing);
   var target = nwEvaluate(cfg, targetYm, housing);
 
-  // A yearly track for the chart, so the card can show the path rather than
-  // only the endpoints.
+  // Monthly track, so the card can draw the actual trajectory rather than a
+  // handful of year-end dots. Capped at ~54 points, which covers the horizon
+  // at monthly resolution and keeps the payload small.
   var track = [];
-  var startY = Number(nowYm.slice(0, 4));
-  var endY = Number(targetYm.slice(0, 4));
-  for (var y = startY; y <= endY; y++) {
-    var ym = y === endY ? targetYm : y + "-12";
-    var e = nwEvaluate(cfg, ym, housing);
-    track.push({
-      ym: ym,
-      netWorthMine: e.incomplete ? null : Math.round(e.netWorthMine),
-      equitySupply: e.incomplete ? null : Math.round(e.equitySupply),
-      equityNeeded: e.incomplete ? null : Math.round(e.equityNeeded)
-    });
+  var startIdx = nwMonthIndex(nowYm);
+  var endIdx = nwMonthIndex(targetYm);
+  if (startIdx !== null && endIdx !== null && endIdx > startIdx) {
+    var span = endIdx - startIdx;
+    var step = Math.max(1, Math.ceil(span / 54));
+    for (var mi = startIdx; mi <= endIdx; mi += step) {
+      var ym2 = Math.floor(mi / 12) + "-" + ("0" + (mi % 12 + 1)).slice(-2);
+      var e = nwEvaluate(cfg, ym2, housing);
+      track.push({
+        ym: ym2,
+        netWorthMine: e.incomplete ? null : Math.round(e.netWorthMine),
+        netWorthHousehold: e.incomplete ? null : Math.round(e.netWorthHousehold),
+        equitySupply: e.incomplete ? null : Math.round(e.equitySupply),
+        equityNeeded: e.incomplete ? null : Math.round(e.equityNeeded)
+      });
+    }
+    // Always land exactly on the target month, whatever the step did.
+    if (track.length && track[track.length - 1].ym !== targetYm) {
+      var te = nwEvaluate(cfg, targetYm, housing);
+      track.push({
+        ym: targetYm,
+        netWorthMine: te.incomplete ? null : Math.round(te.netWorthMine),
+        netWorthHousehold: te.incomplete ? null : Math.round(te.netWorthHousehold),
+        equitySupply: te.incomplete ? null : Math.round(te.equitySupply),
+        equityNeeded: te.incomplete ? null : Math.round(te.equityNeeded)
+      });
+    }
   }
 
   return jsonResponse({

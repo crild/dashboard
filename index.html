@@ -430,6 +430,25 @@
       border: 1px dashed var(--border); border-radius: 8px;
       padding: 4px 8px; margin-bottom: 10px;
     }
+    .nw-chart-wrap { margin: 12px 0 4px; }
+    .nw-chart {
+      width: 100%; height: 132px; display: block; overflow: visible;
+    }
+    .nw-chart-axis {
+      display: flex; justify-content: space-between; gap: 6px;
+      font-size: 0.66rem; color: var(--text-secondary); margin-top: 2px;
+    }
+    .nw-chart-axis span:nth-child(2) { color: var(--positive); }
+    .nw-legend {
+      display: flex; flex-wrap: wrap; gap: 4px 14px; margin-top: 8px;
+      font-size: 0.7rem; color: var(--text-secondary);
+    }
+    .nw-legend span { display: inline-flex; align-items: center; gap: 5px; }
+    .nw-k { width: 12px; height: 0; border-top: 2px solid var(--text-secondary); display: inline-block; }
+    .nw-k-supply { border-top-color: var(--accent); border-top-width: 3px; }
+    .nw-k-need { border-top-style: dashed; }
+    .nw-k-worth { opacity: 0.5; }
+
     .nw-top { display: flex; gap: 16px; align-items: center; flex-wrap: wrap; }
     .nw-ring {
       --pct: 0;
@@ -6602,6 +6621,83 @@
       }
     }
 
+    // The shape of the trajectory is not sensitive; the kroner are. So the chart
+    // always draws, and only its axis labels respect the reveal state — you can
+    // read "closing the gap" from across the hallway without anyone reading the
+    // amounts.
+    function nwChart(track, view) {
+      if (!track || track.length < 2) return '';
+      const key = view === 'mine' ? 'netWorthMine' : 'netWorthHousehold';
+      const pts = track.filter(t => t.equitySupply !== null);
+      if (pts.length < 2) return '';
+
+      const W = 100, H = 46, padT = 3, padB = 9;
+      const supply = pts.map(p => p.equitySupply);
+      const needed = pts.map(p => p.equityNeeded);
+      const worth = pts.map(p => p[key]);
+      // Fitted to the data rather than anchored at zero: with a requirement of
+      // 15M and curves between 4M and 11M, a zero baseline squashed everything
+      // into the top third and the trajectory was unreadable. The gap between
+      // the supply line and the requirement line stays fully visible either way,
+      // which is the comparison that matters.
+      const all = [...supply, ...needed, ...worth];
+      const rawLo = Math.min(...all), rawHi = Math.max(...all);
+      const pad = Math.max((rawHi - rawLo) * 0.12, rawHi * 0.02) || 1;
+      const lo = Math.max(0, rawLo - pad);
+      const hi = rawHi + pad;
+      const x = i => (i / (pts.length - 1)) * W;
+      const y = v => padT + (H - padT - padB) * (1 - (v - lo) / (hi - lo));
+      const path = arr => arr.map((v, i) => `${i ? 'L' : 'M'}${x(i).toFixed(2)},${y(v).toFixed(2)}`).join('');
+      const area = arr => path(arr) + `L${W},${H - padB}L0,${H - padB}Z`;
+
+      // Where supply first reaches the requirement — the month it becomes possible.
+      let crossIdx = -1;
+      for (let i = 0; i < pts.length; i++) if (supply[i] >= needed[i]) { crossIdx = i; break; }
+
+      const monthLabel = ym => {
+        const [yy, mm] = ym.split('-');
+        return ['jan','feb','mar','apr','mai','jun','jul','aug','sep','okt','nov','des'][+mm - 1] + ' ' + yy.slice(2);
+      };
+      const axis = v => nwRevealed ? nwShort(v) : '•••';
+
+      return `
+        <div class="nw-chart-wrap">
+          <svg class="nw-chart" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img"
+               aria-label="Egenkapital mot krav fram til ${monthLabel(pts[pts.length-1].ym)}">
+            <defs>
+              <linearGradient id="nwFill" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stop-color="var(--accent)" stop-opacity="0.28"/>
+                <stop offset="100%" stop-color="var(--accent)" stop-opacity="0.02"/>
+              </linearGradient>
+            </defs>
+            <path d="${path(needed)}L${x(pts.length - 1).toFixed(2)},${y(supply[supply.length - 1]).toFixed(2)}${
+              supply.map((v, i) => `L${x(pts.length - 1 - i).toFixed(2)},${y(supply[pts.length - 1 - i]).toFixed(2)}`).join('')
+            }Z" fill="var(--negative)" opacity="0.07"/>
+            <path d="${area(supply)}" fill="url(#nwFill)"/>
+            <path d="${path(needed)}" fill="none" stroke="var(--text-secondary)" stroke-width="0.7"
+                  stroke-dasharray="2 1.6" vector-effect="non-scaling-stroke" opacity="0.85"/>
+            <path d="${path(worth)}" fill="none" stroke="var(--text-secondary)" stroke-width="0.7"
+                  vector-effect="non-scaling-stroke" opacity="0.45"/>
+            <path d="${path(supply)}" fill="none" stroke="var(--accent)" stroke-width="1.6"
+                  vector-effect="non-scaling-stroke" stroke-linejoin="round"/>
+            ${crossIdx > 0 ? `<line x1="${x(crossIdx).toFixed(2)}" y1="${padT}" x2="${x(crossIdx).toFixed(2)}" y2="${H - padB}"
+                  stroke="var(--positive)" stroke-width="0.8" stroke-dasharray="1.5 1.5" vector-effect="non-scaling-stroke"/>` : ''}
+            <circle cx="${x(pts.length - 1).toFixed(2)}" cy="${y(supply[supply.length - 1]).toFixed(2)}"
+                    r="1.6" fill="var(--accent)"/>
+          </svg>
+          <div class="nw-chart-axis">
+            <span>${monthLabel(pts[0].ym)}</span>
+            <span>${crossIdx > 0 ? 'når målet ' + monthLabel(pts[crossIdx].ym) : ''}</span>
+            <span>${monthLabel(pts[pts.length - 1].ym)}</span>
+          </div>
+          <div class="nw-legend">
+            <span><i class="nw-k nw-k-supply"></i>Egenkapital ${axis(supply[supply.length - 1])}</span>
+            <span><i class="nw-k nw-k-need"></i>Krav ${axis(needed[needed.length - 1])}</span>
+            <span><i class="nw-k nw-k-worth"></i>Formue ${axis(worth[worth.length - 1])}</span>
+          </div>
+        </div>`;
+    }
+
     function renderNetWorth() {
       const content = document.getElementById('networth-content');
       if (!content || !nwData) return;
@@ -6644,6 +6740,7 @@
             </div>
           </div>
         </div>
+        ${nwChart(nwData.track, nwView)}
         <div class="nw-rows">
           <div class="nw-row"><span>Boligverdi minus lån</span><span>${nwMaybe(t.homeEquityMine)}</span></div>
           <div class="nw-row"><span>Likvide midler ${t.ym}</span><span>${nwMaybe(t.liquidMine)}</span></div>

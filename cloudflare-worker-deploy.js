@@ -521,7 +521,7 @@ async function handleRequest(request) {
         var s = INDEX_SOURCES[k];
         return {
           name: k, label: s.label, emoji: s.emoji || "", unit: s.unit || "",
-          category: s.category || "other", scale: s.scale || null,
+          home: s.home || "", category: s.category || "other", scale: s.scale || null,
           ttl: s.ttl, unverified: !!s.unverified
         };
       })});
@@ -686,11 +686,13 @@ function generateCode() {
 //   captionPick dot path to a short label shown under the value
 //   column      whitespace-column index, for text-column sources
 //   scale       [min, max] to draw a gauge bar; omit for open-ended series
+//   home        page to open when the tile is tapped
 //   category    groups the source in the dashboard picker:
 //               geopolitics | markets | planet | norge | tull
 //   unverified  endpoint not yet confirmed end-to-end from a Worker
 var INDEX_SOURCES = {
   "crypto-fng": {
+    home: "https://alternative.me/crypto/fear-and-greed-index/",
     category: "markets",
     label: "Crypto Fear & Greed",
     emoji: "₿",
@@ -703,6 +705,7 @@ var INDEX_SOURCES = {
     ttl: 3600
   },
   "co2": {
+    home: "https://gml.noaa.gov/ccgg/trends/",
     category: "planet",
     label: "CO₂ Mauna Loa",
     emoji: "🌍",
@@ -714,6 +717,7 @@ var INDEX_SOURCES = {
     ttl: 86400
   },
   "eurnok": {
+    home: "https://www.norges-bank.no/tema/Statistikk/Valutakurser/",
     category: "norge",
     label: "EUR/NOK",
     emoji: "💱",
@@ -723,6 +727,7 @@ var INDEX_SOURCES = {
     ttl: 21600
   },
   "styringsrente": {
+    home: "https://www.norges-bank.no/tema/pengepolitikk/Styringsrenten/",
     category: "norge",
     label: "Styringsrente",
     emoji: "🏦",
@@ -735,6 +740,7 @@ var INDEX_SOURCES = {
   // Trump pressure index. Next.js server-renders the numbers into the flight
   // payload, so a loose regex beats unescaping the JSON out of the HTML.
   "salsa": {
+    home: "https://www.salsa-index.com/",
     category: "geopolitics",
     label: "SALSA Index",
     emoji: "🌶",
@@ -748,6 +754,7 @@ var INDEX_SOURCES = {
     ua: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0 Safari/537.36"
   },
   "salsa-taco": {
+    home: "https://www.salsa-index.com/",
     category: "geopolitics",
     label: "TACO Probability",
     emoji: "🌮",
@@ -763,6 +770,7 @@ var INDEX_SOURCES = {
   },
   // One JSON call carries six sub-indices; each is exposed as its own tile.
   "ai-bubble": {
+    home: "https://aibubblemonitor.com/",
     category: "markets",
     label: "AI Bubble",
     emoji: "🫧",
@@ -775,6 +783,7 @@ var INDEX_SOURCES = {
     ttl: 3600
   },
   "ai-bubble-valuation": {
+    home: "https://aibubblemonitor.com/",
     category: "markets",
     label: "AI Valuation",
     emoji: "💸",
@@ -786,6 +795,7 @@ var INDEX_SOURCES = {
     ttl: 3600
   },
   "ai-bubble-systemic": {
+    home: "https://aibubblemonitor.com/",
     category: "markets",
     label: "AI Systemic Risk",
     emoji: "⚠",
@@ -800,6 +810,7 @@ var INDEX_SOURCES = {
   // The query is the point: one source becomes many trackers. GDELT rate-limits
   // to one request per 5s, which the KV cache absorbs.
   "gdelt-conflict": {
+    home: "https://www.gdeltproject.org/",
     category: "geopolitics",
     label: "World Mood: Conflict",
     emoji: "🌐",
@@ -813,6 +824,7 @@ var INDEX_SOURCES = {
   // (a short UA gets "I'm a teapot"). Verified from a residential IP; Cloudflare
   // egress IPs are likelier to be challenged, so confirm after deploying.
   "cnn-fng": {
+    home: "https://edition.cnn.com/markets/fear-and-greed",
     category: "markets",
     label: "CNN Fear & Greed",
     emoji: "📈",
@@ -829,6 +841,7 @@ var INDEX_SOURCES = {
   // HTTP-only origin — it serves no TLS at all, so https fails outright.
   // Parses correctly over http; confirm a Worker subrequest is not upgraded.
   "people-in-space": {
+    home: "http://open-notify.org/",
     category: "planet",
     label: "People in space",
     emoji: "🚀",
@@ -926,6 +939,7 @@ function decorateIndex(name, source, entry, stale) {
     name: name,
     label: source.label,
     emoji: source.emoji || "",
+    home: source.home || "",
     value: entry.value,
     display: entry.value.toFixed(decimals),
     caption: entry.caption || "",
@@ -968,7 +982,7 @@ async function serveIndex(name, source, force) {
     }
     return jsonResponse({
       name: name, label: source.label, emoji: source.emoji || "",
-      value: null, display: "—", caption: "", unit: source.unit || "",
+      home: source.home || "", value: null, display: "—", caption: "", unit: source.unit || "",
       scale: source.scale || null, ts: null, ttl: source.ttl || 3600,
       stale: true, error: err.message
     });

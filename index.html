@@ -469,6 +469,16 @@
 
     .index-tile.stale { opacity: 0.5; }
 
+    /* Linked tiles: inherit rather than turn blue, and give a touch target that
+       reacts, since on the wall these are the only tappable things on the card. */
+    a.index-tile-link {
+      text-decoration: none;
+      color: inherit;
+      transition: border-color 0.15s ease, background 0.15s ease;
+    }
+    a.index-tile-link:hover { border-color: var(--accent); background: var(--hover); }
+    a.index-tile-link:active { transform: scale(0.985); }
+
     .index-tile-top {
       display: flex;
       align-items: center;
@@ -6930,8 +6940,11 @@
         const when = indexTimestamp(r.ts);
         const caption = r.stale ? 'Stale &middot; ' + escapeHtml(when) : escapeHtml(r.caption || '');
         const title = `${escapeHtml(r.label)} — updated ${escapeHtml(when)}${r.error ? ' — ' + escapeHtml(r.error) : ''}`;
+        const tag = r.home ? 'a' : 'div';
+        const linkAttrs = r.home
+          ? ` href="${escapeHtml(r.home)}" target="_blank" rel="noopener noreferrer"` : '';
         return `
-          <div class="index-tile${r.stale ? ' stale' : ''}" title="${title}">
+          <${tag} class="index-tile${r.stale ? ' stale' : ''}${r.home ? ' index-tile-link' : ''}"${linkAttrs} title="${title}${r.home ? ' · tap to open' : ''}">
             <div class="index-tile-top">
               <span>${escapeHtml(r.emoji || '')}</span>
               <span class="index-tile-label">${escapeHtml(r.label)}</span>
@@ -6939,7 +6952,7 @@
             <div class="index-tile-value">${r.display === null || r.display === undefined ? '&mdash;' : escapeHtml(r.display) + escapeHtml(r.unit || '')}</div>
             ${gauge}
             <div class="index-tile-caption">${caption}</div>
-          </div>`;
+          </${tag}>`;
       }).join('') + '</div>';
 
       const staleCount = results.filter(r => r.stale).length;
@@ -7564,6 +7577,8 @@
       let isDraggingTouch = false;
       let touchClone = null;
       let touchScrollInterval = null;
+      let touchHoldTimer = null;
+      let touchHoldReady = false;
 
       // Restore saved order on page load (or apply default order)
       function restoreOrder() {
@@ -7660,6 +7675,13 @@
           touchStartY = touch.clientY;
           isDraggingTouch = false;
           draggedCard = card;
+          // On a phone the card header is a full-width stripe across the scroll
+          // surface, so arming a drag on any 10px move meant a normal upward
+          // flick picked the card up mid-scroll — and saved a new order on
+          // release. Reordering now needs a deliberate hold.
+          touchHoldReady = false;
+          if (touchHoldTimer) clearTimeout(touchHoldTimer);
+          touchHoldTimer = setTimeout(() => { touchHoldReady = true; }, 400);
         }, { passive: true });
 
         header.addEventListener('touchmove', (e) => {
@@ -7668,12 +7690,24 @@
           const dx = Math.abs(touch.clientX - touchStartX);
           const dy = Math.abs(touch.clientY - touchStartY);
 
-          if (!isDraggingTouch && (dx > 10 || dy > 10)) {
+          if (!isDraggingTouch && !touchHoldReady) {
+            // Moved before the hold completed: this is a scroll, not a drag.
+            if (dx > 8 || dy > 8) {
+              clearTimeout(touchHoldTimer);
+              draggedCard = null;
+            }
+            return;
+          }
+
+          if (!isDraggingTouch && touchHoldReady) {
             isDraggingTouch = true;
             card.classList.add('dragging');
 
             // Create floating clone
             touchClone = card.cloneNode(true);
+            // The clone must not keep data-widget: toggleCardCollapse runs a
+            // document-wide '.card.collapsed' query and would pick it up.
+            touchClone.removeAttribute('data-widget');
             touchClone.style.position = 'fixed';
             touchClone.style.zIndex = '1000';
             touchClone.style.width = card.offsetWidth + 'px';
@@ -7710,6 +7744,9 @@
         }, { passive: false });
 
         header.addEventListener('touchend', () => {
+          // A pending hold must never survive the gesture that started it.
+          if (touchHoldTimer) { clearTimeout(touchHoldTimer); touchHoldTimer = null; }
+          touchHoldReady = false;
           clearInterval(touchScrollInterval);
           if (isDraggingTouch && draggedCard && dragOverCard && draggedCard !== dragOverCard) {
             const cards = Array.from(grid.querySelectorAll('.card[data-widget]'));

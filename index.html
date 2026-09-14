@@ -2017,7 +2017,10 @@
   <script>
     // ── Config with defaults ──
     const DEFAULTS = {
-      stops: ['NSR:StopPlace:6460', 'NSR:StopPlace:6463'],
+      // 61071 is the live Ullern. The old 6460 record still resolves to a
+      // name and coordinates but has served zero departures for as long as
+      // anyone checked, so it rendered as a titled, permanently empty column.
+      stops: ['NSR:StopPlace:61071', 'NSR:StopPlace:6463'],
       stocks: [
         { symbol: '^GSPC', label: 'S&P 500' },
         { symbol: 'OSEBX.OL', label: 'OSEBX' },
@@ -5156,25 +5159,40 @@
       return 'var(--accent)';
     }
 
+    // The only question a hallway board answers is "do I leave now, and will I
+    // make it". So everything keys off BUFFER = departure minus walking time,
+    // not the raw countdown.
+    //
+    // The previous bands could not do that. "missed" fired below 0.6x walk, so
+    // with a 19-minute walk anything 12-19 minutes out was painted red "leave
+    // NOW" when you would arrive after it had gone; and "relaxed" needed
+    // walk+5, which for any walk over ~4 minutes landed past the 10-minute
+    // cutoff where the text became a bare clock time. Green was unreachable by
+    // construction.
     function formatMinutes(isoTime, walkMin) {
       const diff = Math.round((new Date(isoTime) - new Date()) / 60000);
-      // RAG urgency based on walk time
+      const buffer = walkMin == null ? diff : diff - walkMin;
       let urgency = '';
       if (walkMin != null) {
-        const buffer = diff - walkMin;
-        const rush = walkMin * 0.6;                  // assume you can rush in 60% of walk time
-        if (diff < rush) urgency = 'missed';         // grey: can't make it even rushing
-        else if (buffer <= 1) urgency = 'urgent';    // red: must leave NOW
-        else if (buffer <= 4) urgency = 'hurry';     // yellow: get moving
-        else urgency = 'relaxed';                    // green: plenty of time
+        if (buffer < 0) urgency = 'missed';        // cannot arrive before it goes
+        else if (buffer <= 2) urgency = 'urgent';  // leave this second
+        else if (buffer <= 6) urgency = 'hurry';
+        else urgency = 'relaxed';
       }
-      if (diff <= 0) return { text: 'Now', urgency: urgency || 'missed' };
-      if (diff === 1) return { text: '1 min', urgency: urgency || 'urgent' };
-      if (diff < 10) return { text: `${diff} min`, urgency };
-      return {
-        text: new Date(isoTime).toLocaleTimeString('nb-NO', { hour: '2-digit', minute: '2-digit' }),
-        urgency
-      };
+      let text;
+      if (diff <= 0) text = 'gone';
+      else if (diff < 60) text = diff + ' min';
+      else {
+        // Past an hour a countdown stops helping; give the clock, with the day
+        // when it is not today, so a 02:27 departure cannot read as imminent.
+        const d = new Date(isoTime);
+        const today = new Date(); today.setHours(0, 0, 0, 0);
+        const clock = d.toLocaleTimeString('nb-NO', { hour: '2-digit', minute: '2-digit' });
+        text = d >= today && d < new Date(today.getTime() + 86400000)
+          ? clock
+          : d.toLocaleDateString('nb-NO', { weekday: 'short' }) + ' ' + clock;
+      }
+      return { text, urgency, diff, buffer };
     }
 
     async function getWalkTimeToStop(stopId, stopLat, stopLon) {
@@ -5241,16 +5259,35 @@
 
           // Group departures by quay (direction/platform)
           const quayGroups = {};
+          const nowMs = Date.now();
           stop.estimatedCalls.forEach(call => {
             const quayId = call.quay?.id || 'unknown';
             const quayDesc = call.quay?.description || call.quay?.publicCode || '';
-            if (!quayGroups[quayId]) quayGroups[quayId] = { desc: quayDesc, calls: [] };
-            if (quayGroups[quayId].calls.length < 4) {
-              quayGroups[quayId].calls.push(call);
+            if (!quayGroups[quayId]) quayGroups[quayId] = { desc: quayDesc, calls: [], missed: 0, dests: {} };
+            const g = quayGroups[quayId];
+            const mins = Math.round((new Date(call.expectedDepartureTime) - nowMs) / 60000);
+            // Destinations are counted so a quay with no description can still
+            // be labelled — both quays at Maritim return description:null and an
+            // empty publicCode, so the board had two unlabelled blocks.
+            const dest = call.destinationDisplay && call.destinationDisplay.frontText;
+            if (dest) g.dests[dest] = (g.dests[dest] || 0) + 1;
+
+            if (walkMin != null && (mins - walkMin) < 0) {
+              // One just-missed departure is useful context. Four of them is a
+              // board full of buses you physically cannot reach, which is what
+              // this showed for most of the day: the catchable ones were in the
+              // API response and thrown away by the old four-row cap.
+              if (g.missed < 1 && mins > 0) { g.missed++; g.calls.push(call); }
+              return;
             }
+            if (g.calls.length < 5) g.calls.push(call);
           });
 
           let quayKeys = Object.keys(quayGroups);
+          // Deterministic default order. Without it the quays came out in
+          // whatever order owned the next departure, so the two direction
+          // blocks silently swapped places every few minutes.
+          quayKeys.sort();
           // Sort quays by saved order if available
           const savedQuayOrder = quayOrder[stop.id || stop.name];
           if (savedQuayOrder) {
@@ -5266,7 +5303,11 @@
 
           const sections = quayKeys.map(qId => {
             const group = quayGroups[qId];
-            const dirLabel = group.desc ? `<div class="departure-direction">${group.desc}</div>` : '';
+            const topDest = Object.keys(group.dests || {})
+              .sort((a, b) => group.dests[b] - group.dests[a])[0];
+            const labelText = group.desc || (topDest ? 'mot ' + topDest : '');
+            const dirLabel = labelText
+              ? `<div class="departure-direction">${escapeHtml(labelText)}</div>` : '';
             const deps = group.calls.map(call => {
               const line = call.serviceJourney.line;
               const time = formatMinutes(call.expectedDepartureTime, walkMin);
@@ -5873,7 +5914,7 @@
         // Use Entur's nearest query — returns stops sorted by walking distance natively
         const nearestQuery = `query($lat:Float!,$lon:Float!,$max:Int!){
           nearest(latitude:$lat,longitude:$lon,maximumDistance:2000,maximumResults:$max,filterByPlaceTypes:stopPlace){
-            edges{node{place{...on StopPlace{id name estimatedCalls(numberOfDepartures:20){serviceJourney{line{publicCode}}}}}distance}}
+            edges{node{place{...on StopPlace{id name estimatedCalls(numberOfDepartures:40){serviceJourney{line{publicCode}}}}}distance}}
           }
         }`;
         const res = await fetch('https://api.entur.io/journey-planner/v3/graphql', {

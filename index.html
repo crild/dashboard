@@ -18,6 +18,7 @@
       --negative: #ff3b30;
       --shadow: 0 1px 3px rgba(0,0,0,0.08);
       --radius: 16px;
+      --hover: rgba(0,0,0,0.045);
     }
 
     [data-theme="dark"] {
@@ -27,6 +28,7 @@
       --text-secondary: #8e8e93;
       --border: #2c2c2e;
       --shadow: 0 1px 3px rgba(0,0,0,0.3);
+      --hover: rgba(255,255,255,0.07);
     }
 
     * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -103,6 +105,10 @@
     .grid > .card[data-widget="sensors"] { align-self: stretch; }
 
     .grid .card.collapsed { align-self: start; }
+
+    /* Grid items default to min-width:auto and refuse to shrink below their
+       content, so one wide card dragged the whole page wider than the phone. */
+    .grid > .card { min-width: 0; }
 
     /* A card whose data has stopped arriving. Dimmed rather than emptied: last
        known values beat a blank box on a display nobody is tending. */
@@ -620,6 +626,9 @@
     /* News */
     .news-tabs {
       display: flex;
+      /* Four non-wrapping tabs set the card's minimum width, which on a phone
+         was what forced the whole page wider than the screen. */
+      flex-wrap: wrap;
       gap: 4px;
       margin-bottom: 14px;
       border-bottom: 1px solid var(--border);
@@ -3010,7 +3019,7 @@
         const settled = await Promise.all(stocks.map(async (s) => {
           try {
           // Use 1mo range with 30m interval to ensure we get 7+ days for all instruments
-          const yahooUrl = `https://query2.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(s.symbol)}?interval=30m&range=1mo`;
+          const yahooUrl = `https://query2.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(s.symbol)}?interval=30m&range=7d`;
           const r = await safeJson(`${WORKER_URL}/?url=${encodeURIComponent(yahooUrl)}`, { timeout: 12000 });
           if (!r.ok) throw new Error(r.reason);
           const data = r.data;
@@ -5103,7 +5112,6 @@
     }
 
     async function fetchNews() {
-      newsCache = {};
       const feeds = getFeeds();
       renderTabs();
       await Promise.all(feeds.map(f => fetchFeed(f)));
@@ -7002,7 +7010,7 @@
     const WIDGET_LABELS = Object.fromEntries(ALL_WIDGETS.map(w => [w, WIDGETS[w].label]));
     const DEFAULT_HIDDEN = ALL_WIDGETS.filter(w => WIDGETS[w].defaultHidden);
 
-    const DEFAULT_WIDGET_ORDER = ['weather', 'transit', 'mobility', 'power', 'news', 'stocks', 'indexes', 'waste', 'sensors', 'hue'];
+    const DEFAULT_WIDGET_ORDER = ['weather', 'transit', 'mobility', 'power', 'news', 'stocks', 'indexes', 'waste', 'sensors', 'hue', 'networth'];
 
     function getLayoutConfig() {
       // Merge rather than return stored config verbatim: a config written by an

@@ -1204,7 +1204,7 @@ async function expandNetworks(list) {
   return out;
 }
 
-// "12B", "33 e" and "33" all have to reach the Oslo API as a number plus a
+// "12B", "12 b" and "12" all have to reach the Oslo API as a number plus a
 // separate letter. Anything unparseable degrades to the digits it can find.
 function splitHouseNumber(raw) {
   var m = String(raw == null ? "" : raw).trim().match(/^(\d+)\s*([A-Za-z]?)/);

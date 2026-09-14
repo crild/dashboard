@@ -5,3 +5,6 @@
 .wrangler/
 node_modules/
 *.log
+
+# Personal financial config — belongs in Worker KV, never in this public repo.
+spareplan-config.json

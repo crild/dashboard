@@ -1416,7 +1416,12 @@ function nwLoanBalance(loan, ym) {
   var i = (Number(loan.ratePct) || 0) / 100 / 12;
   var n = Number(loan.termMonths) || 300;
   var extra = Number(loan.extraPrincipalNokPerMonth) || 0;
-  var pay = i === 0 ? bal / n : bal * i / (1 - Math.pow(1 + i, -n));
+  // Prefer the bank's own terminbelop when it is known: deriving the payment
+  // from a rounded term drifts against the contractual amortization plan, and
+  // the bank's figure is the authoritative one.
+  var pay = Number(loan.paymentNok) > 0
+    ? Number(loan.paymentNok)
+    : (i === 0 ? bal / n : bal * i / (1 - Math.pow(1 + i, -n)));
   for (var m = 0; m < months && bal > 0; m++) {
     var principal = pay - bal * i + extra;
     if (principal <= 0) break;            // negative amortisation: stop
@@ -1486,17 +1491,35 @@ function nwEvaluate(cfg, ym, housing) {
   var netWorthHousehold = sum(assets, function (a) { return a.raw; })
                         - sum(liabilities, function (l) { return l.raw; });
 
-  var isLiquid = function (a) { return !a.isPrimaryHome && !a.restricted; };
-  var homeValueMine = sum(assets.filter(function (a) { return a.isPrimaryHome; }),
-                          function (a) { return a.mine; });
-  var homeLoanMine = sum(liabilities, function (l) { return l.mine; });
-  var homeEquityMine = Math.max(0, homeValueMine - homeLoanMine);
+  // Property is never liquid, primary or not. The first real configuration had
+  // a rented-out flat, which the old test (!isPrimaryHome) counted as cash.
+  var isLiquid = function (a) { return a.kind !== "property" && !a.restricted; };
+
+  // Equity is ALL property against ALL debt. A consolidated loan secured on two
+  // properties was previously subtracted from the primary home alone, which
+  // drove its equity to zero and hid the second property entirely.
+  var isProperty = function (a) { return a.kind === "property"; };
+  var propertyValueMine = sum(assets.filter(isProperty), function (a) { return a.mine; });
+  var loansMine = sum(liabilities, function (l) { return l.mine; });
+  var homeEquityMine = Math.max(0, propertyValueMine - loansMine);
   var liquidMine = sum(assets.filter(isLiquid), function (a) { return a.mine; });
   var taxOnLiquid = sum(assets.filter(isLiquid), function (a) { return a.tax; });
+
+  // The purchase is JOINT, and equityNeeded below is the whole requirement. So
+  // supply must be household too: comparing one person's share against the
+  // full requirement understates progress by exactly the co-owner's share.
+  // The my-share/household toggle governs the net worth line, not the target.
+  var propertyValueAll = sum(assets.filter(isProperty), function (a) { return a.raw; });
+  var loansAll = sum(liabilities, function (l) { return l.raw; });
+  var homeEquityAll = Math.max(0, propertyValueAll - loansAll);
+  var liquidAll = sum(assets.filter(isLiquid), function (a) { return a.raw; });
+  var taxAll = sum(assets.filter(isLiquid), function (a) {
+    return a.raw === null || a.mine === null || a.mine === 0 ? 0 : a.tax / a.share;
+  });
   var restrictedMine = sum(assets.filter(function (a) { return a.restricted; }),
                            function (a) { return a.mine; });
 
-  var equitySupply = homeEquityMine + liquidMine - taxOnLiquid;
+  var equitySupply = homeEquityAll + liquidAll - taxAll;
 
   // Demand side indexed to the SAME series as the current home, so a housing
   // boom reads as roughly neutral. Trading up in a rising market does not make

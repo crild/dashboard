@@ -107,7 +107,7 @@ async function handleRequest(request) {
 
   // Handle CORS preflight first (before any auth check)
   if (request.method === "OPTIONS") {
-    return new Response(null, {headers: {"Access-Control-Allow-Origin": "*", "Access-Control-Allow-Methods": "GET,POST,OPTIONS", "Access-Control-Allow-Headers": "Content-Type,X-Dashboard-Token"}});
+    return new Response(null, {headers: {"Access-Control-Allow-Origin": "*", "Access-Control-Allow-Methods": "GET,POST,PUT,DELETE,OPTIONS", "Access-Control-Allow-Headers": "Content-Type,X-Dashboard-Token", "Access-Control-Max-Age": "86400"}});
   }
 
   // Protected endpoints. /callback/* is deliberately exempt: it is redirected
@@ -157,6 +157,33 @@ async function handleRequest(request) {
 
   // Managing the allowlist is itself tier 2: you can only add a network while
   // already on a trusted one. HOME_NETWORKS bootstraps the first entry.
+  if (path === "/private/nw/projection") {
+    return await nwProjection(request);
+  }
+
+  if (path === "/private/nw/config") {
+    if (request.method === "PUT" || request.method === "POST") {
+      var incoming = await request.json().catch(function () { return null; });
+      if (!incoming || typeof incoming !== "object") {
+        return jsonResponse({error: "Expected a config object"}, 400);
+      }
+      // Optimistic concurrency: KV has no compare-and-swap, so a client must
+      // say which revision it edited. Two devices editing at once then collide
+      // loudly instead of one silently discarding the other.
+      var current = await nwLoadConfig();
+      var expected = current.rev || 0;
+      if (incoming.rev !== undefined && Number(incoming.rev) !== expected) {
+        return jsonResponse({error: "Config changed since you loaded it", rev: expected}, 409);
+      }
+      incoming.rev = expected + 1;
+      incoming.placeholder = false;
+      incoming.updated = new Date().toISOString().slice(0, 10);
+      await KV.put("nw_config", JSON.stringify(incoming));
+      return jsonResponse({ok: true, rev: incoming.rev});
+    }
+    return jsonResponse(await nwLoadConfig());
+  }
+
   if (path === "/private/proxy-hosts") {
     if (request.method === "POST") {
       var body = await request.json().catch(function() { return {}; });
@@ -1171,4 +1198,352 @@ function splitHouseNumber(raw) {
 
 async function kvProxyHosts() {
   return splitList(await KV.get("proxy_hosts"));
+}
+
+// ── Net worth & 2030 equity tracker ──────────────────────────────────────────
+// Design: "Anchors & Generators". Nothing stores a running balance. Each asset
+// and loan is one DATED ANCHOR plus a RULE for how it evolves — a contribution
+// schedule, an amortisation schedule, an expected return, or a market index.
+// Every figure is computed by evaluating those rules at a month. That is what
+// makes "set a savings plan once" work instead of logging what you saved.
+//
+// Tier 2 only (token AND home network). Financial data must never reach
+// /config/save, which is unauthenticated — hence SHAREABLE_CONFIG_KEYS above.
+
+// Placeholders. Every figure here is invented; the owner replaces them from the
+// dashboard. They exist so the card can be seen working before real numbers.
+var NW_PLACEHOLDER = {
+  rev: 0,
+  placeholder: true,
+  policy: {
+    targetMonth: "2030-06",
+    nextPurchasePriceNok: 12000000,
+    priceSetOn: "2026-09",
+    indexNextPurchase: true,
+    // 2025 utlånsforskrift: 10% egenkapitalkrav, so LTV max 90%. The design
+    // originally assumed 0.85, which is the PRE-2025 15% rule and would have
+    // invented ~600 000 kr of phantom deposit on a 12 MNOK purchase.
+    ltvMax: 0.90,
+    gjeldsgradMax: 5.0,
+    stressTestPp: 3.0,
+    stressTestFloorPct: 7.0,
+    grossHouseholdIncomeNok: 1800000,
+    incomeGrowthPct: 3.0,
+    dokumentavgiftPct: 2.5,
+    purchaseFeesNok: 25000,
+    housingGrowthPctBeyondIndex: 3.0
+  },
+  assets: [
+    { id: "home", kind: "property", label: "Nåværende bolig", anchorValueNok: 8500000,
+      anchorOn: "2026-06", ownershipShare: 0.5, eieform: "selveier", fellesgjeldNok: 0,
+      isPrimaryHome: true },
+    { id: "ask", kind: "fund", wrapper: "ask", label: "Indeksfond (ASK)",
+      anchorValueNok: 1200000, anchorOn: "2026-09", innskuttKapitalNok: 900000,
+      akkumulertSkjermingNok: 45000, expectedReturnPct: 6.0, ownershipShare: 1.0,
+      contributionNokPerMonth: 15000 },
+    { id: "buffer", kind: "cash", wrapper: "none", label: "Bufferkonto",
+      anchorValueNok: 250000, anchorOn: "2026-09", expectedReturnPct: 3.0,
+      ownershipShare: 1.0, contributionNokPerMonth: 0 },
+    { id: "restricted", kind: "cash", wrapper: "none", label: "Øremerket pott",
+      anchorValueNok: 300000, anchorOn: "2026-09", expectedReturnPct: 3.0,
+      ownershipShare: 1.0, contributionNokPerMonth: 0, restricted: true }
+  ],
+  liabilities: [
+    { id: "mortgage", kind: "annuitetslan", label: "Boliglån", anchorBalanceNok: 4200000,
+      anchorOn: "2026-09", ratePct: 5.4, termMonths: 300, extraPrincipalNokPerMonth: 8000,
+      ownershipShare: 0.5 }
+  ]
+};
+
+function nwMonthIndex(ym) {
+  var m = String(ym || "").match(/^(\d{4})-(\d{2})$/);
+  if (!m) return null;
+  return Number(m[1]) * 12 + (Number(m[2]) - 1);
+}
+
+function nwMonthsBetween(fromYm, toYm) {
+  var a = nwMonthIndex(fromYm), b = nwMonthIndex(toYm);
+  return (a === null || b === null) ? 0 : b - a;
+}
+
+// SSB 07221, region 001 "Oslo med Bærum", 2015=100, quarterly back to 1992.
+// Cached for a week: it only moves once a quarter.
+async function nwHousingIndex() {
+  var cached = await KV.get("nw_housing_index");
+  if (cached) { try { return JSON.parse(cached); } catch (e) {} }
+  var resp = await fetch("https://data.ssb.no/api/v0/no/table/07221", {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({
+      query: [
+        {code: "Region", selection: {filter: "item", values: ["001"]}},
+        {code: "Boligtype", selection: {filter: "item", values: ["00"]}},
+        {code: "ContentsCode", selection: {filter: "item", values: ["Boligindeks"]}}
+      ],
+      response: {format: "json-stat2"}
+    })
+  });
+  if (!resp.ok) throw new Error("SSB HTTP " + resp.status);
+  var d = await resp.json();
+  var periods = Object.keys(d.dimension.Tid.category.index);
+  var values = d.value;
+  var series = {};
+  for (var i = 0; i < periods.length; i++) {
+    if (values[i] !== null && values[i] !== undefined) series[periods[i]] = values[i];
+  }
+  var out = {series: series, fetched: Date.now(), source: "SSB 07221 Oslo med Bærum (2015=100)"};
+  await KV.put("nw_housing_index", JSON.stringify(out), {expirationTtl: 7 * 86400});
+  return out;
+}
+
+// Quarterly series -> a value for any month. Before the series starts, clamp.
+// After it ends, grow at the declared rate rather than freezing: a frozen index
+// would silently stop the largest asset moving and look like calm.
+function nwIndexAt(series, ym, growthPctBeyond) {
+  var keys = Object.keys(series).sort();
+  if (!keys.length) return null;
+  var mi = nwMonthIndex(ym);
+  if (mi === null) return null;
+
+  function qIndex(q) {
+    var m = q.match(/^(\d{4})K(\d)$/);
+    return m ? Number(m[1]) * 12 + (Number(m[2]) - 1) * 3 : null;
+  }
+  var first = keys[0], last = keys[keys.length - 1];
+  if (mi <= qIndex(first)) return series[first];
+  if (mi >= qIndex(last)) {
+    var monthsPast = mi - qIndex(last);
+    var g = (growthPctBeyond || 0) / 100;
+    return series[last] * Math.pow(1 + g, monthsPast / 12);
+  }
+  // Linear between the bracketing quarters.
+  var prevK = first, nextK = last;
+  for (var i = 0; i < keys.length; i++) {
+    if (qIndex(keys[i]) <= mi) prevK = keys[i];
+    if (qIndex(keys[i]) >= mi) { nextK = keys[i]; break; }
+  }
+  var p = qIndex(prevK), n = qIndex(nextK);
+  if (n === p) return series[prevK];
+  var t = (mi - p) / (n - p);
+  return series[prevK] + (series[nextK] - series[prevK]) * t;
+}
+
+// Value of one asset at month ym, before ownership share.
+function nwAssetValue(asset, ym, idx) {
+  var months = Math.max(0, nwMonthsBetween(asset.anchorOn, ym));
+  var base = Number(asset.anchorValueNok) || 0;
+
+  if (asset.kind === "property") {
+    // Indexed, never guessed: with no index the caller reports the asset as
+    // missing rather than substituting an invented growth rate.
+    if (!idx || !idx.at || !idx.anchor) return null;
+    return base * (idx.at / idx.anchor);
+  }
+
+  var r = (Number(asset.expectedReturnPct) || 0) / 100;
+  var monthlyR = Math.pow(1 + r, 1 / 12) - 1;
+  var value = base * Math.pow(1 + monthlyR, months);
+  // Contributions are the whole point of declaring a plan once: each month's
+  // deposit compounds for the months remaining.
+  var c = Number(asset.contributionNokPerMonth) || 0;
+  if (c > 0 && months > 0) {
+    value += monthlyR === 0 ? c * months
+      : c * ((Math.pow(1 + monthlyR, months) - 1) / monthlyR);
+  }
+  return value;
+}
+
+// Total paid into an ASK by month ym. Innskutt kapital comes out FIRST and
+// tax-free, which is why it is tracked apart from market value.
+function nwInnskuttAt(asset, ym) {
+  var months = Math.max(0, nwMonthsBetween(asset.anchorOn, ym));
+  return (Number(asset.innskuttKapitalNok) || 0) +
+         (Number(asset.contributionNokPerMonth) || 0) * months;
+}
+
+// Annuity amortisation with optional extra principal.
+function nwLoanBalance(loan, ym) {
+  var months = nwMonthsBetween(loan.anchorOn, ym);
+  var bal = Number(loan.anchorBalanceNok) || 0;
+  if (months <= 0) return bal;
+  var i = (Number(loan.ratePct) || 0) / 100 / 12;
+  var n = Number(loan.termMonths) || 300;
+  var extra = Number(loan.extraPrincipalNokPerMonth) || 0;
+  var pay = i === 0 ? bal / n : bal * i / (1 - Math.pow(1 + i, -n));
+  for (var m = 0; m < months && bal > 0; m++) {
+    var principal = pay - bal * i + extra;
+    if (principal <= 0) break;            // negative amortisation: stop
+    bal = Math.max(0, bal - principal);
+  }
+  return bal;
+}
+
+// ASK withdrawal tax: innskutt kapital comes out first and tax-free; only the
+// rest is gain, taxed at 22% uplifted by 1.72, less accumulated skjerming.
+// Applied ONLY to the target, never to net worth — net worth is what you own,
+// the target is what you can actually hand to a seller.
+function nwRealisationTax(asset, ym, value) {
+  if (asset.kind !== "fund" || value === null) return 0;
+  if (asset.wrapper === "ask") {
+    var gain = Math.max(0, value - nwInnskuttAt(asset, ym) -
+                           (Number(asset.akkumulertSkjermingNok) || 0));
+    return gain * 0.22 * 1.72;
+  }
+  var basis = Number(asset.costBasisNok) || nwInnskuttAt(asset, ym) || 0;
+  return Math.max(0, value - basis) * 0.22 * 1.72;
+}
+
+function nwEvaluate(cfg, ym, housing) {
+  var pol = cfg.policy || {};
+  var beyond = pol.housingGrowthPctBeyondIndex;
+  var series = housing && housing.series;
+  var idxAt = series ? nwIndexAt(series, ym, beyond) : null;
+  var missing = [];
+  var sum = function (arr, f) { return arr.reduce(function (n, x) { return n + f(x); }, 0); };
+
+  var assets = (cfg.assets || []).map(function (a) {
+    var idx = null;
+    if (a.kind === "property") {
+      var anchorIdx = series ? nwIndexAt(series, a.anchorOn, beyond) : null;
+      idx = (idxAt && anchorIdx) ? {at: idxAt, anchor: anchorIdx} : null;
+    }
+    var raw = nwAssetValue(a, ym, idx);
+    if (raw === null) missing.push(a.label || a.id);
+    var share = a.ownershipShare === undefined ? 1 : Number(a.ownershipShare);
+    var free = a.wrapper === "ask"
+      ? nwInnskuttAt(a, ym) + (Number(a.akkumulertSkjermingNok) || 0) : 0;
+    return {
+      id: a.id, label: a.label, kind: a.kind, wrapper: a.wrapper || "none",
+      restricted: !!a.restricted, isPrimaryHome: !!a.isPrimaryHome,
+      raw: raw, share: share, mine: raw === null ? null : raw * share,
+      tax: raw === null ? 0 : nwRealisationTax(a, ym, raw) * share,
+      taxFree: raw === null ? 0 : Math.min(raw, free) * share
+    };
+  });
+
+  var liabilities = (cfg.liabilities || []).map(function (l) {
+    var bal = nwLoanBalance(l, ym);
+    var share = l.ownershipShare === undefined ? 1 : Number(l.ownershipShare);
+    return {id: l.id, label: l.label, raw: bal, share: share, mine: bal * share};
+  });
+
+  // A value once known is never dropped to zero, and one never known is never
+  // guessed. If anything is unpriced the totals are withheld: a total missing
+  // its largest asset is not stale, it is wrong.
+  if (missing.length) {
+    return {ym: ym, incomplete: true, missing: missing, assets: assets, liabilities: liabilities};
+  }
+
+  var netWorthMine = sum(assets, function (a) { return a.mine; })
+                   - sum(liabilities, function (l) { return l.mine; });
+  var netWorthHousehold = sum(assets, function (a) { return a.raw; })
+                        - sum(liabilities, function (l) { return l.raw; });
+
+  var isLiquid = function (a) { return !a.isPrimaryHome && !a.restricted; };
+  var homeValueMine = sum(assets.filter(function (a) { return a.isPrimaryHome; }),
+                          function (a) { return a.mine; });
+  var homeLoanMine = sum(liabilities, function (l) { return l.mine; });
+  var homeEquityMine = Math.max(0, homeValueMine - homeLoanMine);
+  var liquidMine = sum(assets.filter(isLiquid), function (a) { return a.mine; });
+  var taxOnLiquid = sum(assets.filter(isLiquid), function (a) { return a.tax; });
+  var restrictedMine = sum(assets.filter(function (a) { return a.restricted; }),
+                           function (a) { return a.mine; });
+
+  var equitySupply = homeEquityMine + liquidMine - taxOnLiquid;
+
+  // Demand side indexed to the SAME series as the current home, so a housing
+  // boom reads as roughly neutral. Trading up in a rising market does not make
+  // the upgrade easier, and a meter that fills on it is lying.
+  var priceIdx = series ? nwIndexAt(series, pol.priceSetOn, beyond) : null;
+  var nextPrice = Number(pol.nextPurchasePriceNok) || 0;
+  if (pol.indexNextPurchase && priceIdx && idxAt) nextPrice *= idxAt / priceIdx;
+
+  var years = Math.max(0, nwMonthsBetween(pol.priceSetOn, ym)) / 12;
+  var grossIncome = (Number(pol.grossHouseholdIncomeNok) || 0) *
+                    Math.pow(1 + (Number(pol.incomeGrowthPct) || 0) / 100, years);
+
+  // The constraint the bank actually applies. Equity is often NOT what binds:
+  // utlånsforskriften caps total debt at 5x gross income, so a tracker that
+  // only asks "do I have the deposit" can show green for years while the bank
+  // would decline on income alone.
+  var maxLoanByLtv = nextPrice * (Number(pol.ltvMax) || 0.9);
+  var maxLoanByIncome = grossIncome * (Number(pol.gjeldsgradMax) || 5);
+  var maxLoan = Math.min(maxLoanByLtv, maxLoanByIncome);
+  var binding = maxLoanByIncome < maxLoanByLtv ? "gjeldsgrad" : "egenkapital";
+
+  var costs = nextPrice * (Number(pol.dokumentavgiftPct) || 0) / 100
+            + (Number(pol.purchaseFeesNok) || 0);
+  var equityNeeded = Math.max(0, nextPrice - maxLoan + costs);
+
+  var loanRate = (cfg.liabilities && cfg.liabilities[0] &&
+                  Number(cfg.liabilities[0].ratePct)) || 5.4;
+  var stressRate = Math.max(loanRate + (Number(pol.stressTestPp) || 3),
+                            Number(pol.stressTestFloorPct) || 7) / 100;
+
+  return {
+    ym: ym, incomplete: false, assets: assets, liabilities: liabilities,
+    netWorthMine: netWorthMine, netWorthHousehold: netWorthHousehold,
+    homeEquityMine: homeEquityMine, liquidMine: liquidMine,
+    restrictedMine: restrictedMine, realisationTax: taxOnLiquid,
+    // The tranche that costs nothing to move, because ASK innskutt kapital is
+    // withdrawn first and tax-free. None of the source designs produced this.
+    taxFreeTranche: sum(assets, function (a) { return a.taxFree; }),
+    nextPrice: nextPrice, grossIncome: grossIncome,
+    maxLoanByLtv: maxLoanByLtv, maxLoanByIncome: maxLoanByIncome,
+    maxLoan: maxLoan, binding: binding, costs: costs,
+    equityNeeded: equityNeeded, equitySupply: equitySupply,
+    gap: equitySupply - equityNeeded, onTrack: equitySupply >= equityNeeded,
+    stressAnnual: maxLoan * stressRate, stressRatePct: stressRate * 100,
+    housingIndex: idxAt, housingSource: housing && housing.source
+  };
+}
+
+async function nwLoadConfig() {
+  var raw = await KV.get("nw_config");
+  if (!raw) return NW_PLACEHOLDER;
+  try {
+    var cfg = JSON.parse(raw);
+    return (cfg && typeof cfg === "object") ? cfg : NW_PLACEHOLDER;
+  } catch (e) { return NW_PLACEHOLDER; }
+}
+
+function nwThisMonth(now) {
+  var d = new Date(now);
+  return d.getUTCFullYear() + "-" + ("0" + (d.getUTCMonth() + 1)).slice(-2);
+}
+
+async function nwProjection(request) {
+  var cfg = await nwLoadConfig();
+  var housing = null, housingError = null;
+  try { housing = await nwHousingIndex(); }
+  catch (e) { housingError = e.message; }
+
+  var nowYm = nwThisMonth(Date.now());
+  var targetYm = (cfg.policy && cfg.policy.targetMonth) || "2030-06";
+  var now = nwEvaluate(cfg, nowYm, housing);
+  var target = nwEvaluate(cfg, targetYm, housing);
+
+  // A yearly track for the chart, so the card can show the path rather than
+  // only the endpoints.
+  var track = [];
+  var startY = Number(nowYm.slice(0, 4));
+  var endY = Number(targetYm.slice(0, 4));
+  for (var y = startY; y <= endY; y++) {
+    var ym = y === endY ? targetYm : y + "-12";
+    var e = nwEvaluate(cfg, ym, housing);
+    track.push({
+      ym: ym,
+      netWorthMine: e.incomplete ? null : Math.round(e.netWorthMine),
+      equitySupply: e.incomplete ? null : Math.round(e.equitySupply),
+      equityNeeded: e.incomplete ? null : Math.round(e.equityNeeded)
+    });
+  }
+
+  return jsonResponse({
+    placeholder: !!cfg.placeholder,
+    rev: cfg.rev || 0,
+    now: now, target: target, track: track,
+    housingError: housingError,
+    generatedAt: Date.now()
+  });
 }

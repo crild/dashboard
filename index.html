@@ -369,6 +369,47 @@
       gap: 10px;
     }
 
+    .nw-placeholder {
+      font-size: 0.72rem; color: var(--text-secondary);
+      border: 1px dashed var(--border); border-radius: 8px;
+      padding: 4px 8px; margin-bottom: 10px;
+    }
+    .nw-top { display: flex; gap: 16px; align-items: center; flex-wrap: wrap; }
+    .nw-ring {
+      --pct: 0;
+      width: 108px; height: 108px; border-radius: 50%; flex: none;
+      background: conic-gradient(var(--accent) calc(var(--pct) * 1%), var(--border) 0);
+      display: grid; place-items: center;
+    }
+    .nw-ring-inner {
+      width: 84px; height: 84px; border-radius: 50%; background: var(--bg-card);
+      display: grid; place-items: center; text-align: center;
+    }
+    .nw-ring-pct { font-size: 1.5rem; font-weight: 650; font-variant-numeric: tabular-nums; }
+    .nw-ring-cap { font-size: 0.6rem; color: var(--text-secondary); line-height: 1.25; }
+    .nw-side { flex: 1 1 190px; min-width: 0; }
+    .nw-verdict { font-size: 1.05rem; font-weight: 600; }
+    .nw-binding { font-size: 0.75rem; color: var(--text-secondary); margin-top: 2px; }
+    .nw-nw { display: flex; justify-content: space-between; gap: 10px; margin-top: 10px; align-items: baseline; }
+    .nw-nw-label { font-size: 0.72rem; color: var(--text-secondary); }
+    .nw-nw-value { font-size: 1.1rem; font-weight: 600; font-variant-numeric: tabular-nums; }
+    .nw-actions { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
+    .nw-btn {
+      font-size: 0.72rem; padding: 4px 10px; border-radius: 999px;
+      border: 1px solid var(--border); background: transparent; color: var(--text);
+      cursor: pointer;
+    }
+    .nw-btn:hover { border-color: var(--accent); color: var(--accent); }
+    .nw-rows { margin-top: 12px; display: flex; flex-direction: column; gap: 4px; }
+    .nw-row {
+      display: flex; justify-content: space-between; gap: 10px;
+      font-size: 0.8rem; font-variant-numeric: tabular-nums;
+    }
+    .nw-row span:first-child { color: var(--text-secondary); }
+    .nw-row-neg span:last-child { color: var(--negative); }
+    .nw-row-hint { border-top: 1px solid var(--border); padding-top: 5px; margin-top: 3px; }
+    .nw-foot { margin-top: 10px; font-size: 0.7rem; color: var(--text-secondary); }
+
     .index-grid {
       display: grid;
       grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
@@ -1775,6 +1816,20 @@
         </div>
       </div>
 
+      <!-- Net worth and 2030 equity target (home network only) -->
+      <div class="card" data-widget="networth">
+        <div class="card-header">
+          <span class="card-title">Formue og m&aring;l</span>
+          <div class="card-header-right">
+            <span class="card-status" id="networth-status"></span>
+            <button class="card-edit-btn" onclick="openWidgetSettings('networth')" title="Rediger tall">&#9998;<span class="edit-label">Rediger</span></button>
+          </div>
+        </div>
+        <div id="networth-content">
+          <div class="loading">Laster formuestall...</div>
+        </div>
+      </div>
+
       <!-- Vibes indexes -->
       <div class="card" data-widget="indexes">
         <div class="card-header">
@@ -1960,6 +2015,7 @@
       sensors:  { label: 'Home sensors',     cls: 'S',  w: 2, minW: 240, defaultHidden: true },
       hue:      { label: 'Lights',           cls: 'S',  w: 2, minW: 260, defaultHidden: true },
       stocks:   { label: 'Markets',          cls: 'M',  w: 3, minW: 370 },
+      networth: { label: 'Formue og mål',    cls: 'M',  w: 4, minW: 330, defaultHidden: true },
       indexes:  { label: 'Vibes',            cls: 'M',  w: 3, minW: 310, defaultHidden: true },
       power:    { label: 'Power price',      cls: 'M',  w: 3, minW: 300 },
       news:     { label: 'News',             cls: 'L',  w: 5, minW: 380 },
@@ -2070,7 +2126,7 @@
       weather: 30 * 60000, stocks: 15 * 60000, power: 45 * 60000,
       sensors: 15 * 60000, hue: 5 * 60000, mobility: 10 * 60000,
       news: 30 * 60000, transit: 3 * 60000, waste: 12 * 3600000,
-      indexes: 45 * 60000
+      indexes: 45 * 60000, networth: 3 * 3600000
     };
 
     function checkCardFreshness() {
@@ -4620,6 +4676,7 @@
     function refreshAllWidgets(manual) {
       fetchWeather(); fetchStocks(); fetchPower(); fetchSensors();
       fetchHue(); fetchWaste(); fetchNews(); fetchTransit(); fetchIndexes();
+      fetchNetWorth();
       refreshMobilityData(manual);
     }
 
@@ -5317,6 +5374,7 @@
         case 'waste': return getWasteSettingsHTML();
         case 'mobility': return getMobilitySettingsHTML();
         case 'indexes': return getIndexesSettingsHTML();
+        case 'networth': return getNetWorthSettingsHTML();
         default: return '<p>No settings available.</p>';
       }
     }
@@ -6281,6 +6339,194 @@
       }
     });
 
+    // ── Net worth & 2030 equity ──────────────────────────────────────────────
+    // Tier 2: needs the owner token AND the home network. The card is designed
+    // for a hallway, so kroner are hidden by default — not because the tablet is
+    // a secret, but because visitors walk past it. Percentages and the verdict
+    // are always visible; absolute amounts are revealed on tap and re-hide
+    // themselves, so the wall returns to a safe state on its own.
+    let nwData = null, nwView = 'mine', nwRevealed = false, nwRevealTimer = null;
+
+    function nwKr(v) {
+      if (v === null || v === undefined || !isFinite(v)) return '—';
+      return Math.round(v).toLocaleString('nb-NO') + ' kr';
+    }
+    function nwShort(v) {
+      if (v === null || v === undefined || !isFinite(v)) return '—';
+      const m = v / 1e6;
+      return (Math.abs(m) >= 1 ? m.toFixed(1) + ' mill' : Math.round(v / 1000) + 'k');
+    }
+    function nwMaybe(v) { return nwRevealed ? nwKr(v) : '•••'; }
+
+    function nwReveal() {
+      nwRevealed = !nwRevealed;
+      if (nwRevealTimer) clearTimeout(nwRevealTimer);
+      // Never leave figures up on a hallway wall indefinitely.
+      if (nwRevealed) nwRevealTimer = setTimeout(() => { nwRevealed = false; renderNetWorth(); }, 45000);
+      renderNetWorth();
+    }
+    function nwToggleView() {
+      nwView = nwView === 'mine' ? 'household' : 'mine';
+      renderNetWorth();
+    }
+
+    async function fetchNetWorth() {
+      const content = document.getElementById('networth-content');
+      if (!content) return;
+      if (!getDashboardToken()) {
+        content.innerHTML = `<div style="color:var(--text-secondary);font-size:0.85rem;line-height:1.5;">Krever eiertoken. Bruk låseknappen i toppen.</div>`;
+        setCardStatus('networth', false, 'no token');
+        return;
+      }
+      try {
+        const sess = await (await workerFetch('/session')).json();
+        if (!sess.home) {
+          // Degrade honestly: say it is unavailable here, and do not hint at
+          // what the figures are or even which holdings exist.
+          content.innerHTML = `<div style="color:var(--text-secondary);font-size:0.85rem;line-height:1.5;">
+            Formue vises bare på hjemmenettet.<br>
+            <span style="opacity:.7">Du er tilkoblet fra ${escapeHtml(sess.ip || 'et annet nett')}.</span></div>`;
+          setCardStatus('networth', false, 'not on home network');
+          return;
+        }
+        const res = await workerFetch('/private/nw/projection');
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        nwData = await res.json();
+        renderNetWorth();
+        setCardStatus('networth', true);
+      } catch (e) {
+        content.innerHTML = `<div class="error">Kunne ikke hente formuestall.</div>`;
+        setCardStatus('networth', false, e.message);
+      }
+    }
+
+    function renderNetWorth() {
+      const content = document.getElementById('networth-content');
+      if (!content || !nwData) return;
+      const n = nwData.now, t = nwData.target;
+
+      if (n.incomplete || t.incomplete) {
+        // A total missing its largest asset is not stale, it is wrong.
+        content.innerHTML = `<div class="error">Ufullstendig — mangler verdi for
+          ${escapeHtml((n.missing || t.missing || []).join(', '))}.</div>`;
+        return;
+      }
+
+      const nw = nwView === 'mine' ? n.netWorthMine : n.netWorthHousehold;
+      const pct = Math.max(0, Math.min(100, (t.equitySupply / Math.max(1, t.equityNeeded)) * 100));
+      const bindingLabel = t.binding === 'gjeldsgrad'
+        ? 'Begrenset av gjeldsgrad (5x inntekt)'
+        : 'Begrenset av egenkapital';
+      const verdict = t.onTrack ? 'På vei mot målet' : 'Bak målet';
+      const verdictColor = t.onTrack ? 'var(--positive)' : 'var(--negative)';
+
+      content.innerHTML = `
+        ${nwData.placeholder ? `<div class="nw-placeholder">Eksempeltall &mdash; trykk Rediger for å legge inn dine egne</div>` : ''}
+        <div class="nw-top">
+          <div class="nw-ring" style="--pct:${pct.toFixed(1)}">
+            <div class="nw-ring-inner">
+              <div class="nw-ring-pct">${Math.round(pct)}%</div>
+              <div class="nw-ring-cap">av egenkapital<br>til 2030</div>
+            </div>
+          </div>
+          <div class="nw-side">
+            <div class="nw-verdict" style="color:${verdictColor}">${verdict}</div>
+            <div class="nw-binding">${bindingLabel}</div>
+            <div class="nw-nw">
+              <span class="nw-nw-label">Formue ${nwView === 'mine' ? '(min andel)' : '(husholdning)'}</span>
+              <span class="nw-nw-value">${nwMaybe(nw)}</span>
+            </div>
+            <div class="nw-actions">
+              <button class="nw-btn" onclick="nwToggleView()">${nwView === 'mine' ? 'Husholdning' : 'Min andel'}</button>
+              <button class="nw-btn" onclick="nwReveal()">${nwRevealed ? 'Skjul beløp' : 'Vis beløp'}</button>
+            </div>
+          </div>
+        </div>
+        <div class="nw-rows">
+          <div class="nw-row"><span>Boligverdi minus lån</span><span>${nwMaybe(t.homeEquityMine)}</span></div>
+          <div class="nw-row"><span>Likvide midler ${t.ym}</span><span>${nwMaybe(t.liquidMine)}</span></div>
+          <div class="nw-row nw-row-neg"><span>Realisasjonsskatt ved uttak</span><span>${nwRevealed ? '− ' + nwKr(t.realisationTax) : '•••'}</span></div>
+          <div class="nw-row"><span>Egenkapital tilgjengelig</span><span><strong>${nwMaybe(t.equitySupply)}</strong></span></div>
+          <div class="nw-row"><span>Egenkapital som kreves</span><span>${nwMaybe(t.equityNeeded)}</span></div>
+          <div class="nw-row nw-row-hint"><span>Skattefritt uttak fra ASK i dag</span><span>${nwMaybe(n.taxFreeTranche)}</span></div>
+        </div>
+        <div class="nw-foot">
+          Neste bolig ${nwRevealed ? nwKr(t.nextPrice) : nwShort(t.nextPrice).replace(/[0-9.]/g, '•')} &middot;
+          maks lån ${nwRevealed ? nwKr(t.maxLoan) : '•••'} &middot;
+          boligindeks ${n.housingIndex ? n.housingIndex.toFixed(1) : '—'}
+          ${nwData.housingError ? '&middot; <span style="color:var(--negative)">indeks utilgjengelig</span>' : ''}
+        </div>`;
+    }
+
+    // v1 editor: the config document itself. A field-by-field form is the right
+    // long-term answer, but this is honest about the shape, round-trips through
+    // the same tier-2 route, and does not pretend to validate what it cannot.
+    function getNetWorthSettingsHTML() {
+      setTimeout(loadNetWorthConfigIntoForm, 0);
+      return `
+        <h3>Formue og m&aring;l</h3>
+        <p class="hint" style="margin-bottom:8px;">Lagres bare p&aring; hjemmenettet, aldri via delingskoder. Erstatt eksempeltallene med dine egne.</p>
+        <div id="nw-cfg-status" style="font-size:0.78rem;color:var(--text-secondary);margin-bottom:6px;">Laster...</div>
+        <textarea id="nw-cfg-text" spellcheck="false" style="width:100%;height:300px;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:0.72rem;line-height:1.45;padding:8px;border:1px solid var(--border);border-radius:8px;background:var(--bg);color:var(--text);"></textarea>
+        <p class="hint" style="margin-top:6px;">
+          <strong>ownershipShare</strong> 0&ndash;1 per post &middot; <strong>wrapper</strong> ask/fondskonto/direkte &middot;
+          <strong>contributionNokPerMonth</strong> er spareplanen som framskrives automatisk &middot;
+          <strong>restricted: true</strong> holdes utenfor m&aring;let.
+        </p>
+        <div class="widget-popup-actions">
+          <button class="btn" onclick="closeWidgetPopup()">Avbryt</button>
+          <button class="btn btn-primary" onclick="saveNetWorthConfig()">Lagre</button>
+        </div>`;
+    }
+
+    async function loadNetWorthConfigIntoForm() {
+      const st = document.getElementById('nw-cfg-status');
+      const ta = document.getElementById('nw-cfg-text');
+      if (!st || !ta) return;
+      try {
+        const res = await workerFetch('/private/nw/config');
+        if (res.status === 403) { st.textContent = 'Bare tilgjengelig på hjemmenettet.'; return; }
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        const cfg = await res.json();
+        ta.value = JSON.stringify(cfg, null, 2);
+        st.textContent = cfg.placeholder
+          ? 'Viser eksempeltall (rev ' + (cfg.rev || 0) + ').'
+          : 'Lagret konfigurasjon, rev ' + (cfg.rev || 0) + '.';
+      } catch (e) {
+        st.textContent = 'Kunne ikke laste: ' + e.message;
+      }
+    }
+
+    async function saveNetWorthConfig() {
+      const st = document.getElementById('nw-cfg-status');
+      const ta = document.getElementById('nw-cfg-text');
+      let parsed;
+      try { parsed = JSON.parse(ta.value); }
+      catch (e) { st.textContent = 'Ugyldig JSON: ' + e.message; st.style.color = 'var(--negative)'; return; }
+      try {
+        const res = await workerFetch('/private/nw/config', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(parsed)
+        });
+        const out = await res.json();
+        if (res.status === 409) {
+          // Someone else saved since this form loaded; do not clobber them.
+          st.textContent = 'Endret på en annen enhet (rev ' + out.rev + '). Last inn på nytt.';
+          st.style.color = 'var(--negative)';
+          return;
+        }
+        if (!res.ok) throw new Error(out.error || ('HTTP ' + res.status));
+        st.textContent = 'Lagret (rev ' + out.rev + ').';
+        st.style.color = 'var(--positive)';
+        showToast('Formuestall lagret');
+        fetchNetWorth();
+      } catch (e) {
+        st.textContent = 'Kunne ikke lagre: ' + e.message;
+        st.style.color = 'var(--negative)';
+      }
+    }
+
     // ── Vibes indexes ──
     // Tiles are driven by config: a pick is just { name }, and everything else
     // (label, emoji, unit, gauge scale) comes from the Worker's registry, so
@@ -6366,6 +6612,10 @@
     }
     fetchIndexes();
     setInterval(fetchIndexes, 15 * 60 * 1000);
+
+    fetchNetWorth();
+    // Projections move slowly; hourly is plenty and keeps the wall quiet.
+    setInterval(fetchNetWorth, 60 * 60 * 1000);
 
     function getIndexesSettingsHTML() {
       // The catalogue is a Worker round-trip, so fill the list in after render.

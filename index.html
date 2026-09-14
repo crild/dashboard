@@ -10866,7 +10866,12 @@ function renderNwLoan(data, opts) {
     // ── Layout Settings ──
     const ALL_WIDGETS = Object.keys(WIDGETS);
     const WIDGET_LABELS = Object.fromEntries(ALL_WIDGETS.map(w => [w, WIDGETS[w].label]));
-    const DEFAULT_HIDDEN = ALL_WIDGETS.filter(w => WIDGETS[w].defaultHidden);
+    // Deliberately a function, not a const: getLayoutConfig() is called during
+    // boot from thousands of lines above, where a const declared here is still
+    // in its temporal dead zone. Reading one threw and blanked the dashboard.
+    function defaultHiddenWidgets() {
+      return Object.keys(WIDGETS).filter(w => WIDGETS[w].defaultHidden);
+    }
 
     const DEFAULT_WIDGET_ORDER = ['weather', 'transit', 'mobility', 'power', 'news', 'stocks', 'indexes', 'waste', 'sensors', 'hue', 'networth', 'nwloan', 'nwstack'];
 
@@ -10877,9 +10882,9 @@ function renderNwLoan(data, opts) {
       const stored = safeParse(localStorage.getItem('dashboard-layout'), null, 'dashboard-layout');
       const cfg = Object.assign({
         columns: 2, spacing: 'comfortable', width: 'default',
-        hiddenWidgets: DEFAULT_HIDDEN.slice(), smart: false, smartBias: 0
+        hiddenWidgets: defaultHiddenWidgets(), smart: false, smartBias: 0
       }, stored || {});
-      if (!Array.isArray(cfg.hiddenWidgets)) cfg.hiddenWidgets = DEFAULT_HIDDEN.slice();
+      if (!Array.isArray(cfg.hiddenWidgets)) cfg.hiddenWidgets = defaultHiddenWidgets();
       return cfg;
     }
 

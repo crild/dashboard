@@ -1266,41 +1266,170 @@
   .nws { --nws-h: 260px; grid-template-columns: 1fr 180px; }
 }
 
-    .nw-sec { margin-bottom: 14px; }
-    .nw-sec h4 {
+    /* ── Net worth setup form ────────────────────────────────────────────────
+       A table-shaped editor: one ROW per holding, one COLUMN per field, so a
+       portfolio is compared DOWN a column instead of read as a stack of
+       label/input pairs.
+
+       Every selector is scoped to #nw-form on purpose, and not only to avoid
+       bleeding into the three wealth cards: .widget-popup's own `input, select`
+       and `label` rules are more specific than a bare class, so an unscoped
+       .nw-in would silently lose to a 12 px padding and a 12 px bottom margin
+       and the table would come apart.
+
+       375 px — the collapse, and why this one:
+       a real table cannot hold eleven columns on a phone, and horizontal scroll
+       is the worse of the two options here because the header row scrolls out
+       of view exactly when you need it, leaving you typing kroner into an
+       unlabelled box. So below 620 px the table STOPS being a table: thead is
+       hidden and each <td> becomes its own two-column grid that carries its
+       header text from data-l via ::before. A holding then reads as a small
+       labelled block, nothing scrolls sideways, and the DOM is identical in
+       both layouts — no duplicate markup to drift apart.
+       Between 620 px and the dialog width the grid stays a grid but may be
+       wider than the dialog, and there .nwg-scroll takes the overflow: the
+       TABLE scrolls, never the page. */
+
+    /* The dialog is 480 px for four stacked fields; a column editor needs the
+       room. :has() is the only way to widen it from here without reaching into
+       the shared popup code, and where it is unsupported the form simply keeps
+       the narrow dialog and .nwg-scroll does its job. */
+    .widget-popup:has(#nw-form) { max-width: 1040px; }
+
+    #nw-form .nw-sec { margin-bottom: 18px; }
+    #nw-form .nw-sec h4 {
       font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.06em;
-      color: var(--text-secondary); margin-bottom: 6px; font-weight: 600;
+      color: var(--text-secondary); margin: 0 0 7px; font-weight: 600;
     }
-    .nw-f { display: flex; align-items: center; gap: 8px; margin-bottom: 5px; font-size: 0.8rem; }
-    .nw-f > span { flex: 1 1 46%; color: var(--text-secondary); min-width: 0; }
-    .nw-f > span em { font-style: normal; opacity: 0.7; }
-    .nw-f input[type="text"], .nw-f input[type="month"], .nw-f input[type="number"], .nw-f select {
-      flex: 1 1 54%; min-width: 0; padding: 5px 8px; font-size: 0.8rem;
+    #nw-form .nw-note {
+      font-size: 0.7rem; color: var(--text-secondary); line-height: 1.45;
+      margin-top: 7px;
+    }
+    #nw-form .nw-note em { font-style: normal; color: var(--text); }
+    #nw-form .nw-add { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; }
+
+    /* Household totals: stated once, at the top, because it changes what every
+       number below it means. */
+    #nw-form .nw-banner {
+      font-size: 0.72rem; line-height: 1.45; color: var(--text-secondary);
+      border: 1px solid var(--border); border-left: 3px solid var(--accent);
+      border-radius: 8px; padding: 8px 11px; margin: 0 0 16px;
+    }
+    #nw-form .nw-banner b { color: var(--text); font-weight: 600; }
+
+    /* Policy is not a list of like things, so it is not a table: label-over-
+       input cells that pack into as many columns as the dialog affords. */
+    /* auto-FILL, not auto-fit: a two-field section (Kjøpskostnader) must keep
+       field-sized boxes, not stretch two inputs across the whole dialog. */
+    /* align-items:end so the INPUTS line up even when a label wraps to two
+       lines — otherwise one long caption drags its box half a line below its
+       neighbours and the row reads as ragged. */
+    #nw-form .nw-grid {
+      display: grid; gap: 9px 10px; align-items: end;
+      grid-template-columns: repeat(auto-fill, minmax(165px, 1fr));
+    }
+    #nw-form .nw-cell {
+      display: flex; flex-direction: column; gap: 3px;
+      min-width: 0; margin: 0; font-weight: 400;
+    }
+    #nw-form .nw-cell > span {
+      font-size: 0.68rem; line-height: 1.3; color: var(--text-secondary);
+    }
+    #nw-form .nw-cell > span em { font-style: normal; opacity: 0.75; }
+    #nw-form .nw-cell-check {
+      flex-direction: row; align-items: center; gap: 8px; align-self: end;
+      padding-bottom: 6px;
+    }
+    #nw-form .nw-cell-check > span { color: var(--text); font-size: 0.74rem; }
+
+    /* One control skin for the whole form. */
+    #nw-form .nw-in {
+      width: 100%; min-width: 0; margin: 0;
+      padding: 5px 7px; font-size: 0.78rem; line-height: 1.35;
       border: 1px solid var(--border); border-radius: 7px;
-      background: var(--bg); color: var(--text); font-variant-numeric: tabular-nums;
+      background: var(--bg); color: var(--text);
+      font-variant-numeric: tabular-nums;
     }
-    .nw-f-check { gap: 6px; }
-    .nw-f-check input { flex: none; }
-    .nw-f-check > span { flex: 1; color: var(--text); }
-    .nw-item {
-      border: 1px solid var(--border); border-radius: 10px;
-      padding: 8px 10px; margin-bottom: 8px;
+    #nw-form .nw-in:focus { outline: none; border-color: var(--accent); }
+    /* Right-aligned and tabular: kroner line up on the digit, which is what
+       makes a column scannable at all. */
+    #nw-form .nw-in-num { text-align: right; }
+    #nw-form select.nw-in { padding: 5px 4px; }
+    #nw-form .nw-in-check {
+      width: auto; padding: 0; border: none; background: none;
+      accent-color: var(--accent);
     }
-    .nw-item-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
-    .nw-item-kind {
-      font-size: 0.66rem; text-transform: uppercase; letter-spacing: 0.05em;
-      color: var(--accent); font-weight: 600;
+
+    /* ── holding tables ── */
+    #nw-form .nwg-cap {
+      font-size: 0.64rem; text-transform: uppercase; letter-spacing: 0.05em;
+      color: var(--accent); font-weight: 600; margin: 12px 0 4px;
     }
-    .nw-btn-del {
-      padding: 0 7px; font-size: 1rem; line-height: 1.4; color: var(--text-secondary);
+    #nw-form .nwg-scroll { overflow-x: auto; }
+    #nw-form .nwg {
+      width: 100%; min-width: var(--nwg-min, 560px);
+      table-layout: fixed; border-collapse: collapse;
     }
-    .nw-btn-del:hover { color: var(--negative); border-color: var(--negative); }
-    .nw-add { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 4px; }
-    .nw-note {
-      font-size: 0.7rem; color: var(--text-secondary); line-height: 1.4;
-      margin-top: 5px; padding-left: 2px;
+    #nw-form .nwg th {
+      font-size: 0.62rem; font-weight: 600; text-transform: uppercase;
+      letter-spacing: 0.03em; color: var(--text-secondary);
+      text-align: left; padding: 0 6px 5px; line-height: 1.25;
+      border-bottom: 1px solid var(--border); vertical-align: bottom;
     }
-    .nw-note em { font-style: normal; color: var(--text); }
+    #nw-form .nwg th.nwg-r { text-align: right; }
+    #nw-form .nwg td {
+      padding: 4px 6px; border-bottom: 1px solid var(--border);
+      vertical-align: middle;
+    }
+    #nw-form .nwg tbody tr:last-child td { border-bottom: none; }
+    #nw-form .nwg tbody tr:hover td { background: var(--hover); }
+    #nw-form .nwg-td-del { text-align: right; }
+    /* An inert cell, not a disabled input: the field does not exist for this
+       row's tax regime, and the pattern of dashes down the column is how you
+       see at a glance which rows are ASK. */
+    #nw-form .nwg-na {
+      display: block; text-align: right; font-size: 0.78rem;
+      color: var(--text-secondary); opacity: 0.5; cursor: help;
+    }
+    #nw-form .nwg-del {
+      padding: 1px 8px; font-size: 0.95rem; line-height: 1.35;
+      border: 1px solid var(--border); border-radius: 999px;
+      background: transparent; color: var(--text-secondary); cursor: pointer;
+    }
+    #nw-form .nwg-del:hover { color: var(--negative); border-color: var(--negative); }
+    #nw-form .nwg-empty {
+      font-size: 0.72rem; color: var(--text-secondary);
+      border: 1px dashed var(--border); border-radius: 8px; padding: 6px 10px;
+    }
+
+    @media (max-width: 620px) {
+      /* Two policy columns still fit a 375 px dialog; five do not. */
+      #nw-form .nw-grid { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); }
+      #nw-form .nwg-scroll { overflow-x: visible; }
+      #nw-form .nwg, #nw-form .nwg tbody, #nw-form .nwg tr, #nw-form .nwg td {
+        display: block; width: auto; min-width: 0;
+      }
+      #nw-form .nwg thead, #nw-form .nwg colgroup { display: none; }
+      #nw-form .nwg tr {
+        border: 1px solid var(--border); border-radius: 10px;
+        padding: 6px 9px; margin-bottom: 8px;
+      }
+      #nw-form .nwg tbody tr:hover td { background: none; }
+      #nw-form .nwg td {
+        display: grid; grid-template-columns: 8.6em minmax(0, 1fr);
+        align-items: center; gap: 9px; padding: 3px 0; border-bottom: none;
+      }
+      #nw-form .nwg td::before {
+        content: attr(data-l);
+        font-size: 0.68rem; line-height: 1.25; color: var(--text-secondary);
+      }
+      #nw-form .nwg td.nwg-td-del { grid-template-columns: 1fr; justify-items: end; }
+      #nw-form .nwg td.nwg-td-del::before { content: none; }
+      /* Left-aligned once the label is beside rather than above the box: the
+         digits no longer have a column to line up in. */
+      #nw-form .nwg .nw-in-num, #nw-form .nwg .nwg-na { text-align: left; }
+      #nw-form .nwg .nw-in-check { justify-self: start; }
+    }
 
     .nw-placeholder {
       font-size: 0.72rem; color: var(--text-secondary);
@@ -7630,7 +7759,10 @@
              '<div class="nwt-amt-foot">' +
                'Neste bolig i ' + mon + ': ' + nwtAmt(t.nextPrice) + ' (framskrevet)' +
                ' · Formue i dag: ' + nwtAmt(n.netWorthHousehold) + ' (husholdning)' +
-               ' · Skattefritt ASK-uttak i ' + monNow + ': ' + nwtAmt(n.taxFreeTranche) + ' (min andel)' +
+               // No "(min andel)" qualifier any more: the setup form carries
+               // household totals only, so the share this figure is scaled by
+               // is 1 and there is no second, smaller reading of it.
+               ' · Skattefritt ASK-uttak i ' + monNow + ': ' + nwtAmt(n.taxFreeTranche) +
                ' · Rentekostnad ved maks lån: ' + nwtAmt(t.stressAnnual) + '/år ved ' + rate + ' %' +
              '</div>';
     }
@@ -8726,10 +8858,11 @@ function nwLoanSetWhen(which) {
 }
 
 function nwLoanToggleScope() {
-  // Flips only the revealed net-worth line. Stored as an explicit value rather
-  // than a "flip" flag so it cannot drift out of phase with opts.view.
-  nwLoanScope = (nwLoanScope === 'household') ? 'mine' : 'household';
-  nwLoanRerender();
+  // NO-OP. Ownership shares were removed from the setup form: every figure in
+  // the config is a household total now, so "min andel" and "husholdning" are
+  // the same number and flipping between them would be theatre. The button
+  // that called this is gone from the card; the function stays only so an old
+  // cached markup fragment cannot throw inside an onclick.
 }
 
 function nwLoanToggleReveal() {
@@ -9401,12 +9534,13 @@ function renderNwLoan(data, opts) {
       onTrack
         ? '<div class="nwl-row nwl-is-pos"><span>Margin</span><span>' + nwLoanKr(surplus) + '</span></div>'
         : '<div class="nwl-row nwl-is-neg"><span>Mangler</span><span>' + nwLoanKr(deficit) + '</span></div>',
-      '<div class="nwl-row"><span>Formue ' + scopeWord +
-        ' <button type="button" class="nwl-btn nwl-btn-sm" onclick="nwLoanToggleScope()">' +
-        (view === 'mine' ? 'husholdning' : 'min andel') + '</button></span><span>' +
+      // The scope toggle that used to sit in this row is gone: the setup form
+      // no longer carries ownership shares, so mine === household and the
+      // button would have been a control that changed nothing.
+      '<div class="nwl-row"><span>Formue ' + scopeWord + '</span><span>' +
         nwLoanKr(view === 'mine' ? nwLoanNum(e.netWorthMine) : nwLoanNum(e.netWorthHousehold)) +
         '</span></div>',
-      '<div class="nwl-row nwl-row-tax"><span>Skattefritt uttak ASK / skatt (min andel)</span><span>' +
+      '<div class="nwl-row nwl-row-tax"><span>Skattefritt uttak ASK / skatt</span><span>' +
         nwLoanKr(nwLoanNum(e.taxFreeTranche)) + ' / −' + nwLoanKr(nwLoanNum(e.realisationTax)) +
         '</span></div>'
     ];
@@ -10160,9 +10294,10 @@ function renderNwLoan(data, opts) {
           '<p class="nws-brake"><span>BREMSEN</span> <b>' + esc(brakeWord) + '</b></p>' +
           '<p class="nws-worth"><span class="nws-worth-lab">Formue ' +
             (view === 'mine' ? '(min andel)' : '(husholdning)') + '</span>' + worthHtml + '</p>' +
+          // The view toggle that used to lead this row is gone: ownership
+          // shares left the setup form, so mine === household and the button
+          // would have been a control that changed nothing.
           '<p class="nws-acts">' +
-            '<button type="button" class="nws-btn" onclick="nwStackToggleView()">' +
-              (view === 'mine' ? 'Husholdning' : 'Min andel') + '</button>' +
             '<button type="button" class="nws-btn" onclick="nwStackToggleReveal()">' +
               (revealed ? 'Skjul beløp' : 'Vis beløp') + '</button>' +
           '</p>' +
@@ -10347,9 +10482,12 @@ function renderNwLoan(data, opts) {
    * rest, so a per-row reveal would be a privacy model that does not hold.
    * ------------------------------------------------------------------- */
   function nwStackToggleReveal() { hostSet('revealed', !hostGet('revealed')); }
-  function nwStackToggleView() {
-    hostSet('view', hostGet('view') === 'mine' ? 'household' : 'mine');
-  }
+  // NO-OP, and exported only so an onclick from a stale markup fragment cannot
+  // throw. Ownership shares left the setup form, so every figure is a household
+  // total, mine === household, and there is nothing left to switch between. The
+  // 'view' key itself is kept alive by the host (pinned to 'household') because
+  // this renderer still reads it.
+  function nwStackToggleView() {}
   // The whole plot is the reveal target, sized for a thumb on a wall tablet,
   // so it must answer the keyboard the way a button does.
   function nwStackKey(ev) {
@@ -10375,7 +10513,13 @@ function renderNwLoan(data, opts) {
     // one card and leave them showing on another, which is exactly the leak
     // the hallway rule exists to prevent.
     function nwRenderCompanions() {
-      const opts = { revealed: nwtRevealed, view: 'mine' };
+      // PINNED to 'household'. Ownership shares left the setup form: every
+      // figure in the document is now a household total, so netWorthMine and
+      // netWorthHousehold are the same number and a view toggle would be a
+      // control that visibly does nothing. The key itself stays — all three
+      // render functions read opts.view / window.nwView / nwStackUi.view and
+      // would fall back to 'mine' if it vanished.
+      const opts = { revealed: nwtRevealed, view: 'household' };
       // Publish the shared state everywhere the companion cards look for it.
       // They are pure renderers and cannot read a script-scoped `let`, and they
       // do not agree on which global to consult — one reads window.nwRevealed,
@@ -10451,10 +10595,25 @@ function renderNwLoan(data, opts) {
     function nwReveal() { nwtToggle(); }
 
     // ── Net worth setup form ─────────────────────────────────────────────────
+    // A TABLE-SHAPED editor: one ROW per holding, one COLUMN per field. The
+    // previous version was a vertical stack of label/input pairs inside
+    // bordered blocks, which meant you could not compare two funds without
+    // scrolling between them and counting digits by eye. Here a portfolio is
+    // read DOWN a column — every "Verdi" sits in the same place, right-aligned
+    // and tabular, so an outlier is a shape on the page rather than something
+    // you have to hunt for.
+    //
     // Edits a working copy, not the live config: nothing reaches the Worker
     // until Save, and the revision from load travels with it so a second device
     // cannot be silently overwritten.
     let nwEditCfg = null;
+
+    // Ownership shares are GONE from this form. Every figure here is a
+    // household total. `ownershipShare` still exists in the stored document
+    // because the Worker reads it, but it is written as 1.0 on every row and
+    // never shown — a half-share hiding in the JSON while the form presents
+    // whole numbers is exactly the kind of silent halving nobody catches.
+    const NW_HOUSEHOLD_SHARE = 1.0;
 
     function nwSet(path, value, kind) {
       if (!nwEditCfg) return;
@@ -10467,6 +10626,8 @@ function renderNwLoan(data, opts) {
       const key = parts[parts.length - 1];
       if (kind === 'num') {
         // Accept "1 200 000", "1.200.000" and "1,5" — nobody types raw floats.
+        // \s covers the U+00A0 that Intl emits, so a value this form formatted
+        // itself round-trips through the same parser.
         const cleaned = String(value).replace(/[\s.](?=\d{3}\b)/g, '').replace(',', '.').replace(/[^0-9.-]/g, '');
         node[key] = cleaned === '' ? null : Number(cleaned);
       } else if (kind === 'pct01') {
@@ -10479,32 +10640,161 @@ function renderNwLoan(data, opts) {
       }
     }
 
-    function nwField(label, path, value, kind, opts) {
+    function nwGet(path) {
+      let node = nwEditCfg;
+      const parts = path.split('.');
+      for (let i = 0; i < parts.length; i++) {
+        if (node === null || node === undefined) return undefined;
+        node = node[parts[i]];
+      }
+      return node;
+    }
+
+    // Grouped display, because a column of "1850000" is not scannable and that
+    // is half the complaint. Re-applied on blur only: re-formatting while the
+    // caret is in the field would fight the typist.
+    const NW_NUMFMT = new Intl.NumberFormat('nb-NO', { maximumFractionDigits: 4 });
+    function nwNumText(v) {
+      if (v === null || v === undefined || v === '') return '';
+      const n = Number(v);
+      return isFinite(n) ? NW_NUMFMT.format(n) : String(v);
+    }
+    function nwReformat(input, path, kind) {
+      const raw = nwGet(path);
+      if (kind === 'pct01') {
+        input.value = (raw === null || raw === undefined) ? '' : nwNumText(Number(raw) * 100);
+      } else {
+        input.value = nwNumText(raw);
+      }
+    }
+
+    // ── control primitives ───────────────────────────────────────────────────
+    // Everything re-states its own box: .widget-popup's own input rule is
+    // full-width with 12 px padding and a 12 px bottom margin, which is right
+    // for four stacked fields and ruinous inside a table cell.
+    function nwInput(path, value, kind, opts) {
       const o = opts || {};
-      const shown = kind === 'pct01' && value !== null && value !== undefined
-        ? (Number(value) * 100) : (value === null || value === undefined ? '' : value);
-      const attrs = `oninput="nwSet('${path}', this.value, '${kind || ''}')"`;
-      return `<label class="nw-f">
+      const num = kind === 'num' || kind === 'pct01';
+      let shown;
+      if (kind === 'pct01') {
+        shown = (value === null || value === undefined) ? '' : nwNumText(Number(value) * 100);
+      } else if (kind === 'num') {
+        shown = nwNumText(value);
+      } else {
+        shown = (value === null || value === undefined) ? '' : value;
+      }
+      return `<input type="${o.type || 'text'}" class="nw-in${num ? ' nw-in-num' : ''}"` +
+        ` value="${escapeHtml(shown)}" spellcheck="false"` +
+        (num ? ' inputmode="decimal"' : '') +
+        (o.placeholder ? ` placeholder="${escapeHtml(o.placeholder)}"` : '') +
+        (o.title ? ` title="${escapeHtml(o.title)}"` : '') +
+        ` oninput="nwSet('${path}', this.value, '${kind || ''}')"` +
+        (num ? ` onblur="nwReformat(this, '${path}', '${kind}')"` : '') + '>';
+    }
+
+    // A select changes which cells are live in the row, so it re-renders.
+    function nwSelectEl(path, value, options, opts) {
+      const o = opts || {};
+      return `<select class="nw-in"${o.title ? ` title="${escapeHtml(o.title)}"` : ''}` +
+        ` onchange="nwSet('${path}', this.value); renderNwForm();">` +
+        options.map(x => `<option value="${escapeHtml(x[0])}"${x[0] === value ? ' selected' : ''}>${escapeHtml(x[1])}</option>`).join('') +
+        '</select>';
+    }
+
+    // Checkboxes deliberately do NOT re-render: neither flag changes the shape
+    // of the table, and repainting the whole form under the pointer on every
+    // tick was a jolt for nothing.
+    function nwCheckEl(path, value, opts) {
+      const o = opts || {};
+      return `<input type="checkbox" class="nw-in nw-in-check" ${value ? 'checked' : ''}` +
+        (o.title ? ` title="${escapeHtml(o.title)}"` : '') +
+        ` onchange="nwSet('${path}', this.checked, 'bool');">`;
+    }
+
+    // Cells carry their header text in data-l. Nothing reads it at desktop
+    // width; below 620 px it becomes the row label via ::before. See the CSS.
+    function nwTd(label, inner, cls) {
+      return `<td data-l="${escapeHtml(label)}"${cls ? ` class="${cls}"` : ''}>${inner}</td>`;
+    }
+    function nwNaTd(label, why) {
+      return `<td data-l="${escapeHtml(label)}"><span class="nwg-na" title="${escapeHtml(why)}">–</span></td>`;
+    }
+    function nwDelTd(kind, i) {
+      return `<td class="nwg-td-del"><button type="button" class="nwg-del" title="Fjern"` +
+        ` onclick="nwRemove('${kind}', ${i})">×</button></td>`;
+    }
+
+    // cols: [label, width, rightAligned?]. `minw` is handed over as a custom
+    // property rather than an inline min-width so the 620 px media query can
+    // still cancel it — an inline min-width would outrank the media query and
+    // the table would keep its desktop floor on a phone.
+    function nwTable(cols, body, minw) {
+      return `<div class="nwg-scroll"><table class="nwg" style="--nwg-min:${minw}px">` +
+        '<colgroup>' + cols.map(c => `<col style="width:${c[1]}">`).join('') + '</colgroup>' +
+        '<thead><tr>' + cols.map(c => `<th${c[2] ? ' class="nwg-r"' : ''}>${escapeHtml(c[0])}</th>`).join('') + '</tr></thead>' +
+        '<tbody>' + body + '</tbody></table></div>';
+    }
+
+    // Policy fields are not a list of like things, so they are not a table.
+    // They pack into as many label-over-input columns as the dialog affords.
+    function nwCell(label, path, value, kind, opts) {
+      const o = opts || {};
+      return `<label class="nw-cell">
         <span>${escapeHtml(label)}${o.suffix ? ` <em>${escapeHtml(o.suffix)}</em>` : ''}</span>
-        <input type="${o.type || 'text'}" value="${escapeHtml(shown)}" ${attrs}
-          ${o.placeholder ? `placeholder="${escapeHtml(o.placeholder)}"` : ''} spellcheck="false">
+        ${nwInput(path, value, kind, o)}
+      </label>`;
+    }
+    function nwCellCheck(label, path, value) {
+      return `<label class="nw-cell nw-cell-check">
+        ${nwCheckEl(path, value)}
+        <span>${escapeHtml(label)}</span>
       </label>`;
     }
 
-    function nwSelect(label, path, value, options) {
-      return `<label class="nw-f">
-        <span>${escapeHtml(label)}</span>
-        <select onchange="nwSet('${path}', this.value); renderNwForm();">
-          ${options.map(o => `<option value="${o[0]}"${o[0] === value ? ' selected' : ''}>${escapeHtml(o[1])}</option>`).join('')}
-        </select>
-      </label>`;
+    // ── kinds and wrappers ───────────────────────────────────────────────────
+    const NW_KINDS = [['property', 'Bolig'], ['fund', 'Fond'], ['cash', 'Konto']];
+    const NW_WRAPPERS = [
+      ['ask', 'ASK'],
+      ['fondskonto', 'Fondskonto'],
+      ['direkte', 'Direkte eie'],
+      ['none', 'Ingen / bank']
+    ];
+    const NW_KIND_LABEL = { property: 'Bolig', fund: 'Fond', cash: 'Konto' };
+
+    // Anything the form does not recognise still gets a row and a select that
+    // shows its real value, so an unknown kind can be corrected instead of
+    // becoming data you can neither see nor fix.
+    function nwKindSelect(i, kind) {
+      const known = NW_KINDS.some(k => k[0] === kind);
+      const options = known ? NW_KINDS : [[kind === undefined ? '' : kind, String(kind || '?')]].concat(NW_KINDS);
+      return `<select class="nw-in" title="Type" onchange="nwSetAssetKind(${i}, this.value);">` +
+        options.map(x => `<option value="${escapeHtml(x[0])}"${x[0] === kind ? ' selected' : ''}>${escapeHtml(x[1])}</option>`).join('') +
+        '</select>';
     }
 
-    function nwCheck(label, path, value) {
-      return `<label class="nw-f nw-f-check">
-        <input type="checkbox" ${value ? 'checked' : ''} onchange="nwSet('${path}', this.checked, 'bool'); renderNwForm();">
-        <span>${escapeHtml(label)}</span>
-      </label>`;
+    function nwKindSeed(kind, others) {
+      if (kind === 'property') {
+        return { isPrimaryHome: !(others || []).some(a => a.isPrimaryHome), fellesgjeldNok: 0 };
+      }
+      if (kind === 'fund') {
+        return { wrapper: 'ask', expectedReturnPct: 6, contributionNokPerMonth: 0,
+                 innskuttKapitalNok: null, akkumulertSkjermingNok: 0 };
+      }
+      return { wrapper: 'none', expectedReturnPct: 3, contributionNokPerMonth: 0, restricted: false };
+    }
+
+    // Converting a row fills only the keys the new kind needs and that are
+    // missing: flipping fund → bolig → fond must not erase the innskutt
+    // kapital you typed on the way through.
+    function nwSetAssetKind(i, kind) {
+      const a = nwEditCfg && nwEditCfg.assets && nwEditCfg.assets[i];
+      if (!a) return;
+      a.kind = kind;
+      const seed = nwKindSeed(kind, (nwEditCfg.assets || []).filter((_, j) => j !== i));
+      Object.keys(seed).forEach(k => { if (a[k] === undefined) a[k] = seed[k]; });
+      if (kind === 'cash') a.wrapper = 'none';
+      if (kind === 'fund' && !a.wrapper) a.wrapper = 'ask';
+      renderNwForm();
     }
 
     function nwNewId(prefix) {
@@ -10516,12 +10806,11 @@ function renderNwLoan(data, opts) {
 
     function nwAddAsset(kind) {
       nwEditCfg.assets = nwEditCfg.assets || [];
-      const thisMonth = new Date().toISOString().slice(0, 7);
-      const base = { id: nwNewId(kind), kind: kind, label: '', anchorValueNok: null,
-                     anchorOn: thisMonth, ownershipShare: 1 };
-      if (kind === 'property') Object.assign(base, { isPrimaryHome: !(nwEditCfg.assets || []).some(a => a.isPrimaryHome), fellesgjeldNok: 0 });
-      if (kind === 'fund') Object.assign(base, { wrapper: 'ask', expectedReturnPct: 6, contributionNokPerMonth: 0, innskuttKapitalNok: null, akkumulertSkjermingNok: 0 });
-      if (kind === 'cash') Object.assign(base, { wrapper: 'none', expectedReturnPct: 3, contributionNokPerMonth: 0, restricted: false });
+      const base = Object.assign({
+        id: nwNewId(kind), kind: kind, label: '', anchorValueNok: null,
+        anchorOn: new Date().toISOString().slice(0, 7),
+        ownershipShare: NW_HOUSEHOLD_SHARE
+      }, nwKindSeed(kind, nwEditCfg.assets));
       nwEditCfg.assets.push(base);
       renderNwForm();
     }
@@ -10530,7 +10819,8 @@ function renderNwLoan(data, opts) {
       nwEditCfg.liabilities = nwEditCfg.liabilities || [];
       nwEditCfg.liabilities.push({ id: nwNewId('loan'), kind: 'annuitetslan', label: '',
         anchorBalanceNok: null, anchorOn: new Date().toISOString().slice(0, 7),
-        ratePct: 5.4, termMonths: 300, extraPrincipalNokPerMonth: 0, ownershipShare: 1 });
+        ratePct: 5.4, termMonths: 300, extraPrincipalNokPerMonth: 0, paymentNok: null,
+        ownershipShare: NW_HOUSEHOLD_SHARE });
       renderNwForm();
     }
 
@@ -10542,105 +10832,183 @@ function renderNwLoan(data, opts) {
       renderNwForm();
     }
 
-    const NW_WRAPPERS = [
-      ['ask', 'ASK (aksjesparekonto)'],
-      ['fondskonto', 'Fondskonto'],
-      ['direkte', 'Direkte eie'],
-      ['none', 'Ingen / bankkonto']
-    ];
+    // ── the tables ───────────────────────────────────────────────────────────
+    // One table per kind, because the COLUMNS ARE the kind's field set: a
+    // property table simply has no "innskutt kapital" column, rather than a
+    // column of dashes. Funds are the one place two regimes share a table —
+    // ASK and everything else differ by two cells — and there the cells that do
+    // not apply render as an inert "–", which makes each row's tax regime
+    // visible at a glance instead of hidden inside a dropdown.
 
-    function nwAssetBlock(a, i) {
-      const p = 'assets.' + i;
-      const kindLabel = { property: 'Bolig', fund: 'Fond', cash: 'Kontanter' }[a.kind] || a.kind;
-      let extra = '';
-
-      if (a.kind === 'property') {
-        extra = nwCheck('Primærbolig (bor her nå)', p + '.isPrimaryHome', a.isPrimaryHome) +
-          nwField('Fellesgjeld', p + '.fellesgjeldNok', a.fellesgjeldNok, 'num', { suffix: 'kr' }) +
-          `<p class="nw-note">Verdien skaleres med SSB sin boligprisindeks for Oslo. Sett <em>anker</em> til datoen verdien gjaldt.</p>`;
-      } else if (a.kind === 'fund') {
-        extra = nwSelect('Kontotype', p + '.wrapper', a.wrapper || 'ask', NW_WRAPPERS) +
-          nwField('Forventet avkastning', p + '.expectedReturnPct', a.expectedReturnPct, 'num', { suffix: '% p.a.' }) +
-          nwField('Spareplan', p + '.contributionNokPerMonth', a.contributionNokPerMonth, 'num', { suffix: 'kr/mnd' }) +
-          (a.wrapper === 'ask'
-            ? nwField('Innskutt kapital', p + '.innskuttKapitalNok', a.innskuttKapitalNok, 'num', { suffix: 'kr' }) +
-              nwField('Akkumulert skjerming', p + '.akkumulertSkjermingNok', a.akkumulertSkjermingNok, 'num', { suffix: 'kr' }) +
-              `<p class="nw-note">Innskutt kapital tas ut først og skattefritt — derfor vet kortet hvor mye du kan flytte uten skatt.</p>`
-            : nwField('Kostpris (inngangsverdi)', p + '.costBasisNok', a.costBasisNok, 'num', { suffix: 'kr' }));
-      } else {
-        extra = nwField('Rente', p + '.expectedReturnPct', a.expectedReturnPct, 'num', { suffix: '% p.a.' }) +
-          nwField('Spareplan', p + '.contributionNokPerMonth', a.contributionNokPerMonth, 'num', { suffix: 'kr/mnd' }) +
-          nwCheck('Øremerket — holdes utenfor 2030-målet', p + '.restricted', a.restricted);
-      }
-
-      return `<div class="nw-item">
-        <div class="nw-item-head">
-          <span class="nw-item-kind">${kindLabel}</span>
-          <button class="nw-btn nw-btn-del" onclick="nwRemove('asset', ${i})" title="Fjern">×</button>
-        </div>
-        ${nwField('Navn', p + '.label', a.label, 'text', { placeholder: kindLabel })}
-        ${nwField('Verdi', p + '.anchorValueNok', a.anchorValueNok, 'num', { suffix: 'kr' })}
-        ${nwField('Anker (måned verdien gjaldt)', p + '.anchorOn', a.anchorOn, 'text', { type: 'month' })}
-        ${nwField('Din eierandel', p + '.ownershipShare', a.ownershipShare, 'pct01', { suffix: '%' })}
-        ${extra}
-      </div>`;
+    function nwPropRows(rows) {
+      return nwTable(
+        [['Navn', '26%'], ['Type', '11%'], ['Verdi', '17%', 1], ['Anker', '15%'],
+         ['Primærbolig', '11%'], ['Fellesgjeld', '15%', 1], ['', '5%']],
+        rows.map(([a, i]) => {
+          const p = 'assets.' + i;
+          return '<tr>' +
+            nwTd('Navn', nwInput(p + '.label', a.label, 'text', { placeholder: 'Bolig' })) +
+            nwTd('Type', nwKindSelect(i, a.kind)) +
+            nwTd('Verdi (kr)', nwInput(p + '.anchorValueNok', a.anchorValueNok, 'num', { title: 'Markedsverdi, husholdningens totale' })) +
+            nwTd('Anker', nwInput(p + '.anchorOn', a.anchorOn, 'text', { type: 'month', title: 'Måneden verdien gjaldt' })) +
+            nwTd('Primærbolig', nwCheckEl(p + '.isPrimaryHome', a.isPrimaryHome, { title: 'Bor her nå' })) +
+            nwTd('Fellesgjeld (kr)', nwInput(p + '.fellesgjeldNok', a.fellesgjeldNok, 'num')) +
+            nwDelTd('asset', i) +
+          '</tr>';
+        }).join(''),
+        640
+      );
     }
 
-    function nwLoanBlock(l, i) {
-      const p = 'liabilities.' + i;
-      return `<div class="nw-item">
-        <div class="nw-item-head">
-          <span class="nw-item-kind">Lån</span>
-          <button class="nw-btn nw-btn-del" onclick="nwRemove('loan', ${i})" title="Fjern">×</button>
-        </div>
-        ${nwField('Navn', p + '.label', l.label, 'text', { placeholder: 'Boligån' })}
-        ${nwField('Saldo', p + '.anchorBalanceNok', l.anchorBalanceNok, 'num', { suffix: 'kr' })}
-        ${nwField('Anker (måned saldoen gjaldt)', p + '.anchorOn', l.anchorOn, 'text', { type: 'month' })}
-        ${nwField('Rente', p + '.ratePct', l.ratePct, 'num', { suffix: '%' })}
-        ${nwField('Gjenstående løpetid', p + '.termMonths', l.termMonths, 'num', { suffix: 'mnd' })}
-        ${nwField('Ekstra avdrag', p + '.extraPrincipalNokPerMonth', l.extraPrincipalNokPerMonth, 'num', { suffix: 'kr/mnd' })}
-        ${nwField('Din andel av lånet', p + '.ownershipShare', l.ownershipShare, 'pct01', { suffix: '%' })}
-      </div>`;
+    function nwFundRows(rows) {
+      return nwTable(
+        // Anker gets 12%: a native month input needs ~115 px before the picker
+        // glyph starts eating the year, and a half-visible date is worse than
+        // a narrower name column.
+        [['Navn', '12%'], ['Type', '7%'], ['Kontotype', '11%'], ['Verdi', '10%', 1],
+         ['Anker', '13%'], ['Avkastning', '6%', 1], ['Spareplan', '9%', 1],
+         ['Innskutt kap.', '10%', 1], ['Akk. skjerming', '8%', 1], ['Kostpris', '9%', 1], ['', '5%']],
+        rows.map(([a, i]) => {
+          const p = 'assets.' + i;
+          const ask = a.wrapper === 'ask';
+          return '<tr>' +
+            nwTd('Navn', nwInput(p + '.label', a.label, 'text', { placeholder: 'Fond' })) +
+            nwTd('Type', nwKindSelect(i, a.kind)) +
+            nwTd('Kontotype', nwSelectEl(p + '.wrapper', a.wrapper || 'ask', NW_WRAPPERS)) +
+            nwTd('Verdi (kr)', nwInput(p + '.anchorValueNok', a.anchorValueNok, 'num')) +
+            nwTd('Anker', nwInput(p + '.anchorOn', a.anchorOn, 'text', { type: 'month', title: 'Måneden verdien gjaldt' })) +
+            nwTd('Avkastning (% p.a.)', nwInput(p + '.expectedReturnPct', a.expectedReturnPct, 'num')) +
+            nwTd('Spareplan (kr/mnd)', nwInput(p + '.contributionNokPerMonth', a.contributionNokPerMonth, 'num')) +
+            (ask
+              ? nwTd('Innskutt kap. (kr)', nwInput(p + '.innskuttKapitalNok', a.innskuttKapitalNok, 'num', { title: 'Tas ut først og skattefritt' }))
+              : nwNaTd('Innskutt kap. (kr)', 'Gjelder bare ASK')) +
+            (ask
+              ? nwTd('Akk. skjerming (kr)', nwInput(p + '.akkumulertSkjermingNok', a.akkumulertSkjermingNok, 'num'))
+              : nwNaTd('Akk. skjerming (kr)', 'Gjelder bare ASK')) +
+            (ask
+              ? nwNaTd('Kostpris (kr)', 'ASK bruker innskutt kapital i stedet')
+              : nwTd('Kostpris (kr)', nwInput(p + '.costBasisNok', a.costBasisNok, 'num', { title: 'Inngangsverdi' }))) +
+            nwDelTd('asset', i) +
+          '</tr>';
+        }).join(''),
+        960
+      );
+    }
+
+    function nwCashRows(rows) {
+      return nwTable(
+        [['Navn', '22%'], ['Type', '10%'], ['Verdi', '16%', 1], ['Anker', '14%'],
+         ['Rente', '10%', 1], ['Spareplan', '14%', 1], ['Øremerket', '9%'], ['', '5%']],
+        rows.map(([a, i]) => {
+          const p = 'assets.' + i;
+          return '<tr>' +
+            nwTd('Navn', nwInput(p + '.label', a.label, 'text', { placeholder: 'Konto' })) +
+            nwTd('Type', nwKindSelect(i, a.kind)) +
+            nwTd('Verdi (kr)', nwInput(p + '.anchorValueNok', a.anchorValueNok, 'num')) +
+            nwTd('Anker', nwInput(p + '.anchorOn', a.anchorOn, 'text', { type: 'month', title: 'Måneden saldoen gjaldt' })) +
+            nwTd('Rente (% p.a.)', nwInput(p + '.expectedReturnPct', a.expectedReturnPct, 'num')) +
+            nwTd('Spareplan (kr/mnd)', nwInput(p + '.contributionNokPerMonth', a.contributionNokPerMonth, 'num')) +
+            nwTd('Øremerket', nwCheckEl(p + '.restricted', a.restricted, { title: 'Holdes utenfor målet' })) +
+            nwDelTd('asset', i) +
+          '</tr>';
+        }).join(''),
+        680
+      );
+    }
+
+    function nwLoanRows(rows) {
+      return nwTable(
+        [['Navn', '19%'], ['Saldo', '14%', 1], ['Anker', '13%'], ['Rente', '9%', 1],
+         ['Løpetid', '11%', 1], ['Terminbeløp', '14%', 1], ['Ekstra avdrag', '15%', 1], ['', '5%']],
+        rows.map(([l, i]) => {
+          const p = 'liabilities.' + i;
+          return '<tr>' +
+            nwTd('Navn', nwInput(p + '.label', l.label, 'text', { placeholder: 'Boliglån' })) +
+            nwTd('Saldo (kr)', nwInput(p + '.anchorBalanceNok', l.anchorBalanceNok, 'num')) +
+            nwTd('Anker', nwInput(p + '.anchorOn', l.anchorOn, 'text', { type: 'month', title: 'Måneden saldoen gjaldt' })) +
+            nwTd('Rente (%)', nwInput(p + '.ratePct', l.ratePct, 'num')) +
+            nwTd('Løpetid (mnd)', nwInput(p + '.termMonths', l.termMonths, 'num')) +
+            nwTd('Terminbeløp (kr/mnd)', nwInput(p + '.paymentNok', l.paymentNok, 'num', { title: 'Bankens terminbeløp. Tomt = regnes ut fra saldo, rente og løpetid.' })) +
+            nwTd('Ekstra avdrag (kr/mnd)', nwInput(p + '.extraPrincipalNokPerMonth', l.extraPrincipalNokPerMonth, 'num')) +
+            nwDelTd('loan', i) +
+          '</tr>';
+        }).join(''),
+        720
+      );
+    }
+
+    function nwGroupSection(caption, rows, tableFn, emptyText) {
+      if (!rows.length) return `<div class="nwg-cap">${escapeHtml(caption)}</div><div class="nwg-empty">${escapeHtml(emptyText)}</div>`;
+      return `<div class="nwg-cap">${escapeHtml(caption)}</div>` + tableFn(rows);
     }
 
     function renderNwForm() {
       const el = document.getElementById('nw-form');
       if (!el || !nwEditCfg) return;
       const pol = nwEditCfg.policy = nwEditCfg.policy || {};
+      const assets = nwEditCfg.assets || [];
+      const indexed = assets.map((a, i) => [a, i]);
+      // Anything that is not a bolig or a fond lands in the konto table, which
+      // carries the Type select — so an unrecognised kind is always reachable.
+      const props = indexed.filter(([a]) => a.kind === 'property');
+      const funds = indexed.filter(([a]) => a.kind === 'fund');
+      const cash = indexed.filter(([a]) => a.kind !== 'property' && a.kind !== 'fund');
+
       el.innerHTML = `
+        <p class="nw-banner"><b>Alle beløp er husholdningens totaler.</b>
+          Eierandeler er ikke lenger en del av oppsettet — før inn hele verdien,
+          hele lånet og hele inntekten, så regner kortene i samme skala.</p>
+
         <div class="nw-sec">
           <h4>Målet</h4>
-          ${nwField('Målmåned', 'policy.targetMonth', pol.targetMonth, 'text', { type: 'month' })}
-          ${nwField('Pris på neste bolig', 'policy.nextPurchasePriceNok', pol.nextPurchasePriceNok, 'num', { suffix: 'kr i dag' })}
-          ${nwField('Prisen gjelder fra', 'policy.priceSetOn', pol.priceSetOn, 'text', { type: 'month' })}
-          ${nwCheck('Indeksreguler prisen med Oslo-indeksen', 'policy.indexNextPurchase', pol.indexNextPurchase)}
-          <p class="nw-note">Uten dette teller et boligrally som framgang, selv om gapet du skal over vokser raskere enn egenkapitalen din.</p>
+          <div class="nw-grid">
+            ${nwCell('Målmåned', 'policy.targetMonth', pol.targetMonth, 'text', { type: 'month' })}
+            ${nwCell('Pris på neste bolig', 'policy.nextPurchasePriceNok', pol.nextPurchasePriceNok, 'num', { suffix: 'kr i dag' })}
+            ${nwCell('Prisen gjelder fra', 'policy.priceSetOn', pol.priceSetOn, 'text', { type: 'month' })}
+            ${nwCell('Boligvekst utover indeks', 'policy.housingGrowthPctBeyondIndex', pol.housingGrowthPctBeyondIndex, 'num', { suffix: '% p.a.' })}
+            ${nwCellCheck('Indeksreguler prisen (Oslo)', 'policy.indexNextPurchase', pol.indexNextPurchase)}
+          </div>
+          <p class="nw-note">Uten indeksregulering teller et boligrally som framgang, selv om gapet du skal over vokser raskere enn egenkapitalen din.</p>
         </div>
+
         <div class="nw-sec">
           <h4>Hva banken tillater</h4>
-          ${nwField('Brutto husholdningsinntekt', 'policy.grossHouseholdIncomeNok', pol.grossHouseholdIncomeNok, 'num', { suffix: 'kr/år' })}
-          ${nwField('Forventet lønnsvekst', 'policy.incomeGrowthPct', pol.incomeGrowthPct, 'num', { suffix: '% p.a.' })}
-          ${nwField('Maks belåningsgrad', 'policy.ltvMax', pol.ltvMax, 'pct01', { suffix: '%' })}
-          ${nwField('Maks gjeldsgrad', 'policy.gjeldsgradMax', pol.gjeldsgradMax, 'num', { suffix: '× inntekt' })}
+          <div class="nw-grid">
+            ${nwCell('Brutto husholdningsinntekt', 'policy.grossHouseholdIncomeNok', pol.grossHouseholdIncomeNok, 'num', { suffix: 'kr/år' })}
+            ${nwCell('Dokumentert bonus', 'policy.documentedBonusNok', pol.documentedBonusNok, 'num', { suffix: 'kr/år' })}
+            ${nwCell('Forventet lønnsvekst', 'policy.incomeGrowthPct', pol.incomeGrowthPct, 'num', { suffix: '% p.a.' })}
+            ${nwCell('Maks belåningsgrad', 'policy.ltvMax', pol.ltvMax, 'pct01', { suffix: '%' })}
+            ${nwCell('Maks gjeldsgrad', 'policy.gjeldsgradMax', pol.gjeldsgradMax, 'num', { suffix: '× inntekt' })}
+          </div>
           <p class="nw-note">Gjeldsgrad er oftest det som faktisk stopper et boligkjøp i Oslo, ikke egenkapitalen. Kortet sier hvilken av de to som binder.</p>
         </div>
+
         <div class="nw-sec">
           <h4>Kjøpskostnader</h4>
-          ${nwField('Dokumentavgift', 'policy.dokumentavgiftPct', pol.dokumentavgiftPct, 'num', { suffix: '%' })}
-          ${nwField('Gebyrer', 'policy.purchaseFeesNok', pol.purchaseFeesNok, 'num', { suffix: 'kr' })}
+          <div class="nw-grid">
+            ${nwCell('Dokumentavgift', 'policy.dokumentavgiftPct', pol.dokumentavgiftPct, 'num', { suffix: '%' })}
+            ${nwCell('Gebyrer', 'policy.purchaseFeesNok', pol.purchaseFeesNok, 'num', { suffix: 'kr' })}
+          </div>
         </div>
+
         <div class="nw-sec">
           <h4>Eiendeler</h4>
-          ${(nwEditCfg.assets || []).map(nwAssetBlock).join('')}
+          ${nwGroupSection('Bolig', props, nwPropRows, 'Ingen bolig lagt inn.')}
+          ${nwGroupSection('Fond', funds, nwFundRows, 'Ingen fond lagt inn.')}
+          ${nwGroupSection('Kontanter', cash, nwCashRows, 'Ingen kontoer lagt inn.')}
           <div class="nw-add">
             <button class="nw-btn" onclick="nwAddAsset('property')">+ Bolig</button>
             <button class="nw-btn" onclick="nwAddAsset('fund')">+ Fond</button>
             <button class="nw-btn" onclick="nwAddAsset('cash')">+ Konto</button>
           </div>
+          <p class="nw-note">Boligverdier skaleres med SSB sin boligprisindeks for Oslo — sett <em>anker</em> til måneden verdien gjaldt. Innskutt kapital på ASK tas ut først og skattefritt, og er derfor det kortet bruker for å si hvor mye du kan flytte uten skatt.</p>
         </div>
+
         <div class="nw-sec">
           <h4>Gjeld</h4>
-          ${(nwEditCfg.liabilities || []).map(nwLoanBlock).join('')}
+          ${(nwEditCfg.liabilities || []).length
+            ? nwLoanRows((nwEditCfg.liabilities || []).map((l, i) => [l, i]))
+            : '<div class="nwg-empty">Ingen lån lagt inn.</div>'}
           <div class="nw-add"><button class="nw-btn" onclick="nwAddLoan()">+ Lån</button></div>
         </div>`;
     }
@@ -10660,7 +11028,8 @@ function renderNwLoan(data, opts) {
     }
 
     // Escape hatch: the form covers the fields that matter, the document may
-    // carry more.
+    // carry more. Still the raw document, still editable, still the only way to
+    // see keys this form has no column for.
     function nwShowJson() {
       const el = document.getElementById('nw-form');
       if (!el || !nwEditCfg) return;
@@ -10688,10 +11057,22 @@ function renderNwLoan(data, opts) {
       }
     }
 
+    // Household totals, enforced at the door. The Worker still reads
+    // ownershipShare, so write 1.0 rather than dropping the key: a stale 0.5
+    // left behind from the old per-person form would keep halving figures the
+    // form now presents — and asks you to enter — as whole.
+    function nwNormalizeHousehold(cfg) {
+      [].concat(cfg.assets || [], cfg.liabilities || []).forEach(row => {
+        if (row && typeof row === 'object') row.ownershipShare = NW_HOUSEHOLD_SHARE;
+      });
+      return cfg;
+    }
+
     async function saveNetWorthConfig() {
       const st = document.getElementById('nw-cfg-status');
       if (!nwEditCfg) return;
       try {
+        nwNormalizeHousehold(nwEditCfg);
         const res = await workerFetch('/private/nw/config', {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },

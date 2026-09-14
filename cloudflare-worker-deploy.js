@@ -129,7 +129,7 @@ async function handleRequest(request) {
       var authDenied = requireDashboardToken(request);
       if (authDenied) return authDenied;
     }
-  } else if (path.startsWith("/hue") ||
+  } else if (path.startsWith("/hue") || path.startsWith("/location") ||
              path.startsWith("/index/") || path.startsWith("/session")) {
     var denied = requireDashboardToken(request);
     if (denied) return denied;
@@ -438,6 +438,23 @@ async function handleRequest(request) {
 
   // Public like the other read-only feeds: it exposes nothing personal, and a
   // share-code recipient's news tabs should work too.
+  if (path === "/location") {
+    if (request.method === "PUT" || request.method === "POST") {
+      var loc = await request.json().catch(function () { return null; });
+      if (!loc || typeof loc !== "object") return jsonResponse({error: "Expected a location object"}, 400);
+      var keep = {};
+      ["name", "lat", "lon", "address", "gatenavn", "gatekode", "husnr", "kommunenr"].forEach(function (k) {
+        if (loc[k] !== undefined && loc[k] !== null) keep[k] = loc[k];
+      });
+      await KV.put("home_location", JSON.stringify(keep));
+      return jsonResponse({ok: true, location: keep});
+    }
+    var stored = await KV.get("home_location");
+    if (!stored) return jsonResponse({location: null});
+    try { return jsonResponse({location: JSON.parse(stored)}); }
+    catch (e) { return jsonResponse({location: null}); }
+  }
+
   if (path === "/news/search") {
     var nq = (url.searchParams.get("q") || "").trim();
     if (!nq || nq.length > 120) {
@@ -1599,6 +1616,20 @@ function newsSearchSources(query) {
   ];
 }
 
+// NewsData answers JSON and, unlike the search engines above, does not refuse
+// Cloudflare's egress — so it is the one source that reliably works from the
+// Worker. Norwegian first, since that is where coverage of a Norwegian company
+// actually lives.
+function newsDataSource(query) {
+  var key = typeof NEWSDATA_KEY !== "undefined" ? NEWSDATA_KEY : "";
+  if (!key) return null;
+  return {
+    id: "newsdata", json: true,
+    url: "https://newsdata.io/api/1/latest?apikey=" + encodeURIComponent(key) +
+         "&qInTitle=" + encodeURIComponent('"' + query + '"') + "&language=no,en"
+  };
+}
+
 function newsUnescape(str) {
   return String(str || "")
     .replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, "$1")
@@ -1671,6 +1702,8 @@ async function newsSearch(query, months) {
   }
 
   var sources = newsSearchSources(query);
+  var nd = newsDataSource(query);
+  if (nd) sources.push(nd);
   var results = await Promise.all(sources.map(async function (s) {
     try {
       var resp = await fetch(s.url, {
@@ -1678,6 +1711,19 @@ async function newsSearch(query, months) {
       });
       if (!resp.ok) return {id: s.id, ok: false, reason: "HTTP " + resp.status, items: []};
       var text = await resp.text();
+      if (s.json) {
+        var d = JSON.parse(text);
+        if (d.status !== "success") {
+          return {id: s.id, ok: false, reason: (d.results && d.results.message) || "api error", items: []};
+        }
+        return {id: s.id, ok: true, items: (d.results || []).map(function (a) {
+          // pubDate arrives as "YYYY-MM-DD HH:MM:SS" in UTC.
+          var ts = Date.parse(String(a.pubDate || "").replace(" ", "T") + "Z");
+          return {title: a.title || "", link: a.link || "",
+                  publisher: a.source_name || a.source_id || "",
+                  ts: isFinite(ts) ? ts : null, source: s.id};
+        })};
+      }
       // Google answers a block with 200 and an HTML "Sorry..." page, so a
       // status check alone is not enough to tell success from refusal.
       if (text.indexOf("<item") < 0) {

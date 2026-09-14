@@ -2046,8 +2046,8 @@
         { symbol: 'BTC-USD', label: 'Bitcoin' }
       ],
       location: {
-        name: 'Bestum', lat: 59.9240, lon: 10.6550,
-        address: 'Bestumveien 1', gatenavn: 'Bestumveien', gatekode: '10572', husnr: '1', kommunenr: '0301'
+        name: 'Oslo', lat: 59.9127, lon: 10.7361,
+        address: 'Rådhusplassen 1', gatenavn: 'Rådhusplassen', gatekode: '15660', husnr: '1', kommunenr: '0301'
       },
       feeds: [
         { name: 'BBC News', url: 'https://feeds.bbci.co.uk/news/world/rss.xml' },
@@ -2240,6 +2240,15 @@
       cfg.location = loc;
       localStorage.setItem('dashboard-config', JSON.stringify(cfg));
       Object.keys(transitWalkCache).forEach(k => delete transitWalkCache[k]);
+      // Mirror to the Worker so another device inherits the real address
+      // rather than the neutral default shipped in the public repo.
+      if (getDashboardToken()) {
+        workerFetch('/location', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(loc)
+        }).catch(() => {});
+      }
     }
 
     // ── Worker auth token ──
@@ -3754,6 +3763,22 @@
       sessionCache = result;
       sessionCacheAt = Date.now();
       return result;
+    }
+
+    async function syncLocationFromWorker() {
+      if (!getDashboardToken()) return false;
+      try {
+        const res = await workerFetch('/location');
+        if (!res.ok) return false;
+        const { location } = await res.json();
+        if (!location || location.lat == null) return false;
+        const cfg = loadConfig() || {};
+        if (JSON.stringify(cfg.location) === JSON.stringify(location)) return false;
+        cfg.location = location;
+        localStorage.setItem('dashboard-config', JSON.stringify(cfg));
+        Object.keys(transitWalkCache).forEach(k => delete transitWalkCache[k]);
+        return true;
+      } catch (e) { return false; }
     }
 
     async function fetchSensors() {
@@ -6961,6 +6986,9 @@
     }
     fetchIndexes();
     setInterval(fetchIndexes, 15 * 60 * 1000);
+
+    // Before the location-dependent widgets settle, adopt the stored address.
+    syncLocationFromWorker().then(changed => { if (changed) refreshAllWidgets(false); });
 
     fetchNetWorth();
     // Projections move slowly; hourly is plenty and keeps the wall quiet.

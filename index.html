@@ -10376,6 +10376,14 @@ function renderNwLoan(data, opts) {
     // the hallway rule exists to prevent.
     function nwRenderCompanions() {
       const opts = { revealed: nwtRevealed, view: 'mine' };
+      // Publish the shared state everywhere the companion cards look for it.
+      // They are pure renderers and cannot read a script-scoped `let`, and they
+      // do not agree on which global to consult — one reads window.nwRevealed,
+      // another its own nwStackUi. Setting all three costs nothing and removes
+      // the disagreement as a source of silent masking.
+      window.nwStackUi = { revealed: nwtRevealed, view: opts.view };
+      window.nwRevealed = nwtRevealed;
+      window.nwView = opts.view;
       [['nwloan', typeof renderNwLoan === 'function' ? renderNwLoan : null],
        ['nwstack', typeof renderNwStack === 'function' ? renderNwStack : null]
       ].forEach(([id, fn]) => {
@@ -10393,8 +10401,34 @@ function renderNwLoan(data, opts) {
     const __nwTerskelenRender = renderNetWorth;
     renderNetWorth = function () { __nwTerskelenRender(); nwRenderCompanions(); };
 
+    // Revealing does NOT go through renderNetWorth: Terskelen patches only its
+    // own amounts node, which is the right thing for it and invisible to the
+    // companions. Wrap the setter too, so one reveal reaches all three cards
+    // and — more importantly — so the auto-hide clears all three together.
+    const __nwtSetRevealed = nwtSetRevealed;
+    nwtSetRevealed = function (on) { __nwtSetRevealed(on); nwRenderCompanions(); };
+
+    // nwtHide() is a separate path that also patches the DOM directly. Without
+    // wrapping it too, a revealed companion card stayed revealed through the
+    // auto-hide, the tab switch and the blur — kroner left on a hallway wall,
+    // which is the exact failure this whole privacy model exists to prevent.
+    const __nwtHide = nwtHide;
+    nwtHide = function () { __nwtHide(); nwRenderCompanions(); };
+
     // Names the two optional cards call by contract.
-    function nwRerenderAll() { renderNetWorth(); }
+    //
+    // A companion's reveal button flips its own flag and calls this. Fold that
+    // back into Terskelen's state, which owns the 45s auto-hide plus the
+    // visibilitychange, blur and collapse hides — a companion cannot schedule
+    // timers, so without this a reveal there would never re-hide on the wall.
+    function nwRerenderAll() {
+      const ui = window.nwStackUi;
+      if (ui && typeof ui.revealed === 'boolean' && ui.revealed !== nwtRevealed) {
+        nwtSetRevealed(ui.revealed);   // re-renders everything itself
+        return;
+      }
+      renderNetWorth();
+    }
     function nwReveal() { nwtToggle(); }
 
     // ── Net worth setup form ─────────────────────────────────────────────────

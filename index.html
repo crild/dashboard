@@ -10399,7 +10399,26 @@ function renderNwLoan(data, opts) {
     // Wrap rather than edit the generated code: every internal re-render inside
     // Terskelen resolves through this binding, so the companions follow it.
     const __nwTerskelenRender = renderNetWorth;
-    renderNetWorth = function () { __nwTerskelenRender(); nwRenderCompanions(); };
+    renderNetWorth = function () {
+      // A throw anywhere in the render used to leave the card visibly EMPTY,
+      // which is the worst possible failure: it looks like there is no data
+      // rather than like something broke, so it never gets reported. Show the
+      // reason instead, and keep the companions rendering regardless.
+      try {
+        __nwTerskelenRender();
+      } catch (err) {
+        const el = document.getElementById('networth-content');
+        if (el) {
+          el.innerHTML = '<div class="error">Kortet kunne ikke tegnes: ' +
+            escapeHtml(err && err.message ? err.message : String(err)) + '</div>';
+        }
+        setCardStatus('networth', false, err && err.message);
+        if (typeof console !== 'undefined') console.error('[formue] render failed', err);
+      }
+      try { nwRenderCompanions(); } catch (e2) {
+        if (typeof console !== 'undefined') console.error('[formue] companions failed', e2);
+      }
+    };
 
     // Revealing does NOT go through renderNetWorth: Terskelen patches only its
     // own amounts node, which is the right thing for it and invisible to the

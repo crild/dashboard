@@ -104,6 +104,10 @@
 
     .grid .card.collapsed { align-self: start; }
 
+    /* A card whose data has stopped arriving. Dimmed rather than emptied: last
+       known values beat a blank box on a display nobody is tending. */
+    .card.card-stale { opacity: 0.6; }
+
     /* Adaptive layout spans assigned by JS */
     .card.span-full { grid-column: 1 / -1; }
     .card.span-half { grid-column: span 1; }
@@ -2027,6 +2031,66 @@
       ));
     }
 
+    // A failing card used to keep the "Updated HH:MM" from its last success, so
+    // a dead widget looked freshly updated — the single most misleading thing
+    // on a display nobody is watching closely. These make the stamp truthful.
+    const cardLastGood = {};
+
+    function fmtCardClock(ts) {
+      const d = new Date(ts);
+      const today = new Date(); today.setHours(0, 0, 0, 0);
+      const clock = d.toLocaleTimeString('nb-NO', { hour: '2-digit', minute: '2-digit' });
+      // Once it is not today, show the date too: day-old data must not be able
+      // to pass as fresh just because the clock reads plausibly.
+      return d >= today ? clock
+        : d.toLocaleDateString('nb-NO', { day: 'numeric', month: 'short' }) + ' ' + clock;
+    }
+
+    function setCardStatus(widget, ok, reason) {
+      const el = document.getElementById(widget + '-status');
+      const card = document.querySelector(`.card[data-widget="${widget}"]`);
+      if (ok) {
+        cardLastGood[widget] = Date.now();
+        if (el) { el.textContent = 'Updated ' + fmtCardClock(cardLastGood[widget]); el.title = ''; }
+        if (card) card.classList.remove('card-stale');
+        return;
+      }
+      const last = cardLastGood[widget];
+      if (el) {
+        el.textContent = last ? 'Stale · ' + fmtCardClock(last) : 'Unavailable';
+        el.title = reason ? String(reason) : '';
+      }
+      if (card) card.classList.add('card-stale');
+    }
+
+    // Roughly three times each widget's own refresh cadence. Rather than
+    // patching every catch block, this notices any card that has simply stopped
+    // succeeding — including failure paths nobody thought to instrument.
+    const CARD_MAX_AGE = {
+      weather: 30 * 60000, stocks: 15 * 60000, power: 45 * 60000,
+      sensors: 15 * 60000, hue: 5 * 60000, mobility: 10 * 60000,
+      news: 30 * 60000, transit: 3 * 60000, waste: 12 * 3600000,
+      indexes: 45 * 60000
+    };
+
+    function checkCardFreshness() {
+      const now = Date.now();
+      Object.keys(CARD_MAX_AGE).forEach(w => {
+        const card = document.querySelector(`.card[data-widget="${w}"]`);
+        if (!card) return;
+        const last = cardLastGood[w];
+        if (!last) return;                       // never succeeded; leave its own message
+        const stale = (now - last) > CARD_MAX_AGE[w];
+        card.classList.toggle('card-stale', stale);
+        const el = document.getElementById(w + '-status');
+        if (stale && el) {
+          el.textContent = 'Stale · ' + fmtCardClock(last);
+          el.title = 'No successful update since ' + fmtCardClock(last);
+        }
+      });
+    }
+    setInterval(checkCardFreshness, 60 * 1000);
+
     function loadConfig() {
       const saved = localStorage.getItem('dashboard-config');
       if (!saved) return null;
@@ -2397,7 +2461,7 @@
           drawWeatherTempChart(document.getElementById('weather-temp-chart'), forecastData);
           drawWeatherPrecipChart(document.getElementById('weather-precip-chart'), forecastData);
         });
-        document.getElementById('weather-status').textContent = 'Updated ' + new Date().toLocaleTimeString('nb-NO', { hour: '2-digit', minute: '2-digit' });
+        setCardStatus('weather', true);
       } catch (e) {
         document.getElementById('weather-content').innerHTML = `<div class="error">Could not load weather</div>`;
       }
@@ -2944,7 +3008,7 @@
           });
         });
 
-        document.getElementById('stocks-status').textContent = 'Updated ' + new Date().toLocaleTimeString('nb-NO', { hour: '2-digit', minute: '2-digit' });
+        setCardStatus('stocks', true);
       } catch (e) {
         document.getElementById('stocks-content').innerHTML = `<div class="error">Could not load market data. The CORS proxy may be temporarily unavailable.</div>`;
       }
@@ -3325,7 +3389,7 @@
           canvas.onmouseleave = hideTooltip;
         });
 
-        document.getElementById('power-status').textContent = 'Updated ' + now.toLocaleTimeString('nb-NO', { hour: '2-digit', minute: '2-digit' });
+        setCardStatus('power', true);
       } catch (e) {
         document.getElementById('power-content').innerHTML = `<div class="error">Could not load power prices</div>`;
       }
@@ -3617,7 +3681,7 @@
             '</div>';
         }).join('') + '</div>' + co2ChartHtml;
 
-        document.getElementById('sensors-status').textContent = 'Updated ' + new Date().toLocaleTimeString('nb-NO', { hour: '2-digit', minute: '2-digit' });
+        setCardStatus('sensors', true);
 
         // Fetch CO2 history for each source
         co2Sources.forEach(async (src, i) => {
@@ -3721,7 +3785,7 @@
 
         if (selectedScenes.length === 0) {
           document.getElementById('hue-content').innerHTML = '<div style="color:var(--text-secondary);font-size:0.85rem;">No scenes configured. Click Edit to choose scenes.</div>';
-          document.getElementById('hue-status').textContent = 'Updated ' + new Date().toLocaleTimeString('nb-NO', { hour: '2-digit', minute: '2-digit' });
+          setCardStatus('hue', true);
           return;
         }
 
@@ -3737,7 +3801,7 @@
 
         html += '</div>';
         document.getElementById('hue-content').innerHTML = html;
-        document.getElementById('hue-status').textContent = 'Updated ' + new Date().toLocaleTimeString('nb-NO', { hour: '2-digit', minute: '2-digit' });
+        setCardStatus('hue', true);
       } catch (e) {
         document.getElementById('hue-content').innerHTML = '<div class="error">Could not connect to Hue</div>';
       }
@@ -3966,9 +4030,9 @@
           + upcoming.map(u => renderWasteItem(u, false)).join('');
 
         document.getElementById('waste-content').innerHTML = html;
-        const wasteStamp = 'Updated ' + new Date().toLocaleTimeString('nb-NO', { hour: '2-digit', minute: '2-digit' });
+        setCardStatus('waste', true);
         const wasteStatusEl = document.getElementById('waste-status');
-        wasteStatusEl.textContent = approximateAddress ? 'Nearest address · ' + wasteStamp : wasteStamp;
+        if (approximateAddress) wasteStatusEl.textContent = 'Nearest address · ' + wasteStatusEl.textContent;
         wasteStatusEl.title = approximateAddress
           ? 'No exact match for this house number — showing the closest address the kommune returned.'
           : '';
@@ -4723,7 +4787,7 @@
 
         // Legend — uses shared function with max-distance filtering
         updateMobilityLegend();
-        document.getElementById('mobility-status').textContent = 'Updated ' + new Date().toLocaleTimeString('nb-NO', { hour: '2-digit', minute: '2-digit' });
+        setCardStatus('mobility', true);
         // Ensure tiles render correctly after layout changes
         mobilityMap.invalidateSize();
       } catch (e) {
@@ -4873,7 +4937,7 @@
       const feeds = getFeeds();
       renderTabs();
       await Promise.all(feeds.map(f => fetchFeed(f)));
-      document.getElementById('news-status').textContent = 'Updated ' + new Date().toLocaleTimeString('nb-NO', { hour: '2-digit', minute: '2-digit' });
+      setCardStatus('news', true);
     }
     fetchNews();
     setInterval(fetchNews, 10 * 60 * 1000);
@@ -5060,7 +5124,7 @@
 
         // Setup drag-and-drop for stops and quay groups
         setupTransitDragDrop();
-        document.getElementById('transit-status').textContent = 'Updated ' + new Date().toLocaleTimeString('nb-NO', { hour: '2-digit', minute: '2-digit' });
+        setCardStatus('transit', true);
       } catch (e) {
         document.getElementById('transit-content').innerHTML = `<div class="error">Could not load departures</div>`;
       }
@@ -6278,8 +6342,8 @@
       }).join('') + '</div>';
 
       const staleCount = results.filter(r => r.stale).length;
-      status.textContent = (staleCount ? staleCount + ' stale · ' : '') +
-        'Updated ' + new Date().toLocaleTimeString('nb-NO', { hour: '2-digit', minute: '2-digit' });
+      setCardStatus('indexes', true);
+      if (staleCount) status.textContent = staleCount + ' stale · ' + status.textContent;
     }
     fetchIndexes();
     setInterval(fetchIndexes, 15 * 60 * 1000);

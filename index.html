@@ -2268,6 +2268,7 @@
       if (token === null) return; // cancelled
       if (token) {
         localStorage.setItem('dashboard-token', token);
+        sessionCache = null;
         showToast('Token saved — refreshing widgets');
       } else {
         localStorage.removeItem('dashboard-token');
@@ -3715,7 +3716,39 @@
       }
     }
 
+    // One session lookup shared by every tier-2 widget, cached briefly so a
+    // refresh-all does not ask the Worker the same question five times over.
+    let sessionCache = null, sessionCacheAt = 0;
+    async function getDashboardSession(force) {
+      if (!force && sessionCache && (Date.now() - sessionCacheAt) < 60000) return sessionCache;
+      let result;
+      try {
+        const res = await workerFetch('/session');
+        result = res.ok ? await res.json() : { token: false, home: false, status: res.status };
+      } catch (e) {
+        // Unreachable Worker is NOT "at home": fail closed, same as the server.
+        result = { token: false, home: false, error: e.message };
+      }
+      sessionCache = result;
+      sessionCacheAt = Date.now();
+      return result;
+    }
+
     async function fetchSensors() {
+      const sensorsEl = document.getElementById('sensors-content');
+      if (!getDashboardToken()) {
+        sensorsEl.innerHTML = `<div style="color:var(--text-secondary);font-size:0.85rem;line-height:1.5;">Requires the dashboard owner token.<br>Use the lock button in the header.</div>`;
+        setCardStatus('sensors', false, 'no token');
+        return;
+      }
+      // Indoor climate is a live readout of conditions inside the house, so it
+      // is tier 2: the token alone must not expose it from anywhere in the world.
+      const sensorsSession = await getDashboardSession();
+      if (!sensorsSession.home) {
+        sensorsEl.innerHTML = `<div style="color:var(--text-secondary);font-size:0.85rem;line-height:1.5;">Sensors are only shown on the home network.</div>`;
+        setCardStatus('sensors', false, 'not on home network');
+        return;
+      }
       try {
         const res = await workerFetch('/netatmo/data');
         if (res.status === 401 || res.status === 403) {
@@ -6415,7 +6448,7 @@
         return;
       }
       try {
-        const sess = await (await workerFetch('/session')).json();
+        const sess = await getDashboardSession();
         if (!sess.home) {
           // Degrade honestly: say it is unavailable here, and do not hint at
           // what the figures are or even which holdings exist.

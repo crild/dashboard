@@ -129,7 +129,7 @@ async function handleRequest(request) {
       var authDenied = requireDashboardToken(request);
       if (authDenied) return authDenied;
     }
-  } else if (path.startsWith("/netatmo") || path.startsWith("/hue") ||
+  } else if (path.startsWith("/hue") ||
              path.startsWith("/index/") || path.startsWith("/session")) {
     var denied = requireDashboardToken(request);
     if (denied) return denied;
@@ -137,7 +137,12 @@ async function handleRequest(request) {
 
   // Tier 2: the money. Needs the token AND an approved home network, so a
   // leaked token on its own is not enough to read net worth or savings goals.
-  if (path.startsWith("/private/") || path.startsWith("/brief/")) {
+  // Netatmo is tier 2 alongside the money: it is a live readout of conditions
+  // inside the house, and the token alone should not expose that from anywhere
+  // in the world. Hue stays tier 1 deliberately — controlling lights remotely is
+  // a feature, not a leak.
+  if (path.startsWith("/private/") || path.startsWith("/brief/") ||
+      path.startsWith("/netatmo")) {
     var homeDenied = await requireHomeNetwork(request);
     if (homeDenied) return homeDenied;
   }

@@ -6147,14 +6147,18 @@
         document.getElementById('news-content').innerHTML = '<div class="loading">No articles found</div>';
         return;
       }
-      document.getElementById('news-content').innerHTML = '<div class="news-list">' + items.map(item => `
-        <a class="news-item" href="${item.link}" target="_blank" rel="noopener">
+      const safeUrl = u => (typeof u === 'string' && /^https?:\/\//i.test(u)) ? u : '';
+      document.getElementById('news-content').innerHTML = '<div class="news-list">' + items.map(item => {
+        const href = safeUrl(item.link);
+        const img = safeUrl(item.img);
+        return `
+        <a class="news-item"${href ? ` href="${escapeHtml(href)}"` : ''} target="_blank" rel="noopener noreferrer">
           <div class="news-item-text">
-            <div class="news-item-title">${item.title}</div>
-            <div class="news-item-meta">${item.source ? item.source + ' · ' : ''}${item.timeAgo}</div>
+            <div class="news-item-title">${escapeHtml(item.title)}</div>
+            <div class="news-item-meta">${item.source ? escapeHtml(item.source) + ' · ' : ''}${escapeHtml(item.timeAgo)}</div>
           </div>
-          ${item.img ? `<img class="news-item-img" src="${item.img}" alt="" loading="lazy" onerror="this.style.display='none'">` : ''}
-        </a>`).join('') + '</div>';
+          ${img ? `<img class="news-item-img" src="${escapeHtml(img)}" alt="" loading="lazy" onerror="this.style.display='none'">` : ''}
+        </a>`; }).join('') + '</div>';
     }
 
     function renderTabs() {
@@ -11974,7 +11978,7 @@ function renderNwLoan(data, opts) {
           }
         }, { passive: false });
 
-        header.addEventListener('touchend', () => {
+        ['touchend', 'touchcancel'].forEach(evt => header.addEventListener(evt, () => {
           // A pending hold must never survive the gesture that started it.
           if (touchHoldTimer) { clearTimeout(touchHoldTimer); touchHoldTimer = null; }
           touchHoldReady = false;
@@ -11998,7 +12002,7 @@ function renderNwLoan(data, opts) {
           draggedCard = null;
           dragOverCard = null;
           isDraggingTouch = false;
-        });
+        }));
       }
 
       // Set up all cards

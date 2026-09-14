@@ -1683,14 +1683,19 @@ function newsDataSource(query) {
   };
 }
 
+// ORDER MATTERS AND IT WAS WRONG. This stripped tags first and decoded
+// entities second, so "&lt;script&gt;" arrived inert, survived the stripper
+// untouched, and was then re-inflated into a live tag — on an origin that
+// holds the owner token and sits on the approved home network. Decode first,
+// strip second, so anything that becomes markup is then removed.
 function newsUnescape(str) {
   return String(str || "")
     .replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, "$1")
-    .replace(/<[^>]+>/g, "")
     .replace(/&lt;/g, "<").replace(/&gt;/g, ">")
     .replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&apos;/g, "'")
     .replace(/&nbsp;/g, " ")
     .replace(/&amp;/g, "&")
+    .replace(/<[^>]+>/g, "")
     .trim();
 }
 
@@ -1721,6 +1726,9 @@ function newsParseRss(xml, sourceId) {
       publisher = title.slice(dash + 3);
       title = title.slice(0, dash);
     }
+    // Anything but http(s) — javascript:, data: — is one click from running
+    // on this origin, so it is dropped rather than rendered.
+    if (link && !/^https?:\/\//i.test(link)) link = "";
     out.push({
       title: title, link: link, publisher: publisher || "",
       ts: isFinite(ts) ? ts : null, source: sourceId

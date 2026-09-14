@@ -1678,8 +1678,16 @@ async function newsSearch(query, months) {
   var cutoff = Date.now() - windowMs;
   var seen = {};
   var merged = [];
-  for (var i = 0; i < results.length; i++) {
-    var items = results[i].items;
+  // Accumulate rather than replace. Google blocks Cloudflare's egress
+  // intermittently, so any single run may see only one engine — observed in
+  // production, where three of four were refused at once. Folding previously
+  // stored articles back in means coverage BUILDS UP across runs instead of
+  // collapsing to whatever happened to answer this minute. Everything is still
+  // windowed and re-sorted, so nothing ages past the cutoff.
+  var pools = results.map(function (r) { return r.items; });
+  if (cached && cached.items) pools.push(cached.items);
+  for (var i = 0; i < pools.length; i++) {
+    var items = pools[i];
     for (var j = 0; j < items.length; j++) {
       var it = items[j];
       // No date means it cannot be windowed honestly, so it is dropped rather
@@ -1696,13 +1704,6 @@ async function newsSearch(query, months) {
   var sourceReport = results.map(function (r) {
     return {id: r.id, ok: r.ok, count: r.items.length, reason: r.reason || null};
   });
-
-  // Every engine refused at once: keep the last good answer rather than
-  // blanking the tab, which is what used to happen on a Google block.
-  if (!merged.length && cached && cached.items && cached.items.length) {
-    return jsonResponse({query: query, items: cached.items, sources: sourceReport,
-                         stale: true, ts: cached.ts});
-  }
 
   // Likewise, never store an empty answer: the next request should retry the
   // engines rather than inherit a bad minute.

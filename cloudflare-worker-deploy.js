@@ -10,6 +10,14 @@ addEventListener("fetch", function(event) {
 // The news widget shipped with feeds whose hosts were never listed here (E24,
 // VG, TechCrunch, Hacker News are all named in CLAUDE.md), so those tabs had
 // never once loaded.
+// The only keys a share code may carry. Financial data must never appear here:
+// /config/save is unauthenticated by design, and the receiving dashboard writes
+// the result into localStorage on the origin holding the owner token.
+var SHAREABLE_CONFIG_KEYS = [
+  "stops", "stocks", "location", "feeds", "indexes",
+  "mobility", "_widgetOrder", "_theme", "_layout"
+];
+
 var ALLOWED = [
   "https://query1.finance.yahoo.com/",
   "https://query2.finance.yahoo.com/",
@@ -484,17 +492,42 @@ async function handleRequest(request) {
   if (path === "/config/save" && request.method === "POST") {
     try {
       var configData = await request.text();
+      // This route is deliberately unauthenticated so a share link works for
+      // anyone, which means the body is untrusted input from the open
+      // internet. It used to be JSON.parsed and stored VERBATIM under a
+      // guessable 8-char code, and the dashboard's ?config= loader writes
+      // whatever comes back straight into localStorage on the origin that
+      // holds the owner token. So the stored object is now rebuilt from an
+      // explicit allowlist: anything not named here never round-trips.
+      if (configData.length > 64 * 1024) {
+        return jsonResponse({error: "Config too large"}, 413);
+      }
       var parsed = JSON.parse(configData);
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+        return jsonResponse({error: "Invalid config"}, 400);
+      }
+      var safe = {};
+      for (var k = 0; k < SHAREABLE_CONFIG_KEYS.length; k++) {
+        var key = SHAREABLE_CONFIG_KEYS[k];
+        if (Object.prototype.hasOwnProperty.call(parsed, key)) safe[key] = parsed[key];
+      }
+      var dropped = Object.keys(parsed).filter(function(key) {
+        return SHAREABLE_CONFIG_KEYS.indexOf(key) < 0;
+      });
       var code = generateCode();
-      await KV.put("config_" + code, configData, {expirationTtl: 31536000});
-      return new Response(JSON.stringify({code: code}), {headers: {"Content-Type": "application/json", "Access-Control-Allow-Origin": "*"}});
+      await KV.put("config_" + code, JSON.stringify(safe), {expirationTtl: 31536000});
+      return jsonResponse({code: code, dropped: dropped});
     } catch (err) {
-      return new Response(JSON.stringify({error: "Invalid config"}), {status: 400, headers: {"Content-Type": "application/json", "Access-Control-Allow-Origin": "*"}});
+      return jsonResponse({error: "Invalid config"}, 400);
     }
   }
 
   if (path === "/config/load") {
     var code = url.searchParams.get("code");
+    // generateCode() uses this alphabet; anything else is someone probing.
+    if (code && !/^[a-hj-np-z2-9]{8}$/.test(code)) {
+      return jsonResponse({error: "Invalid code"}, 400);
+    }
     if (!code) {
       return new Response(JSON.stringify({error: "Missing code"}), {status: 400, headers: {"Content-Type": "application/json", "Access-Control-Allow-Origin": "*"}});
     }

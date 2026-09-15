@@ -85,3 +85,27 @@ Code anchors: `loadConfig()` ~L1841, `getDashboardToken()` ~L1880, `WORKER_BASE`
 - Net worth: owner's share only, or household with a co-owner split.
 - Which EV charger model was installed (affects any later energy work).
 - Spot price vs Norgespris tariff (decides whether spot-shifting logic is worth building).
+
+## 7. Local development and agent hygiene
+
+`node dev.mjs` serves `index.html` on 127.0.0.1:8765 and runs `wrangler dev` on
+127.0.0.1:8787. Both bind loopback deliberately, so neither needs a Windows
+Firewall exception — if a firewall prompt appears for Node, something has bound
+the wrong address. Cancel it and find out what.
+
+Rules for any throwaway server started while testing:
+
+- **Bind loopback explicitly**: `listen(port, '127.0.0.1')`. Bare `listen(port)`
+  binds every interface, which raises the firewall prompt and, on a network you
+  do not control, offers the served directory to anyone on it.
+- **Serve a temp directory, not the repo**, unless you are running `dev.mjs`
+  itself. `dev.mjs` serves the repo root on purpose — that is how it serves
+  `index.html` — and is safe because it binds loopback. An ad-hoc server that
+  gets the host argument wrong and serves this directory hands out
+  `spareplan-config.json`, which is gitignored precisely because it must not
+  leave the machine. Loopback is what makes either one safe; the directory is
+  what decides how bad the mistake is.
+- **Stop it when done.** A background server outlives the task that started it.
+
+`wrangler dev` watches `cloudflare-worker-deploy.js` and restarts on every write,
+so it should not be left running through a long editing session.

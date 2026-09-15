@@ -8,8 +8,8 @@ DASHBOARD_TOKEN=local-dev-token
 
 # Tier 2 (net worth, savings goals, briefs) only answers from these networks.
 # Comma-separated, any mix of:
-#   84.202.5.9/32          a CIDR, IPv4 or IPv6 (a /0 entry is ignored by design)
-#   84.202.5.9             a bare address, treated as /32 or /128
+#   203.0.113.10/32        a CIDR, IPv4 or IPv6 (a /0 entry is ignored by design)
+#   203.0.113.10           a bare address, treated as /32 or /128
 #   myhome.duckdns.org     a DDNS hostname, resolved over DNS-over-HTTPS and
 #                          cached briefly, so an ISP lease change needs no edit
 # A hostname that fails to resolve grants nothing, rather than everything.

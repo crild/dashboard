@@ -850,7 +850,10 @@
   align-items: flex-end; gap: 10px; flex-wrap: wrap;
 }
 .nwl-chips { font-size: 0.68rem; color: var(--text-secondary); min-width: 0; flex: 1 1 60%; }
-.nwl-err { color: var(--negative); }
+/* A provenance chip that reports an outage rather than a source. Colour is not
+   the only channel — the chip says so in words — it just has to be findable in
+   a secondary-grey row. */
+.nwl-chips .nwl-is-neg { color: var(--negative); }
 
 .nwl-btn {
   position: relative; overflow: hidden;
@@ -1641,6 +1644,7 @@
     }
 
     .stock-badge.positive { color: var(--positive); background: color-mix(in srgb, var(--positive) 12%, transparent); }
+    .stock-badge.moderate { color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent); }
     .stock-badge.negative { color: var(--negative); background: color-mix(in srgb, var(--negative) 12%, transparent); }
 
     .stock-chart {
@@ -2837,8 +2841,6 @@
       }
     }
   </style>
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 </head>
 <body>
   <div class="container">
@@ -3151,6 +3153,44 @@
     const WIDGET_FALLBACK = { cls: 'M', w: 3, minW: 320 };
     function widgetMeta(name) { return WIDGETS[name] || WIDGET_FALLBACK; }
 
+    // ── Widget scheduler ────────────────────────────────────────────────────
+    // Six widgets ship hidden, yet every one of them used to own a bare
+    // setInterval, so a fresh install polled Netatmo, the Hue bridge, the vibes
+    // sources and the tier-2 finance route forever for cards it never drew.
+    // One owner instead: a tick runs only while its card is on screen, and a
+    // card that comes back runs once immediately rather than waiting out the
+    // rest of its period.
+    //
+    // A task with a null widget is unconditional (the clock, the freshness
+    // sweep); an array is live when any of its cards is.
+    const scheduledTasks = [];
+
+    function widgetIsLive(widget) {
+      if (!widget) return true;
+      if (Array.isArray(widget)) return widget.some(widgetIsLive);
+      if ((getLayoutConfig().hiddenWidgets || []).includes(widget)) return false;
+      const card = document.querySelector(`.card[data-widget="${widget}"]`);
+      return !(card && card.classList.contains('collapsed'));
+    }
+
+    function scheduleWidget(widget, fn, periodMs) {
+      const task = { widget, fn, live: widgetIsLive(widget) };
+      scheduledTasks.push(task);
+      if (task.live) fn();
+      setInterval(() => { if (widgetIsLive(widget)) fn(); }, periodMs);
+    }
+
+    // Anything that changes the hidden or collapsed sets calls this, so a card
+    // the user just brought back shows current data instead of whatever it last
+    // managed to fetch.
+    function syncScheduledWidgets() {
+      scheduledTasks.forEach(task => {
+        const live = widgetIsLive(task.widget);
+        if (live && !task.live) task.fn();
+        task.live = live;
+      });
+    }
+
     // localStorage can hold corrupt JSON — a half-written value, a hand-edited
     // key, a quota failure mid-write. An unguarded JSON.parse used to throw and
     // take a whole widget down, so every read goes through this and the bad key
@@ -3180,6 +3220,8 @@
         const init = {};
         if (o.headers) init.headers = o.headers;
         if (o.cache) init.cache = o.cache;
+        if (o.method) init.method = o.method;
+        if (o.body !== undefined) init.body = o.body;
         // The timeout is the point: without it a hung upstream leaves the
         // request pending forever on a tablet nobody ever reloads.
         if (typeof AbortSignal !== 'undefined' && AbortSignal.timeout) {
@@ -3205,6 +3247,13 @@
     // No escaping helper existed anywhere in this file, yet upstream strings —
     // kommune waste fractions, feed titles, station names — go straight into
     // innerHTML on an origin that holds the Worker token in localStorage.
+    // Scene icons are stored as raw HTML entities, so they cannot go through
+    // escapeHtml without rendering as literal text. This is the one shape the
+    // picker writes; anything else in a stored config is markup, not an icon.
+    function hueSceneIcon(v) {
+      return /^&#\d{2,6};$/.test(String(v || '')) ? v : '&#9728;';
+    }
+
     function escapeHtml(v) {
       return String(v === null || v === undefined ? '' : v).replace(/[&<>"']/g, c => (
         { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
@@ -3215,6 +3264,10 @@
     // a dead widget looked freshly updated — the single most misleading thing
     // on a display nobody is watching closely. These make the stamp truthful.
     const cardLastGood = {};
+    // Whether the widget's own last attempt failed. Without this the freshness
+    // tick, seeing a last success still inside CARD_MAX_AGE, would lift the dim
+    // off a card whose body still reads "could not load".
+    const cardFailing = {};
 
     function fmtCardClock(ts) {
       const d = new Date(ts);
@@ -3226,18 +3279,28 @@
         : d.toLocaleDateString('nb-NO', { day: 'numeric', month: 'short' }) + ' ' + clock;
     }
 
-    function setCardStatus(widget, ok, reason) {
+    // `at` is when the data on screen was actually fetched, for the cards that
+    // can render something they pulled earlier — without it a widget that shows
+    // a cached answer stamps the clock at the moment it drew, which is the same
+    // lie as keeping the old stamp on a failure.
+    function setCardStatus(widget, ok, reason, refused, at) {
       const el = document.getElementById(widget + '-status');
       const card = document.querySelector(`.card[data-widget="${widget}"]`);
       if (ok) {
-        cardLastGood[widget] = Date.now();
+        cardFailing[widget] = false;
+        cardLastGood[widget] = at || Date.now();
         if (el) { el.textContent = 'Updated ' + fmtCardClock(cardLastGood[widget]); el.title = ''; }
         if (card) card.classList.remove('card-stale');
         return;
       }
+      cardFailing[widget] = true;
       const last = cardLastGood[widget];
       if (el) {
-        el.textContent = last ? 'Stale · ' + fmtCardClock(last) : 'Unavailable';
+        // A refusal — no token, off the home network, nothing configured — is not
+        // old data. "Stale · 08:14" would send the reader hunting a broken feed
+        // instead of the setting that is switched off.
+        el.textContent = refused ? (reason ? String(reason) : 'Not configured')
+          : last ? 'Stale · ' + fmtCardClock(last) : 'Unavailable';
         el.title = reason ? String(reason) : '';
       }
       if (card) card.classList.add('card-stale');
@@ -3248,29 +3311,49 @@
     // succeeding — including failure paths nobody thought to instrument.
     const CARD_MAX_AGE = {
       weather: 30 * 60000, stocks: 15 * 60000, power: 45 * 60000,
-      sensors: 15 * 60000, hue: 5 * 60000, mobility: 10 * 60000,
-      news: 30 * 60000, transit: 3 * 60000, waste: 12 * 3600000,
+      sensors: 15 * 60000, hue: 6 * 60000, mobility: 10 * 60000,
+      news: 30 * 60000, transit: 3 * 60000, waste: 24 * 3600000,
       indexes: 45 * 60000, networth: 3 * 3600000,
       nwloan: 3 * 3600000, nwstack: 3 * 3600000
     };
+
+    // End of the day of the next collection the waste card is showing, or null
+    // when it has none.
+    let wasteNextPickup = null;
+
+    function isCardStale(w, now, last) {
+      // A collection calendar does not age like a price. It is wrong when the
+      // pickup it displays has been and gone, not when the last fetch got old,
+      // so a single missed refresh must not dim a card that is still exactly
+      // right for the next three weeks.
+      if (w === 'waste' && wasteNextPickup) return now > wasteNextPickup;
+      return (now - last) > CARD_MAX_AGE[w];
+    }
 
     function checkCardFreshness() {
       const now = Date.now();
       Object.keys(CARD_MAX_AGE).forEach(w => {
         const card = document.querySelector(`.card[data-widget="${w}"]`);
         if (!card) return;
+        // The scheduler stops a hidden or collapsed card's tick on purpose, so
+        // ageing it here would have the dashboard report a fault it caused by
+        // obeying the user — and the header strip stays visible while collapsed,
+        // so that lie is the one thing still on screen. Same predicate as the
+        // scheduler's, so the two rules cannot drift apart; the stamp resumes
+        // from the next real success once the card is live again.
+        if (!widgetIsLive(w)) return;
         const last = cardLastGood[w];
         if (!last) return;                       // never succeeded; leave its own message
-        const stale = (now - last) > CARD_MAX_AGE[w];
-        card.classList.toggle('card-stale', stale);
+        const stale = isCardStale(w, now, last);
+        card.classList.toggle('card-stale', stale || !!cardFailing[w]);
         const el = document.getElementById(w + '-status');
-        if (stale && el) {
+        if (stale && el && !cardFailing[w]) {
           el.textContent = 'Stale · ' + fmtCardClock(last);
           el.title = 'No successful update since ' + fmtCardClock(last);
         }
       });
     }
-    setInterval(checkCardFreshness, 60 * 1000);
+    scheduleWidget(null, checkCardFreshness, 60 * 1000);
 
     function loadConfig() {
       const saved = localStorage.getItem('dashboard-config');
@@ -3309,12 +3392,26 @@
       Object.keys(transitWalkCache).forEach(k => delete transitWalkCache[k]);
       // Mirror to the Worker so another device inherits the real address
       // rather than the neutral default shipped in the public repo.
+      //
+      // The response has to be read. /location is tier 2, and a 403 from off the
+      // home network RESOLVES — with only a .catch() on the promise it was
+      // indistinguishable from a save that worked, so the owner changed the
+      // address, saw the success toast, and nothing had been written. The local
+      // config above is already saved either way; what this reports is whether
+      // the OTHER devices got it.
       if (getDashboardToken()) {
         workerFetch('/location', {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(loc)
-        }).catch(() => {});
+        }).then(res => {
+          if (res.ok) return;
+          showToast(res.status === 403
+            ? 'Saved on this device only — the shared address can only be changed on the home network.'
+            : 'Saved on this device only — the Worker refused (HTTP ' + res.status + ').', 5000);
+        }).catch(() => {
+          showToast('Saved on this device only — could not reach the Worker.', 5000);
+        });
       }
     }
 
@@ -3332,9 +3429,18 @@
 
     function workerFetch(path, options) {
       const token = getDashboardToken();
-      const opts = options || {};
+      const opts = Object.assign({}, options || {});
       if (token) {
         opts.headers = Object.assign({}, opts.headers || {}, { 'X-Dashboard-Token': token });
+      }
+      // Transport for every tier-2 card: without a deadline a hung Worker
+      // leaves the request pending forever, and the card sits on "Loading..."
+      // with no error and no stale badge on a tablet nobody ever reloads.
+      if (typeof AbortSignal !== 'undefined' && AbortSignal.timeout) {
+        const deadline = AbortSignal.timeout(opts.timeout || 12000);
+        opts.signal = (opts.signal && AbortSignal.any)
+          ? AbortSignal.any([opts.signal, deadline])
+          : (opts.signal || deadline);
       }
       return fetch(WORKER_URL + path, opts);
     }
@@ -3366,15 +3472,20 @@
       if (token === null) return; // cancelled
       if (token) {
         localStorage.setItem('dashboard-token', token);
-        sessionCache = null;
         showToast('Token saved — refreshing widgets');
       } else {
         localStorage.removeItem('dashboard-token');
         showToast('Token cleared');
       }
+      // The cached answer was computed under the old token, and every tier-2
+      // card is now showing a verdict that no longer applies. Waiting out a
+      // 60-minute interval to find that out is not a refresh.
+      sessionCache = null;
       updateAuthButton();
       fetchSensors();
       fetchHue();
+      fetchIndexes();
+      fetchNetWorth();
     }
 
     function updateAuthButton() {
@@ -3473,7 +3584,7 @@
     };
 
     // Re-check auto theme every 10 minutes (only if not manually overridden)
-    setInterval(() => {
+    scheduleWidget(null, () => {
       if (localStorage.getItem('dashboard-theme-manual')) return;
       const cfg = loadConfig();
       if (cfg?.themeSchedule === false) return;
@@ -3506,16 +3617,30 @@
       });
     })();
 
+    // The class on the element is the ONE owner of "this card is collapsed";
+    // the stored list is only its serialisation, always recomputed from the DOM.
+    // Two writers with two ideas of that set is how they drifted apart: hiding a
+    // collapsed widget dropped it from the list and left the class in place, and
+    // once widgetIsLive became the gate for the freshness sweep that card was
+    // excluded from staleness checks for good.
+    function persistCollapsed() {
+      const collapsed = [...document.querySelectorAll('.card.collapsed')]
+        .map(c => c.getAttribute('data-widget')).filter(Boolean);
+      localStorage.setItem('dashboard-collapsed', JSON.stringify(collapsed));
+    }
+
     function toggleCardCollapse(widget) {
       const card = document.querySelector(`.card[data-widget="${widget}"]`);
       if (!card) return;
       card.classList.toggle('collapsed');
-      const collapsed = [...document.querySelectorAll('.card.collapsed')]
-        .map(c => c.getAttribute('data-widget')).filter(Boolean);
-      localStorage.setItem('dashboard-collapsed', JSON.stringify(collapsed));
+      persistCollapsed();
       // Collapsing must clear a live reveal, or the kroner survive inside a
       // display:none subtree on a wall display.
       if (typeof nwtHide === 'function') nwtHide();
+      // Expanding gives a 0x0 Leaflet container its height back; it needs both
+      // the new size and whatever fit it had to skip while it had none.
+      if (widget === 'mobility') setTimeout(mobilityResized, 60);
+      syncScheduledWidgets();
       // Collapsing changes a card's layout weight, so re-pack. scheduleLayout
       // is a hoisted declaration further down this same <script> block.
       scheduleLayout();
@@ -3552,15 +3677,26 @@
     // ── Settings (per-widget popups, see Widget Settings section below) ──
 
     // ── Clock ──
+    // This runs every second forever, so nothing in it may be rebuilt that can
+    // be built once: each toLocaleTimeString call constructs a fresh formatter,
+    // and the weekday/month line only ever changes at midnight.
+    const clockTimeEl = document.getElementById('clock-time');
+    const clockDateEl = document.getElementById('clock-date');
+    const clockTimeFmt = new Intl.DateTimeFormat('nb-NO', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    const clockDateFmt = new Intl.DateTimeFormat('nb-NO', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+    let clockDay = null;
+
     function updateClock() {
       const now = new Date();
-      const time = now.toLocaleTimeString('nb-NO', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-      const date = now.toLocaleDateString('nb-NO', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
-      document.getElementById('clock-time').textContent = time;
-      document.getElementById('clock-date').textContent = date.charAt(0).toUpperCase() + date.slice(1);
+      if (clockTimeEl) clockTimeEl.textContent = clockTimeFmt.format(now);
+      const day = now.getDate();
+      if (day !== clockDay) {
+        clockDay = day;
+        const date = clockDateFmt.format(now);
+        if (clockDateEl) clockDateEl.textContent = date.charAt(0).toUpperCase() + date.slice(1);
+      }
     }
-    updateClock();
-    setInterval(updateClock, 1000);
+    scheduleWidget(null, updateClock, 1000);
 
     // ── Weather ──
     const WMO_CODES = {
@@ -3581,8 +3717,9 @@
         const loc = getWeather();
         document.querySelector('#weather-status').closest('.card').querySelector('.card-title').textContent = `Weather — ${loc.name}`;
         const url = `https://api.open-meteo.com/v1/forecast?latitude=${loc.lat}&longitude=${loc.lon}&current=temperature_2m,apparent_temperature,weather_code,wind_speed_10m,precipitation,relative_humidity_2m&hourly=temperature_2m,weather_code,precipitation_probability&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_sum&timezone=auto&forecast_days=3`;
-        const res = await fetch(url);
-        const data = await res.json();
+        const r = await safeJson(url);
+        if (!r.ok) throw new Error(r.reason);
+        const data = r.data;
         const c = data.current;
         const [desc, icon] = WMO_CODES[c.weather_code] || ['Unknown', '🌡'];
 
@@ -3658,10 +3795,10 @@
         setCardStatus('weather', true);
       } catch (e) {
         document.getElementById('weather-content').innerHTML = `<div class="error">Could not load weather</div>`;
+        setCardStatus('weather', false, e && e.message);
       }
     }
-    fetchWeather();
-    setInterval(fetchWeather, 10 * 60 * 1000);
+    scheduleWidget('weather', fetchWeather, 10 * 60 * 1000);
 
     function drawWeatherTempChart(canvas, data) {
       if (!canvas || data.length < 2) return;
@@ -4096,6 +4233,16 @@
 
     async function fetchStocks() {
       const stocks = getStocks();
+      // Clearing the watchlist under Edit leaves `[]`, which survives the ??
+      // default in getStocks. Nothing was asked of Yahoo, so nothing there can
+      // have failed: reported as an outage this sends the reader hunting a
+      // market feed that is fine.
+      if (!stocks.length) {
+        document.getElementById('stocks-content').innerHTML =
+          `<div class="loading">No symbols selected &mdash; use Edit to add some.</div>`;
+        setCardStatus('stocks', false, 'No symbols selected', true);
+        return;
+      }
       try {
         // 7-day cutoff: midnight 7 days ago — all instruments start from the same anchor
         const sevenDaysAgo = new Date();
@@ -4153,7 +4300,7 @@
         if (!results.length) {
           document.getElementById('stocks-content').innerHTML =
             `<div class="error">No market data available right now.</div>`;
-          setCardStatus('stocks', false, failedSymbols.join(', '));
+          setCardStatus('stocks', false, 'No data for: ' + failedSymbols.join(', '));
           return;
         }
 
@@ -4224,10 +4371,10 @@
         }
       } catch (e) {
         document.getElementById('stocks-content').innerHTML = `<div class="error">Could not load market data. The CORS proxy may be temporarily unavailable.</div>`;
+        setCardStatus('stocks', false, e && e.message);
       }
     }
-    fetchStocks();
-    setInterval(fetchStocks, 5 * 60 * 1000);
+    scheduleWidget('stocks', fetchStocks, 5 * 60 * 1000);
 
     // Redraw charts on theme change so colors update
     const origToggle = toggleTheme;
@@ -4494,21 +4641,22 @@
         const yesterdayUrl = `https://www.hvakosterstrommen.no/api/v1/prices/${fmt(yesterday)}_${zone}.json`;
 
         const [todayRes, tomorrowRes, yesterdayRes] = await Promise.all([
-          fetch(todayUrl),
-          fetch(tomorrowUrl).catch(() => null),
-          fetch(yesterdayUrl).catch(() => null)
+          safeJson(todayUrl),
+          safeJson(tomorrowUrl),
+          safeJson(yesterdayUrl)
         ]);
 
-        const todayData = await todayRes.json();
+        if (!todayRes.ok) throw new Error(todayRes.reason);
+        const todayData = todayRes.data;
         const currentHour = now.getHours();
 
         let allPrices = [];
-        let hasTmrw = tomorrowRes && tomorrowRes.ok;
+        let hasTmrw = tomorrowRes.ok;
         let hasYest = false;
 
         if (hasTmrw) {
           // Today + Tomorrow
-          const tomorrowData = await tomorrowRes.json();
+          const tomorrowData = tomorrowRes.data;
           allPrices = todayData.map(p => ({
             value: p.NOK_per_kWh * 100,
             hour: new Date(p.time_start).getHours(),
@@ -4518,10 +4666,10 @@
             hour: new Date(p.time_start).getHours(),
             day: 'second'
           })));
-        } else if (yesterdayRes && yesterdayRes.ok) {
+        } else if (yesterdayRes.ok) {
           // Yesterday + Today
           hasYest = true;
-          const yesterdayData = await yesterdayRes.json();
+          const yesterdayData = yesterdayRes.data;
           allPrices = yesterdayData.map(p => ({
             value: p.NOK_per_kWh * 100,
             hour: new Date(p.time_start).getHours(),
@@ -4605,15 +4753,17 @@
         setCardStatus('power', true);
       } catch (e) {
         document.getElementById('power-content').innerHTML = `<div class="error">Could not load power prices</div>`;
+        setCardStatus('power', false, e && e.message);
       }
     }
-    fetchPower();
-    setInterval(fetchPower, 15 * 60 * 1000);
+    scheduleWidget('power', fetchPower, 15 * 60 * 1000);
 
     // ── Sensors (Netatmo) ──
+    // Same thresholds and same three tiers as getCO2Color, so the room badge and
+    // the header ticker never describe one reading as two different things.
     function getCO2Class(co2) {
       if (co2 < 800) return 'positive';
-      if (co2 < 1200) return '';
+      if (co2 < 1200) return 'moderate';
       return 'negative';
     }
 
@@ -4819,20 +4969,43 @@
 
     // One session lookup shared by every tier-2 widget, cached briefly so a
     // refresh-all does not ask the Worker the same question five times over.
+    // One session lookup shared by every tier-2 widget, cached briefly so a
+    // refresh-all does not ask the Worker the same question five times over.
+    // What is cached is the in-flight request, not its answer: on a cold load
+    // several widgets ask within the same tick, and caching only the settled
+    // value let every one of them start its own /session call.
     let sessionCache = null, sessionCacheAt = 0;
-    async function getDashboardSession(force) {
+    // {token:false, home:false} is returned both for a Worker that answered
+    // "not home" and for one that could not be reached at all. Only the second
+    // carries `status` or `error`, and only the second is a fault: a card that
+    // renders "only on the home network" because the network is down states a
+    // confident diagnosis it has no evidence for.
+    function sessionFault(sess) {
+      if (!sess) return 'no session answer';
+      if (sess.error) return 'could not reach the dashboard service';
+      if (sess.status) return 'dashboard service answered HTTP ' + sess.status;
+      return '';
+    }
+
+    function getDashboardSession(force) {
       if (!force && sessionCache && (Date.now() - sessionCacheAt) < 60000) return sessionCache;
-      let result;
-      try {
-        const res = await workerFetch('/session');
-        result = res.ok ? await res.json() : { token: false, home: false, status: res.status };
-      } catch (e) {
-        // Unreachable Worker is NOT "at home": fail closed, same as the server.
-        result = { token: false, home: false, error: e.message };
-      }
-      sessionCache = result;
       sessionCacheAt = Date.now();
-      return result;
+      sessionCache = (async () => {
+        try {
+          const res = await workerFetch('/session');
+          return res.ok ? await res.json() : { token: false, home: false, status: res.status };
+        } catch (e) {
+          // Unreachable Worker is NOT "at home": fail closed, same as the server.
+          return { token: false, home: false, error: e.message };
+        }
+      })().catch(e => {
+        // A shared promise must never reject: it is awaited by callers that
+        // have no catch of their own. A rejected one is also not an answer, so
+        // it is dropped rather than held for the next minute.
+        sessionCache = null;
+        return { token: false, home: false, error: e && e.message };
+      });
+      return sessionCache;
     }
 
     async function syncLocationFromWorker() {
@@ -4855,21 +5028,28 @@
       const sensorsEl = document.getElementById('sensors-content');
       if (!getDashboardToken()) {
         sensorsEl.innerHTML = `<div style="color:var(--text-secondary);font-size:0.85rem;line-height:1.5;">Requires the dashboard owner token.<br>Use the lock button in the header.</div>`;
-        setCardStatus('sensors', false, 'no token');
+        setCardStatus('sensors', false, 'no token', true);
         return;
       }
       // Indoor climate is a live readout of conditions inside the house, so it
       // is tier 2: the token alone must not expose it from anywhere in the world.
       const sensorsSession = await getDashboardSession();
+      const sensorsFault = sessionFault(sensorsSession);
+      if (sensorsFault) {
+        sensorsEl.innerHTML = `<div style="color:var(--text-secondary);font-size:0.85rem;line-height:1.5;">Could not reach the dashboard service.</div>`;
+        setCardStatus('sensors', false, sensorsFault);
+        return;
+      }
       if (!sensorsSession.home) {
         sensorsEl.innerHTML = `<div style="color:var(--text-secondary);font-size:0.85rem;line-height:1.5;">Sensors are only shown on the home network.</div>`;
-        setCardStatus('sensors', false, 'not on home network');
+        setCardStatus('sensors', false, 'not on home network', true);
         return;
       }
       try {
         const res = await workerFetch('/netatmo/data');
         if (res.status === 401 || res.status === 403) {
           document.getElementById('sensors-content').innerHTML = `<div style="color:var(--text-secondary);font-size:0.85rem;line-height:1.5;">Requires Netatmo authorization.<br>Dashboard owner: <a href="#" onclick="openWorkerAuth('/auth/netatmo'); return false;" style="color:var(--accent)">authorize here</a></div>`;
+          setCardStatus('sensors', false, 'needs Netatmo authorization', true);
           return;
         }
         const data = await res.json();
@@ -4929,7 +5109,7 @@
           if (c.humidity !== undefined) details.push(c.humidity + '% humidity');
           if (c.co2 !== undefined) {
             var co2Label = c.co2 < 800 ? 'Good' : (c.co2 < 1200 ? 'Moderate' : 'High');
-            details.push('<span class="stock-change ' + getCO2Class(c.co2) + '">' + c.co2 + ' ppm · ' + co2Label + '</span>');
+            details.push('<span class="stock-badge ' + getCO2Class(c.co2) + '">' + c.co2 + ' ppm · ' + co2Label + '</span>');
           }
           if (c.pressure !== undefined) details.push(c.pressure + ' hPa');
           if (c.rain !== undefined) details.push(c.rain + ' mm rain');
@@ -5009,14 +5189,26 @@
         });
       } catch (e) {
         document.getElementById('sensors-content').innerHTML = '<div class="error">Could not load sensor data</div>';
+        setCardStatus('sensors', false, e && e.message);
       }
     }
-    fetchSensors();
-    setInterval(fetchSensors, 5 * 60 * 1000);
+    scheduleWidget('sensors', fetchSensors, 5 * 60 * 1000);
 
     // ── Hue Lights ──
-    let allHueScenes = {};
     let activeHueScene = null;
+    let hueConfirmTimer = null;
+
+    // The bridge ACKs a command the moment it accepts it, well before the fade
+    // has run, so a read fired straight after the POST can still come back with
+    // the previous any_on — and that stale truth then overwrites the highlight
+    // the tap set optimistically, and nothing corrects it until the next poll.
+    // Hue's default transition is ~400 ms; 1200 ms clears it with room to
+    // spare. One handle, reset on every command, so a run of taps confirms
+    // once at the end instead of stacking timers.
+    function confirmHueState() {
+      clearTimeout(hueConfirmTimer);
+      hueConfirmTimer = setTimeout(() => { hueConfirmTimer = null; fetchHue(); }, 1200);
+    }
 
     function getHueConfig() {
       const cfg = loadConfig();
@@ -5024,29 +5216,37 @@
     }
 
     async function fetchHue() {
+      // Without the owner token the Worker answers 401, which the branch below
+      // would blame on a missing Hue authorization — sending the owner off to
+      // re-authorize a bridge that was never the problem.
+      if (!getDashboardToken()) {
+        document.getElementById('hue-content').innerHTML = `<div style="color:var(--text-secondary);font-size:0.85rem;line-height:1.5;">Requires the dashboard owner token.<br>Use the lock button in the header.</div>`;
+        setCardStatus('hue', false, 'no token', true);
+        return;
+      }
       try {
         const res = await workerFetch('/hue/groups');
         if (res.status === 401 || res.status === 403) {
           document.getElementById('hue-content').innerHTML = `<div style="color:var(--text-secondary);font-size:0.85rem;line-height:1.5;">Requires Hue authorization.<br>Dashboard owner: <a href="#" onclick="openWorkerAuth('/auth/hue'); return false;" style="color:var(--accent)">authorize here</a></div>`;
+          setCardStatus('hue', false, 'needs Hue authorization', true);
           return;
         }
+        if (!res.ok) throw new Error('HTTP ' + res.status);
         const groupData = await res.json();
 
         // Check if any lights are on
         const allGroup = groupData['0'];
         const anyOn = allGroup && allGroup.state && allGroup.state.any_on;
 
-        // Load scenes
-        const scenesRes = await workerFetch('/hue/scenes');
-        if (scenesRes.ok) {
-          allHueScenes = await scenesRes.json();
-        }
-
         const selectedScenes = getHueConfig();
 
+        // The bridge answered, but nothing has been chosen to show. A card whose
+        // whole body is "click Edit" is not an updated card, and "Updated 08:14"
+        // over it reads as a working scene list that happens to be empty.
+        // Refused rather than failed: nothing here is broken.
         if (selectedScenes.length === 0) {
           document.getElementById('hue-content').innerHTML = '<div style="color:var(--text-secondary);font-size:0.85rem;">No scenes configured. Click Edit to choose scenes.</div>';
-          setCardStatus('hue', true);
+          setCardStatus('hue', false, 'No scenes configured', true);
           return;
         }
 
@@ -5056,8 +5256,8 @@
 
         selectedScenes.forEach(s => {
           const isActive = activeHueScene === s.id && anyOn;
-          html += '<button class="hue-scene-btn' + (isActive ? ' active' : '') + '" onclick="activateHueScene(\'' + s.id + '\', \'' + s.group + '\')">' +
-            '<span class="hue-scene-icon">' + (s.icon || '&#9728;') + '</span>' + s.label + '</button>';
+          html += '<button class="hue-scene-btn' + (isActive ? ' active' : '') + '" onclick="activateHueScene(\'' + escapeHtml(s.id) + '\', \'' + escapeHtml(s.group) + '\')">' +
+            '<span class="hue-scene-icon">' + hueSceneIcon(s.icon) + '</span>' + escapeHtml(s.label) + '</button>';
         });
 
         html += '</div>';
@@ -5065,6 +5265,7 @@
         setCardStatus('hue', true);
       } catch (e) {
         document.getElementById('hue-content').innerHTML = '<div class="error">Could not connect to Hue</div>';
+        setCardStatus('hue', false, e && e.message);
       }
     }
 
@@ -5079,6 +5280,7 @@
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ scene: sceneId, group: groupId })
         });
+        confirmHueState();
       } catch (e) {}
     }
 
@@ -5092,11 +5294,16 @@
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ group: '0', on: false })
         });
+        confirmHueState();
       } catch (e) {}
     }
 
-    fetchHue();
-    setInterval(fetchHue, 60 * 1000);
+    // These lights are switched from the Hue app, wall switches and bridge
+    // routines as well as from here, and none of that reaches confirmHueState —
+    // so the poll period is exactly how long the card can show the wrong scene.
+    // Two minutes trades a small JSON response, suppressed entirely while the
+    // card is hidden or collapsed, against halving that window.
+    scheduleWidget('hue', fetchHue, 2 * 60 * 1000);
 
     // ── Waste collection ──
     const WASTE_ICONS = {
@@ -5121,23 +5328,24 @@
         const WORKER = WORKER_URL;
         if (!wasteCfg.gatekode) {
           document.getElementById('waste-content').innerHTML = '<div class="error">No address set. <a href="#" onclick="openWidgetSettings(\'waste\');return false;" style="color:var(--accent)">Set your address</a></div>';
+          setCardStatus('waste', false, 'no address set', true);
           return;
         }
 
-        const res = await fetch(`${WORKER}/waste/calendar?kommunenr=${wasteCfg.kommunenr}&gatekode=${wasteCfg.gatekode}&gatenavn=${encodeURIComponent(wasteCfg.gatenavn || '')}&husnr=${encodeURIComponent(wasteCfg.husnr || '1')}`);
-        let data;
-        try {
-          data = await res.json();
-        } catch (parseErr) {
-          // The upstream kommune API serves HTML on failure; res.json() would
-          // throw and take the whole widget down.
+        // The upstream kommune API serves HTML on failure and can hang; safeJson
+        // turns both into a reason string instead of taking the widget down.
+        const r = await safeJson(`${WORKER}/waste/calendar?kommunenr=${wasteCfg.kommunenr}&gatekode=${wasteCfg.gatekode}&gatenavn=${encodeURIComponent(wasteCfg.gatenavn || '')}&husnr=${encodeURIComponent(wasteCfg.husnr || '1')}`);
+        if (!r.ok) {
           document.getElementById('waste-content').innerHTML =
             '<div class="error">Waste service returned an unexpected response. It may be temporarily down.</div>';
+          setCardStatus('waste', false, r.reason);
           return;
         }
+        const data = r.data;
         if (data && data.error) {
           document.getElementById('waste-content').innerHTML =
             `<div class="error">${String(data.error).replace(/[<>&]/g, '')}</div>`;
+          setCardStatus('waste', false, String(data.error));
           return;
         }
 
@@ -5206,6 +5414,7 @@
           let fractions = Array.isArray(data) ? data : (data?.Tommedatoer || []);
           if (!fractions || fractions.length === 0) {
             document.getElementById('waste-content').innerHTML = '<div class="error">No collection data found for this address.</div>';
+            setCardStatus('waste', false, 'no collection data for this address');
             return;
           }
           const NORKART_FRACTIONS = {
@@ -5258,6 +5467,7 @@
 
         if (upcoming.length === 0 && past.length === 0) {
           document.getElementById('waste-content').innerHTML = '<div class="error">No collection data found.</div>';
+          setCardStatus('waste', false, 'no collection data');
           return;
         }
 
@@ -5291,6 +5501,15 @@
           + upcoming.map(u => renderWasteItem(u, false)).join('');
 
         document.getElementById('waste-content').innerHTML = html;
+        // The bins are still today's information until the day is over, so the
+        // watchdog judges this card against the end of the pickup day.
+        if (upcoming.length) {
+          const nextPickup = new Date(upcoming[0].date);
+          nextPickup.setHours(23, 59, 59, 999);
+          wasteNextPickup = nextPickup.getTime();
+        } else {
+          wasteNextPickup = null;
+        }
         setCardStatus('waste', true);
         const wasteStatusEl = document.getElementById('waste-status');
         if (approximateAddress) wasteStatusEl.textContent = 'Nearest address · ' + wasteStatusEl.textContent;
@@ -5299,14 +5518,19 @@
           : '';
       } catch (e) {
         document.getElementById('waste-content').innerHTML = '<div class="error">Could not load waste schedule.</div>';
+        setCardStatus('waste', false, e && e.message);
       }
     }
-    fetchWaste();
-    setInterval(fetchWaste, 6 * 60 * 60 * 1000); // Refresh every 6 hours
+    scheduleWidget('waste', fetchWaste, 6 * 60 * 60 * 1000); // Refresh every 6 hours
 
     // ── Mobility (scooters & bikes) ──
     let mobilityMap = null;
     let mobilityMarkers = [];
+    // The same markers, keyed by vehicle or station id. rebuildMobilityMarkers
+    // reconciles against this rather than destroying the lot, so a pan keeps the
+    // markers it already had — including whichever one is holding a popup open.
+    // mobilityMarkers stays the array every other reader iterates.
+    const mobilityMarkerIndex = new Map();
     let mobilityTransitMarkers = [];
     let mobilityLocationMarker = null;
     let mobilityCenter = null; // { lat, lon, name }
@@ -5316,6 +5540,7 @@
     let mobilityAllBikeStations = []; // cached for legend recounts
     let mobilityRefreshing = false;
     let mobilityInitialLoad = true;
+    let mobilityPendingFit = false; // a refresh landed while the container was 0x0
     const mobilityHidden = new Set(); // provider names toggled off
 
     // Entur rate-limits anonymous GBFS callers: without this header the house
@@ -5370,7 +5595,53 @@
       localStorage.setItem('dashboard-config', JSON.stringify(cfg));
     }
 
-    function initMobilityUI() {
+    // Leaflet used to sit in <head>, where its CSS blocked the first paint and
+    // its script blocked the parser for every visitor — including the ones who
+    // never open the map. It is pulled in the first time a map is actually
+    // built instead.
+    let leafletLoading = null;
+    let leafletFailures = 0;
+    let leafletRetryAfter = 0;
+    function loadLeaflet() {
+      if (typeof L !== 'undefined') return Promise.resolve();
+      if (!leafletLoading) {
+        // The mobility tick calls this every 205 s for as long as the map is
+        // missing. Giving up for good would leave the wall tablet — which is
+        // never reloaded — without a map until someone notices, so it backs
+        // off instead: an outage costs a handful of attempts an hour, and the
+        // map returns by itself when the CDN does.
+        if (Date.now() < leafletRetryAfter) return Promise.reject(new Error('Leaflet failed to load'));
+        const cssEl = document.createElement('link');
+        cssEl.rel = 'stylesheet';
+        cssEl.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
+        const jsEl = document.createElement('script');
+        jsEl.src = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
+        const css = new Promise(resolve => {
+          // A stylesheet that never arrives costs looks, not function, so this
+          // half resolves either way; only the script is worth failing on.
+          cssEl.onload = cssEl.onerror = () => resolve();
+          document.head.appendChild(cssEl);
+        });
+        const js = new Promise((resolve, reject) => {
+          jsEl.onload = () => resolve();
+          jsEl.onerror = () => reject(new Error('Leaflet failed to load'));
+          document.head.appendChild(jsEl);
+        });
+        leafletLoading = Promise.all([css, js]).catch(e => {
+          // Left in place, the dead pair accumulates a <link> and a <script>
+          // in <head> per attempt for the whole outage.
+          cssEl.remove();
+          jsEl.remove();
+          leafletLoading = null;
+          leafletFailures++;
+          leafletRetryAfter = Date.now() + Math.min(30 * 60000, 60000 * Math.pow(2, leafletFailures - 1));
+          throw e;
+        });
+      }
+      return leafletLoading;
+    }
+
+    async function initMobilityUI() {
       const loc = getMobilityAddress();
       mobilityCenter = { lat: loc.lat, lon: loc.lon, name: loc.name };
       document.getElementById('mobility-content').innerHTML = `
@@ -5398,8 +5669,18 @@
           </div>
         </div>
         <div class="mobility-legend" id="mobility-legend"></div>`;
+      try {
+        await loadLeaflet();
+      } catch (e) {
+        document.getElementById('mobility-content').innerHTML = '<div class="error">Could not load the map library</div>';
+        setCardStatus('mobility', false, e && e.message);
+        return;
+      }
       const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
-      mobilityMap = L.map('mobility-map', { zoomControl: false, attributionControl: true }).setView([loc.lat, loc.lon], 16);
+      // minZoom keeps a degenerate fit off the whole planet: a fit computed
+      // while the container is 0x0 clamps to zoom 0, where the visible-bounds
+      // filter spans -285°..+306° and stops filtering anything.
+      mobilityMap = L.map('mobility-map', { zoomControl: false, attributionControl: true, minZoom: 12 }).setView([loc.lat, loc.lon], 16);
       L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
         attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a>',
         maxZoom: 19,
@@ -5409,8 +5690,9 @@
         .bindPopup(loc.name).addTo(mobilityMap);
       setTimeout(() => mobilityMap.invalidateSize(), 200);
 
-      // Update legend counts when user zooms or pans
-      mobilityMap.on('moveend', updateMobilityLegend);
+      // Panning is what brings markers outside the old view into existence,
+      // and what the legend counts.
+      mobilityMap.on('moveend', () => { rebuildMobilityMarkers(); updateMobilityLegend(); });
 
       // Prevent nav buttons from triggering map drag
       const navEl = document.getElementById('mobility-map-nav');
@@ -5438,6 +5720,18 @@
         });
       }
 
+    }
+
+    // Leaflet measures its container, and a hidden or collapsed card measures
+    // 0x0. Anything that gives the card its height back calls this, so a
+    // refresh that had to skip the fit and the markers gets them now.
+    function mobilityResized() {
+      if (!mobilityMap) return;
+      mobilityMap.invalidateSize();
+      if (!mobilityPendingFit || mobilityMap.getSize().x === 0 || mobilityRefreshing) return;
+      mobilityPendingFit = false;
+      mobilityInitialLoad = true;
+      refreshMobilityData();
     }
 
     function setMobilityCenter(lat, lon, name, skipSave) {
@@ -5574,18 +5868,37 @@
       setMobilityCenter(r.latitude, r.longitude, r.name);
     }
 
+    // Both routers are free community servers, and the card re-routed on every
+    // refresh cycle. Rounding to ~11 m lets a vehicle that shuffled a few
+    // metres reuse the line already drawn for it.
+    const walkRouteCache = new Map();
+    const WALK_ROUTE_TTL = 15 * 60 * 1000;
+
     async function fetchWalkingRoute(fromLat, fromLon, toLat, toLon) {
+      const key = [fromLat, fromLon, toLat, toLon].map(n => n.toFixed(4)).join(',');
+      const hit = walkRouteCache.get(key);
+      if (hit && Date.now() - hit.at < WALK_ROUTE_TTL) return hit.route;
+      if (walkRouteCache.size > 200) {
+        const cutoff = Date.now() - WALK_ROUTE_TTL;
+        walkRouteCache.forEach((v, k) => { if (v.at <= cutoff) walkRouteCache.delete(k); });
+      }
+      // A miss is cached too: a router that just failed is usually still down a
+      // minute later, and the straight-line estimate is the documented fallback.
+      const remember = (route) => { walkRouteCache.set(key, { at: Date.now(), route }); return route; };
       // Use FOSSGIS OSRM foot server (dedicated pedestrian profile, handles street crossings properly)
       try {
         const url = `https://routing.openstreetmap.de/routed-foot/route/v1/driving/${fromLon},${fromLat};${toLon},${toLat}?overview=full&geometries=geojson`;
-        const res = await fetch(url);
-        const data = await res.json();
+        // Short deadline on purpose: the map clears its markers before routing,
+        // so a stalled router blanks the card for as long as it stalls. Better
+        // to give up quickly and let the caller draw the straight-line estimate.
+        const r = await safeJson(url, { timeout: 5000 });
+        const data = r.ok ? r.data : {};
         if (data.code === 'Ok' && data.routes && data.routes.length > 0) {
           const route = data.routes[0];
           const distanceM = Math.round(route.distance);
           const durationMin = Math.round(route.duration / 60);
           const coords = route.geometry.coordinates.map(c => [c[1], c[0]]);
-          return { coords, durationMin, distanceM };
+          return remember({ coords, durationMin, distanceM });
         }
       } catch {}
       // Fallback to Valhalla if FOSSGIS is down
@@ -5596,17 +5909,17 @@
           units: 'km'
         });
         const url = `https://valhalla1.openstreetmap.de/route?json=${encodeURIComponent(params)}`;
-        const res = await fetch(url);
-        const data = await res.json();
+        const r = await safeJson(url, { timeout: 5000 });
+        const data = r.ok ? r.data : {};
         if (data.trip && data.trip.legs && data.trip.legs.length > 0) {
           const leg = data.trip.legs[0];
           const durationMin = Math.round(leg.summary.time / 60);
           const distanceM = Math.round(leg.summary.length * 1000);
           const coords = decodePolyline(leg.shape, 6);
-          return { coords, durationMin, distanceM };
+          return remember({ coords, durationMin, distanceM });
         }
       } catch {}
-      return null;
+      return remember(null);
     }
 
     function decodePolyline(encoded, precision) {
@@ -5654,6 +5967,109 @@
         const distStr = dist >= 1 ? `${dist.toFixed(1)} km` : `${Math.round(dist * 1000)} m`;
         walkOverlay.innerHTML = `&#128694; ${name}<br><strong>~${walkMin} min</strong> · ${distStr}${infoStr}`;
       }
+    }
+
+    // GBFS gives every vehicle and every station an id that survives a refresh,
+    // which is what lets a pan keep the markers it already has. Position is the
+    // fallback for a feed that omits one: two of them never share a coordinate.
+    function mobilityMarkerKey(providerId, id, lat, lon) {
+      return providerId + ':' + (id !== undefined && id !== null && id !== '' ? id : lat + ',' + lon);
+    }
+
+    function clearMobilityMarkers() {
+      mobilityMarkerIndex.forEach(m => m.remove());
+      mobilityMarkerIndex.clear();
+      mobilityMarkers = [];
+    }
+
+    // Markers exist only for what the current view shows — the city-wide feed
+    // is 9 600 vehicles and 268 stations, and building all of them cost a
+    // second of main thread for the couple of dozen on screen. Panning is what
+    // repopulates them, so a refresh and the moveend handler both come here.
+    //
+    // It reconciles; it does not demolish. bindPopup registers `remove:
+    // closePopup` on the layer and popups autoPan by default, so tapping a
+    // marker near the edge moves the map, fires moveend, and a tear-down pass
+    // would destroy the very marker holding the popup that caused the pan — the
+    // popup shutting the instant it opened. An ordinary drag did the same to any
+    // popup left open.
+    function rebuildMobilityMarkers() {
+      if (!mobilityMap || mobilityMap.getSize().x === 0) return;
+      const viewBounds = mobilityMap.getBounds();
+
+      // key -> what the feed says this vehicle or station should look like now.
+      const wanted = new Map();
+
+      mobilityAllScooters.forEach(v => {
+        if (!viewBounds.contains([v.lat, v.lon])) return;
+        const prov = v.provider;
+        const battery = v.current_fuel_percent != null ? Math.round(v.current_fuel_percent * 100) : null;
+        const rangeKm = v.current_range_meters != null ? (v.current_range_meters / 1000).toFixed(1) : null;
+        wanted.set(mobilityMarkerKey(prov.id, v.bike_id, v.lat, v.lon), {
+          lat: v.lat, lon: v.lon, provName: prov.name, color: prov.color,
+          ring: battery, bikes: null, docks: null,
+          popup: `<strong>${prov.name}</strong>${battery != null ? `<br>Battery: ${battery}%` : ''}${rangeKm ? `<br>Range: ${rangeKm} km` : ''}`
+        });
+      });
+
+      mobilityAllBikeStations.forEach(s => {
+        if (!viewBounds.contains([s.lat, s.lon])) return;
+        const avail = s.status.num_bikes_available || 0;
+        const docks = s.status.num_docks_available || 0;
+        const total = avail + docks;
+        wanted.set(mobilityMarkerKey('oslobysykkel', s.station_id, s.lat, s.lon), {
+          lat: s.lat, lon: s.lon, provName: 'Bysykkel', color: BYSYKKEL_COLOR,
+          ring: total > 0 ? Math.round((avail / total) * 100) : null,
+          bikes: avail, docks: docks,
+          popup: `<strong>${s.name}</strong><br>${avail} bikes · ${docks} docks`
+        });
+      });
+
+      // Only what actually left the viewport goes — and never the one holding an
+      // open popup, whose own autoPan is very often what triggered this pass.
+      mobilityMarkerIndex.forEach((marker, key) => {
+        if (wanted.has(key)) return;
+        if (marker.isPopupOpen && marker.isPopupOpen()) return;
+        marker.remove();
+        mobilityMarkerIndex.delete(key);
+      });
+
+      wanted.forEach((spec, key) => {
+        let marker = mobilityMarkerIndex.get(key);
+        if (!marker) {
+          marker = L.marker([spec.lat, spec.lon], { icon: createScooterIcon(spec.color, spec.ring) })
+            .bindPopup(spec.popup);
+          marker.on('click', () => routeToMarker(marker));
+          marker._ring = spec.ring;
+          marker._popupHtml = spec.popup;
+          mobilityMarkerIndex.set(key, marker);
+        } else {
+          // setPopupContent, not bindPopup: rebinding an open popup closes it.
+          // Both are guarded on a change because a pan repeats every marker it
+          // keeps, and neither is free.
+          if (marker._popupHtml !== spec.popup) {
+            marker.setPopupContent(spec.popup);
+            marker._popupHtml = spec.popup;
+          }
+          if (marker._ring !== spec.ring) {
+            marker.setIcon(createScooterIcon(spec.color, spec.ring));
+            marker._ring = spec.ring;
+          }
+          const ll = marker.getLatLng();
+          if (ll.lat !== spec.lat || ll.lng !== spec.lon) marker.setLatLng([spec.lat, spec.lon]);
+        }
+        marker._provName = spec.provName;
+        marker._battery = spec.ring;
+        marker._bikes = spec.bikes;
+        marker._docks = spec.docks;
+        if (mobilityHidden.has(spec.provName)) {
+          if (mobilityMap.hasLayer(marker)) marker.remove();
+        } else if (!mobilityMap.hasLayer(marker)) {
+          marker.addTo(mobilityMap);
+        }
+      });
+
+      mobilityMarkers = Array.from(mobilityMarkerIndex.values());
     }
 
     function updateMobilityLegend() {
@@ -5721,31 +6137,20 @@
       });
     }
 
-    // Find the actual closest scooter/bike by walking distance among the 5 Euclidean-nearest
+    // Route to the Euclidean-nearest candidate only. Routing the five nearest
+    // and keeping the shortest walk occasionally beat it by a block, and cost
+    // five requests to a free community router on every refresh cycle.
     // candidates is an array of { lat, lon, name } objects
     async function findNearestByWalking(candidates) {
       if (!mobilityCenter || candidates.length === 0) return null;
-      const sorted = [...candidates].sort((a, b) =>
-        distanceKm(mobilityCenter.lat, mobilityCenter.lon, a.lat, a.lon) -
-        distanceKm(mobilityCenter.lat, mobilityCenter.lon, b.lat, b.lon)
-      );
-      const top5 = sorted.slice(0, 5);
-      if (top5.length === 1) {
-        const route = await fetchWalkingRoute(mobilityCenter.lat, mobilityCenter.lon, top5[0].lat, top5[0].lon);
-        return { candidate: top5[0], route };
+      let nearest = candidates[0];
+      let nearestDist = distanceKm(mobilityCenter.lat, mobilityCenter.lon, nearest.lat, nearest.lon);
+      for (let i = 1; i < candidates.length; i++) {
+        const d = distanceKm(mobilityCenter.lat, mobilityCenter.lon, candidates[i].lat, candidates[i].lon);
+        if (d < nearestDist) { nearestDist = d; nearest = candidates[i]; }
       }
-      const routes = await Promise.all(top5.map(c =>
-        fetchWalkingRoute(mobilityCenter.lat, mobilityCenter.lon, c.lat, c.lon)
-      ));
-      let best = null;
-      routes.forEach((route, i) => {
-        if (route && (!best || route.distanceM < best.route.distanceM)) {
-          best = { candidate: top5[i], route };
-        }
-      });
-      // Fallback to Euclidean nearest if all routes failed
-      if (!best) return { candidate: top5[0], route: null };
-      return best;
+      const route = await fetchWalkingRoute(mobilityCenter.lat, mobilityCenter.lon, nearest.lat, nearest.lon);
+      return { candidate: nearest, route };
     }
 
     // Show walking route to nearest visible scooter/bike, using walking distance comparison
@@ -5860,9 +6265,15 @@
     }
 
     function refreshAllWidgets(manual) {
-      fetchWeather(); fetchStocks(); fetchPower(); fetchSensors();
-      fetchHue(); fetchWaste(); fetchNews(); fetchTransit(); fetchIndexes();
-      fetchNetWorth();
+      // Manual means the user asked for everything, cards they cannot see
+      // included. A wake or a reconnect honours the same hidden/collapsed rule
+      // the scheduler applies to every tick, or it replays the whole boot storm
+      // for six widgets that are not on screen.
+      const run = (widget, fn) => { if (manual || widgetIsLive(widget)) fn(); };
+      run('weather', fetchWeather); run('stocks', fetchStocks); run('power', fetchPower);
+      run('sensors', fetchSensors); run('hue', fetchHue); run('waste', fetchWaste);
+      run('news', fetchNews); run('transit', fetchTransit); run('indexes', fetchIndexes);
+      run(['networth', 'nwloan', 'nwstack'], fetchNetWorth);
       refreshMobilityData(manual);
     }
 
@@ -5881,6 +6292,9 @@
       scheduleLayout();
     });
     window.addEventListener('online', () => {
+      // A flapping radio fires this every few seconds, and each one replayed
+      // the whole boot storm. Same rate limit as the wake above.
+      if (Date.now() - lastWakeRefresh < 60000) return;
       lastWakeRefresh = Date.now();
       refreshAllWidgets(false);
     });
@@ -5893,6 +6307,10 @@
       if (!manual) {
         if (document.hidden) return;
         if ((getLayoutConfig().hiddenWidgets || []).includes('mobility')) return;
+        // Collapsing used to change nothing: the fleet still came down the wire
+        // and every marker built into a container the CSS had folded away.
+        const card = document.querySelector('.card[data-widget="mobility"]');
+        if (card && card.classList.contains('collapsed')) return;
       }
       // Reset provider toggles only on manual refresh (unless disabled in settings)
       if (manual) {
@@ -5914,29 +6332,32 @@
       mobilityRefreshing = true;
 
       // Clear old vehicle/station markers and route (keep location marker)
-      mobilityMarkers.forEach(m => m.remove());
-      mobilityMarkers = [];
+      clearMobilityMarkers();
       mobilityTransitMarkers.forEach(m => m.remove());
       mobilityTransitMarkers = [];
       if (mobilityRouteLayer) { mobilityRouteLayer.remove(); mobilityRouteLayer = null; }
 
       try {
         // Fetch scooters from all providers
+        // null, not [], for a provider that failed: an empty fleet and an
+        // unreachable API look identical downstream, and the card must not
+        // report "Updated" when every provider is down.
         const scooterResults = await Promise.all(MOBILITY_PROVIDERS.map(async (prov) => {
           try {
             const r = await safeJson(`https://api.entur.io/mobility/v2/gbfs/v2/${prov.id}/free_bike_status`,
               { headers: ENTUR_HEADERS, timeout: 15000 });
-            if (!r.ok) return [];
+            if (!r.ok) return null;
             const bikes = r.data?.data?.bikes || [];
             return bikes
               .filter(b => !b.is_reserved && !b.is_disabled)
               .filter(b => distanceKm(centerLat, centerLon, b.lat, b.lon) <= radiusKm)
               .map(b => ({ ...b, provider: prov }));
-          } catch { return []; }
+          } catch { return null; }
         }));
 
         // Fetch city bikes (stations)
         let bikeStations = [];
+        let bikeStationsOk = false;
         try {
           const [infoR, statusR] = await Promise.all([
             safeJson('https://api.entur.io/mobility/v2/gbfs/v2/oslobysykkel/station_information',
@@ -5951,14 +6372,16 @@
           (statusData?.data?.stations || []).forEach(s => { statusMap[s.station_id] = s; });
           bikeStations = (infoData?.data?.stations || [])
             .map(s => ({ ...s, status: statusMap[s.station_id] || {} }));
+          bikeStationsOk = true;
         } catch {}
 
-        const allScooters = scooterResults.flat();
+        const providerSuccesses = scooterResults.filter(Boolean).length + (bikeStationsOk ? 1 : 0);
+        const allScooters = scooterResults.filter(Boolean).flat();
         mobilityAllScooters = allScooters;
         mobilityAllBikeStations = bikeStations;
 
         // Auto-zoom: fit bounds to show user location + nearest ~5 scooters
-        if (!skipAutoFit && mobilityCenter && allScooters.length > 0) {
+        if (!skipAutoFit && mobilityCenter && mobilityMap.getSize().x > 0 && allScooters.length > 0) {
           const sorted = [...allScooters].sort((a, b) =>
             distanceKm(mobilityCenter.lat, mobilityCenter.lon, a.lat, a.lon) -
             distanceKm(mobilityCenter.lat, mobilityCenter.lon, b.lat, b.lon)
@@ -5968,45 +6391,18 @@
           mobilityMap.fitBounds(L.latLngBounds(boundsPoints).pad(0.15), { maxZoom: 17 });
         }
 
-        // Filter to only what's visible in the current map view
-        const viewBounds = mobilityMap.getBounds();
-        const visibleScooters = allScooters.filter(v => viewBounds.contains([v.lat, v.lon]));
-        // Bysykkel: create markers for ALL stations (not just in view) so they appear when panning
-        const visibleBikes = bikeStations;
+        // A 0x0 container makes getBounds() span the planet, so every vehicle
+        // in the feed counts as "visible" and the card grows thousands of
+        // markers nobody can see. Keep the data, build nothing, fit later.
+        if (mobilityMap.getSize().x === 0) {
+          mobilityPendingFit = true;
+          // Nothing was drawn, so "Updated HH:MM" would be a lie; the deferred
+          // fit stamps when it renders. A dead feed is still worth saying.
+          if (!providerSuccesses) setCardStatus('mobility', false, 'no mobility provider responded');
+          return;
+        }
 
-        // Create markers for ALL visible vehicles; only add non-hidden ones to the map
-        visibleScooters.forEach(v => {
-          const prov = v.provider;
-          const hidden = mobilityHidden.has(prov.name);
-          const battery = v.current_fuel_percent != null ? Math.round(v.current_fuel_percent * 100) : null;
-          const rangeKm = v.current_range_meters != null ? (v.current_range_meters / 1000).toFixed(1) : null;
-          const icon = createScooterIcon(prov.color, battery);
-          const marker = L.marker([v.lat, v.lon], { icon })
-            .bindPopup(`<strong>${prov.name}</strong>${battery != null ? `<br>Battery: ${battery}%` : ''}${rangeKm ? `<br>Range: ${rangeKm} km` : ''}`);
-          marker.on('click', () => routeToMarker(marker));
-          if (!hidden) marker.addTo(mobilityMap);
-          marker._provName = prov.name;
-          marker._battery = battery;
-          mobilityMarkers.push(marker);
-        });
-
-        // Create bike station markers (add to map only if not hidden)
-        visibleBikes.forEach(s => {
-          const avail = s.status.num_bikes_available || 0;
-          const docks = s.status.num_docks_available || 0;
-          const total = avail + docks;
-          const fillPct = total > 0 ? Math.round((avail / total) * 100) : null;
-          const icon = createScooterIcon(BYSYKKEL_COLOR, fillPct);
-          const marker = L.marker([s.lat, s.lon], { icon })
-            .bindPopup(`<strong>${s.name}</strong><br>${avail} bikes · ${docks} docks`);
-          marker.on('click', () => routeToMarker(marker));
-          if (!mobilityHidden.has('Bysykkel')) marker.addTo(mobilityMap);
-          marker._provName = 'Bysykkel';
-          marker._battery = fillPct;
-          marker._bikes = avail;
-          marker._docks = docks;
-          mobilityMarkers.push(marker);
-        });
+        rebuildMobilityMarkers();
 
         // Add transit stop markers
         try {
@@ -6049,25 +6445,43 @@
 
         // Legend — uses shared function with max-distance filtering
         updateMobilityLegend();
-        setCardStatus('mobility', true);
+        setCardStatus('mobility', providerSuccesses > 0, 'no mobility provider responded');
         // Ensure tiles render correctly after layout changes
         mobilityMap.invalidateSize();
       } catch (e) {
         showToast('Could not refresh mobility data');
+        setCardStatus('mobility', false, e && e.message);
       } finally {
         mobilityRefreshing = false;
       }
     }
 
+    let mobilityInit = null;
     async function fetchMobility() {
-      if (!mobilityMap) initMobilityUI();
+      // Building the map eagerly pulled OSM tiles and created a Leaflet
+      // instance for a card that may never be shown.
+      if (!widgetIsLive('mobility')) return;
+      if (!mobilityMap) {
+        // Two ticks arriving while Leaflet is still downloading would otherwise
+        // both reach L.map(), and the second throws on an initialized container.
+        if (!mobilityInit) mobilityInit = initMobilityUI().finally(() => { mobilityInit = null; });
+        await mobilityInit;
+        if (!mobilityMap) return;
+      }
       refreshMobilityData();
     }
-    fetchMobility();
-    setInterval(refreshMobilityData, 120 * 1000);
+    // 205s is the GBFS feeds' own cache-control max-age; anything shorter
+    // re-downloads several MB of city-wide fleet for an unchanged answer.
+    scheduleWidget('mobility', fetchMobility, 205 * 1000);
 
     // ── News (RSS) ──
     const PROXY = WORKER_URL + '/?url=';
+    // The refresh interval, and the age at which switchTab stops trusting a
+    // cached tab: one number, or a tab could sit unrefreshed past its own
+    // interval simply because it is the one nobody has tapped.
+    const NEWS_REFRESH_MS = 10 * 60 * 1000;
+    // key -> { items, ts }. The stamp is what lets a tab switch tell a tab read
+    // a minute ago from one read last night.
     let newsCache = {};
     let activeTab = 0;
 
@@ -6110,36 +6524,14 @@
         else if (mediaNS.length > 0 && (mediaNS[0].getAttribute('medium') === 'image' || mediaNS[0].getAttribute('type')?.startsWith('image'))) img = mediaNS[0].getAttribute('url');
         else if (enclosure) img = enclosure.getAttribute('url');
 
-        // Format time
-        let timeAgo = '';
-        if (pubDate) {
-          const diff = Math.round((Date.now() - new Date(pubDate).getTime()) / 60000);
-          if (diff < 1) timeAgo = 'Just now';
-          else if (diff < 60) timeAgo = `${diff}m ago`;
-          else if (diff < 1440) timeAgo = `${Math.floor(diff / 60)}h ago`;
-          else timeAgo = `${Math.floor(diff / 1440)}d ago`;
-        }
+        // The instant, not a rendering of it: "12m ago" baked in here is frozen
+        // for as long as the tab sits in the cache, and a tab reopened the next
+        // morning would still be claiming the articles are minutes old.
+        const parsed = pubDate ? new Date(pubDate).getTime() : NaN;
+        const ts = Number.isFinite(parsed) ? parsed : null;
 
-        return { title, link, img, timeAgo, source };
+        return { title, link, img, ts, source };
       });
-    }
-
-    // Deduplicate articles by title similarity (Jaccard on word sets)
-    function dedupeArticles(items) {
-      const normalize = (t) => t.toLowerCase().replace(/[^\w\s]/g, '').split(/\s+/).filter(w => w.length > 2);
-      const kept = [];
-      for (const item of items) {
-        const words = new Set(normalize(item.title));
-        let isDupe = false;
-        for (const existing of kept) {
-          const ew = new Set(normalize(existing.title));
-          const intersection = [...words].filter(w => ew.has(w)).length;
-          const union = new Set([...words, ...ew]).size;
-          if (union > 0 && intersection / union > 0.45) { isDupe = true; break; }
-        }
-        if (!isDupe) kept.push(item);
-      }
-      return kept.slice(0, 12);
     }
 
     function renderNews(items) {
@@ -6155,7 +6547,7 @@
         <a class="news-item"${href ? ` href="${escapeHtml(href)}"` : ''} target="_blank" rel="noopener noreferrer">
           <div class="news-item-text">
             <div class="news-item-title">${escapeHtml(item.title)}</div>
-            <div class="news-item-meta">${item.source ? escapeHtml(item.source) + ' · ' : ''}${escapeHtml(item.timeAgo)}</div>
+            <div class="news-item-meta">${item.source ? escapeHtml(item.source) + ' · ' : ''}${escapeHtml(newsTimeAgo(item.ts))}</div>
           </div>
           ${img ? `<img class="news-item-img" src="${escapeHtml(img)}" alt="" loading="lazy" onerror="this.style.display='none'">` : ''}
         </a>`; }).join('') + '</div>';
@@ -6164,7 +6556,7 @@
     function renderTabs() {
       const feeds = getFeeds();
       document.getElementById('news-tabs').innerHTML = feeds.map((f, i) =>
-        `<button class="news-tab ${i === activeTab ? 'active' : ''}" onclick="switchTab(${i})">${f.name}</button>`
+        `<button class="news-tab ${i === activeTab ? 'active' : ''}" onclick="switchTab(${i})">${escapeHtml(f.name)}</button>`
       ).join('');
     }
 
@@ -6174,13 +6566,21 @@
       activeTab = idx;
       renderTabs();
       const feeds = getFeeds();
-      const key = feedKey(feeds[idx]);
-      if (newsCache[key]) {
-        renderNews(newsCache[key]);
-      } else {
+      const feed = feeds[idx];
+      const key = feedKey(feed);
+      const entry = newsCache[key];
+      if (!entry) {
         document.getElementById('news-content').innerHTML = '<div class="loading">Loading...</div>';
-        fetchFeed(feeds[idx]);
+        refreshFeed(feed);
+        return;
       }
+      // Draw what we have so the tap is instant, then decide on its age. Only
+      // the active tab is refreshed on the timer, so a cache entry can be a
+      // night old while the header carries another tab's success — and the
+      // re-render is what recomputes every "12m ago" against the clock now.
+      renderNews(entry.items);
+      if (Date.now() - entry.ts > NEWS_REFRESH_MS) refreshFeed(feed);
+      else setCardStatus('news', true, '', false, entry.ts);
     }
 
     async function fetchFeed(feed) {
@@ -6195,39 +6595,119 @@
           // intermittently. The Worker now merges several engines, windows to
           // the last year, dedupes and sorts newest first, and keeps the last
           // good result so one engine going dark costs coverage, not the tab.
+
+          // /news/search is behind the owner token, same as sensors and lights,
+          // so without one there is nothing to ask for — and a bare 401 would
+          // read as a broken feed rather than a setting that is switched off.
+          if (!getDashboardToken()) {
+            if (feedKey(getFeeds()[activeTab]) === key) {
+              document.getElementById('news-content').innerHTML = `<div style="color:var(--text-secondary);font-size:0.85rem;line-height:1.5;">Requires the dashboard owner token.<br>Use the lock button in the header to enter it.</div>`;
+              setCardStatus('news', false, 'Requires the dashboard token', true);
+            }
+            return 'refused';
+          }
           const months = feed.months || 12;
-          const r = await safeJson(
-            `${WORKER_URL}/news/search?q=${encodeURIComponent(feed.query)}&months=${months}`,
+          const res = await workerFetch(
+            `/news/search?q=${encodeURIComponent(feed.query)}&months=${months}`,
             { timeout: 25000 });
-          if (!r.ok) throw new Error(r.reason);
-          items = (r.data.items || []).map(it => ({
+          if (!res.ok) throw new Error('HTTP ' + res.status);
+          const data = await res.json();
+          items = (data.items || []).map(it => ({
             title: it.title, link: it.link, img: '',
-            timeAgo: newsTimeAgo(it.ts), source: it.publisher || ''
+            ts: it.ts, source: it.publisher || ''
           }));
         } else {
-          const res = await fetch(PROXY + encodeURIComponent(feed.url));
+          // Feeds come back as XML, so this cannot go through safeJson — but it
+          // needs the same deadline, or one stalled feed hangs its tab for good.
+          //
+          // no-store because the Worker's proxy now sends
+          // `Cache-Control: public, max-age=300` on XML: the browser would
+          // otherwise hand back bytes up to five minutes old while refreshFeed
+          // stamped the clock, so the header would describe the fetch and not
+          // the articles. Carrying the response's real age into the stamp
+          // instead would need the Date header, and Date is not a
+          // CORS-safelisted response header — the Worker is a different origin,
+          // so it reads as null here. Bypassing the cache is the smaller fix,
+          // and the feed's own 10-minute cadence is longer than the TTL anyway.
+          const init = { cache: 'no-store' };
+          if (typeof AbortSignal !== 'undefined' && AbortSignal.timeout) {
+            init.signal = AbortSignal.timeout(12000);
+          }
+          const res = await fetch(PROXY + encodeURIComponent(feed.url), init);
+          if (!res.ok) throw new Error('HTTP ' + res.status);
           const xml = await res.text();
           items = parseRSS(xml).slice(0, 10);
         }
-        newsCache[key] = items;
+        // A 2xx carrying no items is not a success — the tab draws "No articles
+        // found" and the header used to stamp "Updated" over it. Not cached
+        // either, for the reason the catch block below keeps last-good: an empty
+        // answer from a feed that normally works is far more likely to be a
+        // blip than the truth about the tab, and caching it would erase the
+        // articles the reader can still use.
+        if (!items.length) {
+          if (feedKey(getFeeds()[activeTab]) === key) {
+            const prev = newsCache[key];
+            renderNews(prev ? prev.items : items);
+          }
+          return 'empty';
+        }
+        // The entry carries the moment it was fetched: switchTab renders any
+        // populated tab without asking the network, so an undated cache cannot
+        // tell a tab read a minute ago from one read last night.
+        newsCache[key] = { items, ts: Date.now() };
         if (feedKey(getFeeds()[activeTab]) === key) {
           renderNews(items);
         }
+        return true;
       } catch (e) {
         if (feedKey(getFeeds()[activeTab]) === key) {
-          document.getElementById('news-content').innerHTML = `<div class="error">Could not load ${feed.name} feed</div>`;
+          const entry = newsCache[key];
+          // Last-good articles beat an empty tab. The status stamp carries the
+          // failure and keeps the time of the data on screen, so nothing here
+          // has to pretend the refresh worked.
+          if (entry) renderNews(entry.items);
+          else document.getElementById('news-content').innerHTML = `<div class="error">Could not load ${feed.name} feed</div>`;
         }
+        return false;
       }
     }
 
+    // The one path that fetches a feed AND stamps the card for it, so the timer
+    // and a tab switch cannot leave the header describing a different tab.
+    async function refreshFeed(feed) {
+      const key = feedKey(feed);
+      const ok = await fetchFeed(feed);
+      // The await can outlive the tab. fetchFeed guards every render with this
+      // same test; without it here, a search fetch abandoned twenty seconds ago
+      // resolves and stamps ITS outcome over the tab the reader moved back to.
+      // The cache entry is still written — only the header belongs to whoever
+      // is on screen now.
+      if (feedKey(getFeeds()[activeTab]) !== key) return ok;
+      // A refusal has already stamped its own reason; overwriting it with
+      // "could not load" would hide the setting that needs attention.
+      if (ok === 'refused') return ok;
+      // "empty" is a working feed that returned nothing, so it is neither a
+      // success nor a load failure, and it gets its own words rather than
+      // sending the reader after a feed that answered perfectly well.
+      setCardStatus('news', ok === true,
+        ok === 'empty' ? feed.name + ' returned no articles' : 'could not load ' + feed.name);
+      return ok;
+    }
+
+    // Only the visible tab is worth bytes: switchTab fetches a tab the first
+    // time it is opened, so warming the other feeds every cycle downloads XML
+    // for articles nobody is looking at.
     async function fetchNews() {
       const feeds = getFeeds();
       renderTabs();
-      await Promise.all(feeds.map(f => fetchFeed(f)));
-      setCardStatus('news', true);
+      const feed = feeds[activeTab];
+      if (!feed) {
+        setCardStatus('news', false, 'no feeds configured', true);
+        return;
+      }
+      await refreshFeed(feed);
     }
-    fetchNews();
-    setInterval(fetchNews, 10 * 60 * 1000);
+    scheduleWidget('news', fetchNews, NEWS_REFRESH_MS);
 
     // ── Transit (Entur) ──
     const ENTUR_QUERY = `
@@ -6331,18 +6811,34 @@
 
     async function fetchTransit() {
       const stops = getStops();
+      // An empty selection is a supported state of the settings UI, not a
+      // failure: nothing was asked of Entur, so nothing can have gone wrong
+      // there. Reported as an outage it would send the reader hunting a
+      // service that is perfectly healthy.
+      if (!stops.length) {
+        document.getElementById('transit-content').innerHTML =
+          `<div class="loading">No stops configured &mdash; use Edit to choose some.</div>`;
+        setCardStatus('transit', false, 'No stops selected', true);
+        return;
+      }
       try {
         const results = await Promise.all(stops.map(async (stopId) => {
-          const res = await fetch('https://api.entur.io/journey-planner/v3/graphql', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'ET-Client-Name': 'crild-dashboard'
-            },
-            body: JSON.stringify({ query: ENTUR_QUERY, variables: { id: stopId, n: 20 } })
-          });
-          const data = await res.json();
-          return data.data.stopPlace;
+          // Per stop, so one unknown id or one 500 costs that stop's block
+          // rather than the whole board.
+          try {
+            const r = await safeJson('https://api.entur.io/journey-planner/v3/graphql', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'ET-Client-Name': 'crild-dashboard'
+              },
+              body: JSON.stringify({ query: ENTUR_QUERY, variables: { id: stopId, n: 20 } })
+            });
+            if (!r.ok) return null;
+            return r.data.data.stopPlace;
+          } catch (e) {
+            return null;
+          }
         }));
 
         // Calculate walking times in parallel
@@ -6359,6 +6855,14 @@
 
         // Sort stops by saved order if available
         let orderedResults = results.filter(Boolean);
+        // Stops were requested and every one of them came back empty, which is
+        // a genuine failure — the no-selection case was refused before the
+        // first request went out.
+        if (!orderedResults.length) {
+          document.getElementById('transit-content').innerHTML = `<div class="error">Could not load departures</div>`;
+          setCardStatus('transit', false, 'no stop returned departures');
+          return;
+        }
         if (stopOrder) {
           orderedResults.sort((a, b) => {
             const ai = stopOrder.indexOf(a.id || a.name);
@@ -6452,10 +6956,10 @@
         setCardStatus('transit', true);
       } catch (e) {
         document.getElementById('transit-content').innerHTML = `<div class="error">Could not load departures</div>`;
+        setCardStatus('transit', false, e && e.message);
       }
     }
-    fetchTransit();
-    setInterval(fetchTransit, 30 * 1000);
+    scheduleWidget('transit', fetchTransit, 30 * 1000);
 
     function setupTransitDragDrop() {
       const grid = document.querySelector('.stops-grid');
@@ -6592,7 +7096,16 @@
       const toast = document.getElementById('toast');
       toast.textContent = message;
       toast.classList.add('visible');
-      setTimeout(() => toast.classList.remove('visible'), duration);
+      // One pending hide, not one per call. A correction that arrives after an
+      // optimistic message — "saved" followed by "saved on this device only"
+      // once the Worker answers — was being torn off screen by the timer the
+      // first message had already scheduled, which is the one case where the
+      // second message is the one that matters.
+      if (toast._hideTimer) clearTimeout(toast._hideTimer);
+      toast._hideTimer = setTimeout(() => {
+        toast.classList.remove('visible');
+        toast._hideTimer = null;
+      }, duration);
     }
 
     // ── Widget Settings Popups ──
@@ -6611,6 +7124,17 @@
     function closeWidgetPopup(e) {
       if (e && e.target && e.target !== document.getElementById('widget-popup-overlay')) return;
       document.getElementById('widget-popup-overlay').classList.remove('open');
+      // And EMPTY it. The wealth form is a grid of <input value="…"> carrying
+      // every figure and every holding name in the portfolio; the overlay only
+      // goes display:none, so after Rediger → Avbryt those inputs sat in the
+      // document indefinitely, readable by anything that can read the DOM. The
+      // cards opposite them keep amounts out of the resting DOM entirely, and
+      // the form has to honour the same contract. Every settings panel is
+      // rebuilt by openWidgetSettings on the way in and every save handler
+      // reads its inputs before calling this, so nothing depends on the markup
+      // surviving. (#share-overlay is static page markup, not rebuilt — it is
+      // deliberately left alone.)
+      document.getElementById('widget-popup').innerHTML = '';
     }
 
     function getWidgetSettingsHTML(widget) {
@@ -6660,10 +7184,15 @@
         return;
       }
       locationSearchTimeout = setTimeout(async () => {
+        // The dialog can be gone by the time this lands — closing it now empties
+        // the popup, and opening a different widget's settings always did.
+        // Without the guard the reply throws on a null node, in a handler
+        // nobody is watching.
         try {
           const res = await fetch(`${WORKER_URL}/?url=${encodeURIComponent(`https://ws.geonorge.no/adresser/v1/sok?sok=${encodeURIComponent(query)}&treffPerSide=8`)}`);
           const data = await res.json();
           const container = document.getElementById('wp-location-results');
+          if (!container) return;
           if (!data.adresser || data.adresser.length === 0) {
             container.innerHTML = '<div style="padding:8px;color:var(--text-secondary);font-size:0.85rem;">No addresses found</div>';
             container.style.display = 'block';
@@ -6675,8 +7204,10 @@
           container.style.display = 'block';
           container._addresses = data.adresser;
         } catch (e) {
-          document.getElementById('wp-location-results').innerHTML = '<div style="padding:8px;color:var(--negative);font-size:0.85rem;">Search failed</div>';
-          document.getElementById('wp-location-results').style.display = 'block';
+          const box = document.getElementById('wp-location-results');
+          if (!box) return;
+          box.innerHTML = '<div style="padding:8px;color:var(--negative);font-size:0.85rem;">Search failed</div>';
+          box.style.display = 'block';
         }
       }, 300);
     }
@@ -7259,29 +7790,34 @@
     }
 
     function loadHueScenesList() {
+      // The dialog can be gone by the time any of these land — closing it now
+      // empties the popup, and opening a different widget's settings always
+      // did. Each write checks for its node first; without that the reply
+      // throws on null inside a promise nobody is watching.
+      const list = () => document.getElementById('wp-hue-scenes-list');
       workerFetch('/hue/scenes')
         .then(r => {
           const el = document.getElementById('hue-settings-status');
           if (r.status === 401) {
             if (el) el.innerHTML = '<span style="color:var(--negative)">Not authorized</span>';
-            document.getElementById('wp-hue-scenes-list').innerHTML = '<div style="padding:8px;color:var(--text-secondary);font-size:0.85rem;">Not authorized. Click Re-authorize below.</div>';
+            if (list()) list().innerHTML = '<div style="padding:8px;color:var(--text-secondary);font-size:0.85rem;">Not authorized. Click Re-authorize below.</div>';
             return null;
           }
           if (el) el.innerHTML = '<span style="color:var(--positive)">Connected</span>';
           return r.json();
         })
         .then(data => {
-          if (!data) return;
+          if (!data || !list()) return;
           const scenes = Object.entries(data)
             .filter(([id, s]) => s.type === 'LightScene' || s.type === 'GroupScene')
             .sort((a, b) => a[1].name.localeCompare(b[1].name));
 
           if (scenes.length === 0) {
-            document.getElementById('wp-hue-scenes-list').innerHTML = '<div style="padding:8px;color:var(--text-secondary);">No scenes found</div>';
+            list().innerHTML = '<div style="padding:8px;color:var(--text-secondary);">No scenes found</div>';
             return;
           }
 
-          document.getElementById('wp-hue-scenes-list').innerHTML = scenes.map(([id, s]) => {
+          list().innerHTML = scenes.map(([id, s]) => {
             const already = currentHueScenesSelection.find(x => x.id === id);
             return '<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 8px;border-bottom:1px solid var(--border);font-size:0.85rem;">' +
               '<span>' + s.name + ' <span style="color:var(--text-secondary);font-size:0.75rem;">(Group ' + s.group + ')</span></span>' +
@@ -7291,7 +7827,7 @@
           }).join('');
         })
         .catch(() => {
-          document.getElementById('wp-hue-scenes-list').innerHTML = '<div style="padding:8px;color:var(--negative);">Error loading scenes</div>';
+          if (list()) list().innerHTML = '<div style="padding:8px;color:var(--negative);">Error loading scenes</div>';
         });
     }
 
@@ -7405,10 +7941,12 @@
       }
     }
 
-    // Close popups on Escape key
+    // Close popups on Escape key. Routed through closeWidgetPopup() rather than
+    // repeating the class removal: Escape is the fastest way out of the wealth
+    // form, so it is the path that most needs the emptying that function does.
     document.addEventListener('keydown', (e) => {
       if (e.key === 'Escape') {
-        document.getElementById('widget-popup-overlay').classList.remove('open');
+        closeWidgetPopup();
         document.getElementById('share-overlay').classList.remove('open');
       }
     });
@@ -7657,6 +8195,24 @@
       if (mo < 1 || mo > 12) return NaN;
       return Number(m[1]) * 12 + (mo - 1);
     }
+
+    // Did the housing index feed anything in THIS payload? It prices assets of
+    // kind "property" and nothing else the evaluation returns, so a portfolio
+    // of funds and cash comes back complete and correct with SSB down —
+    // refusing there blanks three cards over an index none of them used.
+    //
+    // The index's second consumer is invisible from here: policy
+    // .indexNextPurchase scales the purchase price, and /private/nw/projection
+    // echoes no policy. A property-free config with that flag on therefore
+    // draws an un-indexed target price during an outage, which is what it did
+    // before this refusal existed; closing that gap needs the flag in the
+    // payload. Lånevegg and Formuesstabelen repeat this test verbatim — they
+    // are pure functions of the payload and cannot call in here — and all
+    // three must move together or one card refuses beside two that do not.
+    function nwtIndexUsed(d) {
+      return [(d && d.now) || {}, (d && d.target) || {}].some(ev =>
+        (ev.assets || []).some(a => a && a.kind === 'property'));
+    }
     function nwtMonth(mi) {
       const i = Math.round(mi);
       return NWT_MONTHS[((i % 12) + 12) % 12] + ' ' + Math.floor(i / 12);
@@ -7748,9 +8304,20 @@
       // figure is the top correctness trap in this payload.
       const mon = nwtMonthYm(t.ym) || escapeHtml(t.ym || '');
       const monNow = nwtMonthYm(n.ym) || escapeHtml(n.ym || '');
-      const gap = Number(t.gap);
+      // A withheld gap arrives as null, and Number(null) is 0 — finite, signed
+      // positive, indistinguishable from a plan met exactly. NaN carries the
+      // absence through nwtAmt(), which prints it as the dash it is.
+      const gap = Number.isFinite(t.gap) ? t.gap : NaN;
+      const hasGap = Number.isFinite(gap);
       const behind = gap < 0;
       const rate = isFinite(t.stressRatePct) ? nwtFmt1(t.stressRatePct) : '—';
+      // With the purchase price cleared the contract sets nextPrice to 0 rather
+      // than null, and stressAnnual collapses with it because maxLoanByLtv is a
+      // fraction of that price. Both are finite, so nwtAmt would print "0 kr" —
+      // a price and a yearly interest cost asserted under a hero that has just
+      // said the target cannot be projected at all, and beside three rows
+      // correctly reading as absent. Absent is what they are here too.
+      const priced = t.targetEvaluable !== false && Number(t.nextPrice) > 0;
 
       const row = (label, value, cls) =>
         '<div class="nwt-amt-row' + (cls ? ' ' + cls : '') + '"><span>' + label +
@@ -7758,27 +8325,39 @@
 
       return row('Egenkapital ved målet, ' + mon + ' (husholdning)', nwtAmt(t.equitySupply)) +
              row('Kravet ved målet, ' + mon + ' (husholdning)', nwtAmt(t.equityNeeded)) +
-             row((behind ? 'Mangler' : 'Margin') + ' ved målet, ' + mon + ' (husholdning)',
-                 nwtAmt(Math.abs(gap)), behind ? 'is-neg' : 'is-pos') +
+             row((hasGap ? (behind ? 'Mangler' : 'Margin') : 'Avvik') +
+                 ' ved målet, ' + mon + ' (husholdning)',
+                 nwtAmt(Math.abs(gap)), !hasGap ? '' : behind ? 'is-neg' : 'is-pos') +
              '<div class="nwt-amt-foot">' +
-               'Neste bolig i ' + mon + ': ' + nwtAmt(t.nextPrice) + ' (framskrevet)' +
+               'Neste bolig i ' + mon + ': ' +
+                 (priced ? nwtAmt(t.nextPrice) + ' (framskrevet)' : '—') +
                ' · Formue i dag: ' + nwtAmt(n.netWorthHousehold) + ' (husholdning)' +
                // No "(min andel)" qualifier any more: the setup form carries
                // household totals only, so the share this figure is scaled by
                // is 1 and there is no second, smaller reading of it.
                ' · Skattefritt ASK-uttak i ' + monNow + ': ' + nwtAmt(n.taxFreeTranche) +
-               ' · Rentekostnad ved maks lån: ' + nwtAmt(t.stressAnnual) + '/år ved ' + rate + ' %' +
+               ' · Rentekostnad ved maks lån: ' +
+                 (priced ? nwtAmt(t.stressAnnual) + '/år ved ' + rate + ' %' : '—') +
              '</div>';
     }
 
     function nwtSetRevealed(on) {
+      // State and timer FIRST, DOM second. This card renders no reveal tail in
+      // any of its refusal states, so a guard on those nodes ahead of the flag
+      // made the whole call a no-op there: the wrapper's trailing
+      // nwRenderCompanions() then repainted both companions from an unchanged
+      // flag, and a companion's own reveal button did nothing whenever
+      // Terskelen was refusing. The timer is armed here for the same reason —
+      // whoever holds the reveal, this card owns the 45 s that ends it.
+      if (nwtRevealTimer) { clearTimeout(nwtRevealTimer); nwtRevealTimer = null; }
+      nwtRevealed = !!on;
+      if (nwtRevealed) nwtRevealTimer = setTimeout(() => nwtSetRevealed(false), 45000);
+
       const root = document.getElementById('nwt');
       const box = document.getElementById('nwt-amounts');
       const btn = document.getElementById('nwt-btn');
       const lab = document.getElementById('nwt-btn-label');
       if (!root || !box || !btn) return;
-      if (nwtRevealTimer) { clearTimeout(nwtRevealTimer); nwtRevealTimer = null; }
-      nwtRevealed = !!on;
 
       if (!nwtRevealed) {
         box.innerHTML = '';                 // the values LEAVE the DOM
@@ -7796,11 +8375,9 @@
 
       // Restart the drain explicitly. Without the reflow the animation keeps
       // whatever position it had, and the bar would then report time the JS
-      // deadline below does not actually have left.
+      // deadline above does not actually have left.
       const drain = document.getElementById('nwt-drain');
       if (drain) { drain.style.animation = 'none'; void drain.offsetWidth; drain.style.animation = ''; }
-
-      nwtRevealTimer = setTimeout(() => nwtSetRevealed(false), 45000);
     }
 
     // Fail-closed entry point. Safe to call when the card is not rendered, when
@@ -7822,13 +8399,19 @@
     // A wall tablet must never wake from sleep with kroner on screen, and blur
     // covers losing focus without the page hiding (another window, a lock
     // screen that does not fire visibilitychange).
+    // Both listeners CALL the binding rather than being handed it: further down
+    // this file nwtHide is replaced by the version that also clears the two
+    // companion cards, and a listener registered with the bare name would hold
+    // the original function object and hide Terskelen alone.
     document.addEventListener('visibilitychange', () => { if (document.hidden) nwtHide(); });
-    window.addEventListener('blur', nwtHide);
-    // INTEGRATION (one line, in the existing shared helper — not in this file):
-    //   function toggleCardCollapse(widget) { if (widget === 'networth') nwtHide(); … }
-    // The keyboard path (digit keys) routes through the same function, so one
-    // line covers both. Until it is added, collapsing the card mid-reveal
-    // leaves the amounts in a display:none subtree rather than removing them.
+    window.addEventListener('blur', () => nwtHide());
+    // Collapsing and hiding are the other two ways the amounts can end up alive
+    // inside a display:none subtree, and both are wired from the shared layout
+    // helpers rather than here: toggleCardCollapse() calls nwtHide() for every
+    // widget (the digit-key shortcut routes through the same function), and
+    // applyLayoutConfig() does too — but only while a reveal is actually live,
+    // because that one also runs once at load, before there is any payload for
+    // the companion cards to draw.
 
     // ── Fetch ────────────────────────────────────────────────────────────────
     async function fetchNetWorth() {
@@ -7845,6 +8428,13 @@
       }
       try {
         const sess = await getDashboardSession();
+        const nwFault = sessionFault(sess);
+        if (nwFault) {
+          // Last-known beats a wrong explanation: leave the cards as they are
+          // and let the stamp say the service could not be reached.
+          ['networth', 'nwloan', 'nwstack'].forEach(id => setCardStatus(id, false, nwFault));
+          return;
+        }
         nwtHome = !!sess.home;
         nwtIp = sess.ip || '';
         if (!nwtHome) { nwData = null; renderNetWorth(); return; }
@@ -7852,8 +8442,12 @@
         const res = await workerFetch('/private/nw/projection');
         if (!res.ok) throw new Error('HTTP ' + res.status);
         nwData = await res.json();
-        renderNetWorth();
-        setCardStatus('networth', true);
+        // No stamp here, either side of the render. A payload that arrived is
+        // not a card that says anything: renderNetWorth has eight branches that
+        // refuse one, and a stamp written here sat under every one of them.
+        // fromFetch tells the render this was a network read, and the render
+        // stamps from what it actually drew.
+        renderNetWorth(true);
       } catch (e) {
         // Deliberately NOT nulling here, unlike the two gates above. A network
         // blip is not a privacy event: last-known beats a blank box on an
@@ -8248,7 +8842,9 @@
     function nwtLevers(n, t) {
       const out = { rows: [], hero: null, ok: false };
       // A non-finite gap must not read as "the plan holds": say nothing instead.
-      if (!Number.isFinite(Number(t.gap))) return out;
+      // Tested on the RAW field, because the coercion is what defeats it —
+      // Number(null) is 0, and 0 is finite.
+      if (!Number.isFinite(t.gap)) return out;
       const D = -Number(t.gap);
       if (!(D > 0)) { out.ok = true; return out; }       // nothing to close
 
@@ -8460,8 +9056,10 @@
 
     // A refusal that names no holding and shows no shape: a trajectory is
     // information too, and tier-2 data does not leave the house.
+    // Only the two tier-2 gates come through here, and both are refusals, so the
+    // marker is unconditional. See the wrap() below for what reads it.
     function nwtRefuseHtml(title, detail, tail) {
-      return '<div class="nwt" id="nwt">' +
+      return '<div class="nwt" id="nwt" data-nw-refused="1">' +
         '<div class="nwt-head"><div class="nwt-refuse">' + title + '</div>' +
         (detail ? '<div class="nwt-refuse-d">' + detail + '</div>' : '') + '</div>' +
         (tail ? nwtTailHtml() : '') + '</div>';
@@ -8534,14 +9132,12 @@
       if (!getDashboardToken()) {
         nwData = null;
         content.innerHTML = nwtRefuseHtml('Krever eiertoken. Bruk låseknappen i toppen.', '', false);
-        setCardStatus('networth', false, 'no token');
         return;
       }
       if (nwtHome === false) {
         nwData = null;
         content.innerHTML = nwtRefuseHtml('Formue vises bare på hjemmenettet.',
           'Du er tilkoblet fra ' + escapeHtml(nwtIp || 'et annet nett') + '.', false);
-        setCardStatus('networth', false, 'not on home network');
         return;
       }
       if (!nwData) return;        // the fetch path owns the loading / error markup
@@ -8554,25 +9150,45 @@
       // has-pill is a DATA class, not a width branch: it lets the wide tiers add
       // a pill row to grid-template-areas only when the pill exists, so an
       // absent placeholder cannot leave an empty track and a dead gap on top.
-      const wrap = body => {
-        content.innerHTML = '<div class="nwt' + (pill ? ' has-pill' : '') + '" id="nwt">' +
-          pill + body + '</div>';
+      //
+      // `refused` marks the wrapper the same way the two companions mark theirs,
+      // and for the same reason: the freshness stamp is derived from the markup
+      // by the wrapper further down this file, so a refusal branch added here
+      // cannot forget to declare itself and end up under a fresh "Updated".
+      const wrap = (body, refused) => {
+        content.innerHTML = '<div class="nwt' + (pill ? ' has-pill' : '') + '" id="nwt"' +
+          (refused ? ' data-nw-refused="1"' : '') + '>' + pill + body + '</div>';
       };
 
-      // (a) The index is down. Checked FIRST: nwAssetValue returns null for
-      // property when the index is absent, so every property enters `missing`
-      // and both evaluations come back incomplete — the generic refusal would
-      // fire with the wrong diagnosis. One 7-day cache expiry meeting one SSB
-      // 5xx blanks this card, and it should say so.
-      if (d.housingError) {
+      // (a) The Worker read the stored document but could not evaluate it. It
+      // says so in `error` and returns null evaluations, which would otherwise
+      // fall through to the target-month check below and blame a month that is
+      // perfectly fine. Checked ahead of the index branch because that refusal
+      // travels in the same payload, and an index that is merely unavailable is
+      // not what stopped a document nothing could read. The raw reason goes to
+      // the status tooltip rather than the card: it is a parser message, not a
+      // sentence for a hallway wall.
+      if (d.error) {
         wrap('<div class="nwt-head">' +
-          '<div class="nwt-refuse">Boligindeksen er utilgjengelig — boligverdiene kan ikke prises.</div>' +
-          '<div class="nwt-refuse-d">Ingen tall vises før SSB-indeksen er tilbake.</div></div>');
-        setCardStatus('networth', false, 'housing index');
+          '<div class="nwt-refuse">Lagret oppsett kunne ikke leses.</div>' +
+          '<div class="nwt-refuse-d">Ingen tall vises før oppsettet er rettet under Rediger.</div></div>', true);
         return;
       }
 
-      // (b) A hand-edited targetMonth that is not YYYY-MM. Checked before the
+      // (b) The index is down, and this portfolio was priced with it. Checked
+      // before the incomplete branch: nwAssetValue returns null for property
+      // when the index is absent, so every property enters `missing` and both
+      // evaluations come back incomplete — the generic refusal would fire with
+      // the wrong diagnosis. One 7-day cache expiry meeting one SSB 5xx blanks
+      // this card, and it should say so.
+      if (d.housingError && nwtIndexUsed(d)) {
+        wrap('<div class="nwt-head">' +
+          '<div class="nwt-refuse">Boligindeksen er utilgjengelig — boligverdiene kan ikke prises.</div>' +
+          '<div class="nwt-refuse-d">Ingen tall vises før SSB-indeksen er tilbake.</div></div>', true);
+        return;
+      }
+
+      // (c) A hand-edited targetMonth that is not YYYY-MM. Checked before the
       // incomplete branch for the same reason: a garbage month also nulls the
       // index lookup, so "Mangler verdi for 2 av 6 poster" would be a true
       // symptom of the wrong cause. NO geometry is computed at all here, so no
@@ -8580,12 +9196,23 @@
       const m0 = nwtMi(n.ym), mT = nwtMi(t.ym);
       if (!Number.isFinite(m0) || !Number.isFinite(mT)) {
         wrap('<div class="nwt-head"><div class="nwt-refuse">Ugyldig målmåned. ' +
-          'Sett den på nytt under Rediger.</div></div>');
-        setCardStatus('networth', false, 'invalid target month');
+          'Sett den på nytt under Rediger.</div></div>', true);
         return;
       }
 
-      // (c) Anything unpriced. A total missing its largest asset is not stale,
+      // (d) An untouched document. No assets and no liabilities at all is the
+      // absence of a configuration, not a hole in one, and the refusal below
+      // would send the reader hunting for a value that was never entered.
+      // Refused rather than failed: there is nothing wrong with this card.
+      if (n.empty || t.empty) {
+        wrap('<div class="nwt-head">' +
+          '<div class="nwt-refuse">Ingenting lagt inn ennå.</div>' +
+          '<div class="nwt-refuse-d">Verken eiendeler eller gjeld er registrert. ' +
+          'Legg dem inn under Rediger.</div></div>', true);
+        return;
+      }
+
+      // (e) Anything unpriced. A total missing its largest asset is not stale,
       // it is wrong — and the names go behind the reveal with the kroner.
       if (n.incomplete || t.incomplete) {
         const ev = n.incomplete ? n : t;
@@ -8594,26 +9221,34 @@
         nwtRevealKind = 'missing';
         wrap('<div class="nwt-head"><div class="nwt-refuse">Ufullstendig grunnlag</div>' +
           '<div class="nwt-refuse-d">Mangler verdi for ' + k + ' av ' + tot + ' poster.<br>' +
-          'Ingen totaler eller anslag vises før alt er priset.</div></div>' + nwtTailHtml());
+          'Ingen totaler eller anslag vises før alt er priset.</div></div>' + nwtTailHtml(), true);
         return;
       }
 
       nwtRevealKind = 'full';
       const chips = nwtChipsHtml(d, n, t, mT);
 
-      // (d) The configuration trap. With nextPurchasePriceNok cleared,
+      // (f) The configuration trap. With nextPurchasePriceNok cleared,
       // maxLoanByLtv = 0, equityNeeded collapses to the fixed fees and
       // equitySupply is millions — so onTrack is TRUE and a naive card prints
       // "i rute" at 67 px. The ceilings are suppressed too: one bar would be
       // zero and the shared scale would render the other as full, which reads
       // as "maxed out" in this file's own progress-bar grammar.
-      const noPrice = !(Number(t.nextPrice) > 0);
+      // The Worker now states the same thing outright in targetEvaluable and
+      // withholds the four target fields. Both routes are tested, and both land
+      // on this hero: the flag is the authority, the price test still catches a
+      // payload issued before the flag existed, and noGap catches a withheld
+      // field arriving without either — Number(null) is 0, which every test
+      // downstream reads as a gap closed to the krone.
+      const noPrice = t.targetEvaluable === false || !(Number(t.nextPrice) > 0);
       const noIncome = !(Number(t.grossIncome) > 0);
-      if (noPrice || noIncome) {
+      const noGap = !Number.isFinite(t.gap);
+      if (noPrice || noIncome || noGap) {
         wrap(nwtHeroHtml('ikke framskrivbart', '', '', '',
           noPrice ? 'Kjøpesum mangler — sett den under Rediger.'
-                  : 'Bruttoinntekt mangler — sett den under Rediger.') +
-          chips + nwtTailHtml());
+                  : noIncome ? 'Bruttoinntekt mangler — sett den under Rediger.'
+                             : 'Kravet ved målet er ikke beregnet — sjekk oppsettet under Rediger.') +
+          chips + nwtTailHtml(), true);
         return;
       }
 
@@ -8629,7 +9264,7 @@
       const caps = nwtCapsHtml(t);
       const levers = nwtLeversHtml(lev, t, mT);
 
-      // (e) The deadline has gone by. The Worker's endIdx > startIdx guard
+      // (g) The deadline has gone by. The Worker's endIdx > startIdx guard
       // returns an empty track for this, so without its own branch the card
       // falls through to a short-track path and keeps printing a future-tense
       // diagnosis about a month in the past.
@@ -8640,7 +9275,7 @@
         return;
       }
 
-      // (f) The deadline IS this month. Its own branch, checked before any x/y
+      // (h) The deadline IS this month. Its own branch, checked before any x/y
       // computation because S = 0 degenerates the axis — and because this is the
       // single most important month in the card's life, not a passed date.
       if (mT === m0) {
@@ -8788,9 +9423,41 @@ function nwLoanMonth(ym, longYear) {
   return names[i] + ' ' + (longYear ? m[1] : m[1].slice(2));
 }
 
+/* The shape check is not enough on its own: "2030-13" matches it and then adds
+   twelve months, so a span measured from it would be a year long and land in a
+   month nobody named. Out of range is no month at all, exactly as nwLoanMonth
+   above and the Worker's own nwMonthIndex treat it. */
 function nwLoanMonthIndex(ym) {
   var m = /^(\d{4})-(\d{2})$/.exec(String(ym === null || ym === undefined ? '' : ym));
-  return m ? Number(m[1]) * 12 + (Number(m[2]) - 1) : null;
+  if (!m) return null;
+  var mon = Number(m[2]);
+  if (mon < 1 || mon > 12) return null;
+  return Number(m[1]) * 12 + (mon - 1);
+}
+
+/* Did the housing index feed anything in THIS payload? It prices assets of
+   kind "property" and nothing else the evaluation returns, so a portfolio of
+   funds and cash comes back complete and correct while SSB is down — refusing
+   there blames an index the card never touched, and blanks a card that has
+   every number it needs.
+
+   The index has a second consumer the payload does not expose:
+   policy.indexNextPurchase scaling the purchase price. /private/nw/projection
+   echoes no policy, so a property-free config with that flag on draws an
+   un-indexed target price during an outage — what it did before this refusal
+   existed. Closing that needs the flag in the payload.
+
+   Terskelen and Formuesstabelen carry the same test; all three must agree, or
+   one card refuses beside two that do not. */
+function nwLoanIndexUsed(d) {
+  var evs = [(d && d.now) || {}, (d && d.target) || {}];
+  for (var i = 0; i < evs.length; i++) {
+    var as = evs[i].assets || [];
+    for (var j = 0; j < as.length; j++) {
+      if (as[j] && as[j].kind === 'property') return true;
+    }
+  }
+  return false;
 }
 
 function nwLoanMonthsBetween(a, b) {
@@ -8876,11 +9543,12 @@ function nwLoanToggleReveal() {
   // nwReveal() exists; otherwise re-render and stay masked. Failing CLOSED here
   // is deliberate — a fallback flag of our own could outlive the host's
   // auto-hide and leave kroner on a hallway wall indefinitely.
-  // The follow-up re-render is belt and braces: the host's nwReveal() repaints
-  // through whatever path it owns, and calling nwRerenderAll() after it is
-  // idempotent (renderNwLoan has no side effect but its id counter). It matters
-  // if nwReveal() still repaints only the old single-card path.
-  if (typeof nwReveal === 'function') nwReveal();
+  // nwReveal() repaints all three cards by itself, and NOTHING may follow it:
+  // it leaves the host's reveal flag and the companions' copy of it in
+  // agreement, so a re-render afterwards finds nothing to reconcile and falls
+  // through to the host's full render — which begins by hiding. A trailing
+  // nwLoanRerender() here turns every press of this button into a hide.
+  if (typeof nwReveal === 'function') { nwReveal(); return; }
   nwLoanRerender();
 }
 
@@ -8894,6 +9562,14 @@ function nwLoanToggleReveal() {
    Returns null when the denominator does not exist — a bar drawn from a
    denominator of zero is not "empty", it is a lie. */
 function nwLoanBarModel(e) {
+  // Both sides of the bar must be REAL numbers before anything is drawn.
+  // nwLoanNum defaults a withheld field to 0, which is the right thing for a
+  // tick or a chip and catastrophic here: the requirement would leave the
+  // denominator, T would collapse to maxLoan alone, and the loan lane would
+  // fill the whole frame — a picture asserting the bank funds the purchase
+  // outright with no deposit at all.
+  if (!Number.isFinite(e.equityNeeded) || !Number.isFinite(e.equitySupply)) return null;
+
   var maxLoan = nwLoanNum(e.maxLoan);
   var needed  = nwLoanNum(e.equityNeeded);
   var supply  = nwLoanNum(e.equitySupply);
@@ -9261,26 +9937,83 @@ function renderNwLoan(data, opts) {
   var view = nwLoanScope || (o.view === 'household' ? 'household' : 'mine');
   var seq = ++nwLoanSeq;
   var H = [];
-  var wrap = function (vars, body, cls) {
+  var wrap = function (vars, body, cls, refused) {
     return '<div class="nwl' + (cls ? ' ' + cls : '') + '"' +
+           (refused ? ' data-nw-refused="1"' : '') +
            (vars ? ' style="' + vars + '"' : '') + '><div class="nwl-in">' + body + '</div></div>';
   };
+  // Every refusal below leaves through here. The host stamps this card's
+  // freshness from the markup it gets back, so "this is a refusal" has to be
+  // legible in the markup itself — the host used to decide it by listing the
+  // payload shapes it knew about, fell a branch behind, and left the card
+  // sitting under a freshly stamped "Updated" while showing a red refusal.
+  // The marker carries quotes so a holding LABELLED after it cannot forge one:
+  // escapeHtml turns a user's " into &quot;, and the host matches verbatim.
+  var refuse = function (body) { return wrap('', body, '', true); };
 
   // State: no payload at all. Something defined must come back, and it must not
   // pretend the card is merely empty.
   if (!data || typeof data !== 'object') {
-    return wrap('', '<div class="nwl-refuse">Ingen formuesdata.</div>');
+    return refuse('<div class="nwl-refuse">Ingen formuesdata.</div>');
+  }
+
+  // State: the stored document could not be evaluated. Both evaluations come
+  // back null, so every downstream number would be a diagnosis of a
+  // configuration that was never read. The raw reason belongs in the host's
+  // status tooltip, not on the card.
+  if (data.error) {
+    return refuse('<div class="nwl-refuse">Lagret oppsett kunne ikke leses.</div>' +
+      '<div class="nwl-refuse-d">Ingen tall vises før oppsettet er rettet under Rediger.</div>');
   }
 
   var n = data.now || {}, t = data.target || {};
   var placeholder = data.placeholder
     ? '<div class="nwl-placeholder">Eksempeltall &mdash; trykk Rediger for å legge inn dine egne</div>' : '';
 
+  // State: the housing index is down AND this portfolio needed it. Ahead of the
+  // incomplete branch below, and for the same reason the host puts it there:
+  // without the index every property values at null and enters `missing`, so
+  // "Mangler verdi for 3 poster" would be a true symptom of the wrong cause.
+  // Ahead of the price and month branches too, because a payload that could not
+  // price the largest asset has nothing left for either of them to diagnose.
+  if (data.housingError && nwLoanIndexUsed(data)) {
+    return refuse(placeholder +
+      '<div class="nwl-refuse">Boligindeksen er utilgjengelig</div>' +
+      '<div class="nwl-refuse-d">Boligverdiene kan ikke prises, så det finnes verken ' +
+      'egenkapital, krav eller nevner å tegne søylen mot. ' +
+      'Ingen tall vises før SSB-indeksen er tilbake.</div>');
+  }
+
+  // State: a month that does not exist. "2030-13" survives a shape check and
+  // rolls into January 2031, so without this the card would answer a deadline
+  // the owner never set — and answer it confidently, since every figure in the
+  // evaluation is internally consistent with the rolled month.
+  if (nwLoanMonthIndex(n.ym) === null || nwLoanMonthIndex(t.ym) === null) {
+    return refuse(placeholder +
+      '<div class="nwl-refuse">Ugyldig målmåned</div>' +
+      '<div class="nwl-refuse-d">Måneden i oppsettet finnes ikke, og bankreglene måles ' +
+      'mot en dato. Sett den på nytt under Rediger.</div>');
+  }
+
+  // State: an untouched document. Nothing is missing here, so the refusal below
+  // would name a hole in a configuration that does not exist yet. A card nobody
+  // has filled in is not a card that broke.
+  if (n.empty || t.empty) {
+    return refuse(placeholder +
+      '<div class="nwl-refuse">Ingenting lagt inn ennå</div>' +
+      '<div class="nwl-refuse-d">Verken eiendeler eller gjeld er registrert. ' +
+      'Søylen tegnes ikke før det finnes noe å finansiere kjøpet med &ndash; ' +
+      'legg inn oppsettet under Rediger.</div>');
+  }
+
   // State: either Eval refuses. A total missing its largest asset is not stale,
   // it is wrong — so nothing that depends on a total is drawn: no bar, no
-  // percentage, no levers, no chart. The missing labels are user-entered and go
-  // through the host's escapeHtml(); they are names, never amounts, so the
-  // privacy invariant is untouched.
+  // percentage, no levers, no chart. The missing labels are user-entered
+  // ("Utleieleilighet", "Hytte") and disclose the shape of the portfolio as
+  // surely as a figure would, so the resting card carries the COUNT and the
+  // names arrive only with the host's reveal — the same trade the host makes in
+  // this state, and the reason an SSB outage is not the state that tells a
+  // hallway the most.
   if (n.incomplete || t.incomplete) {
     var miss = [];
     var pushMiss = function (arr) {
@@ -9289,12 +10022,31 @@ function renderNwLoan(data, opts) {
     pushMiss(n.missing); pushMiss(t.missing);
     var which = n.incomplete && t.incomplete ? 'begge månedene'
       : (n.incomplete ? 'denne måneden' : 'målmåneden');
-    return wrap('', placeholder +
+    return refuse(placeholder +
       '<div class="nwl-refuse">Ufullstendig grunnlag</div>' +
       '<div class="nwl-refuse-d">Mangler verdi for ' + miss.length + ' ' +
       (miss.length === 1 ? 'post' : 'poster') +
-      (miss.length ? ': ' + escapeHtml(miss.join(', ')) : '') +
+      (miss.length && revealed ? ': ' + escapeHtml(miss.join(', ')) : '') +
       '. Gjelder ' + which + '. Ingen totaler, ingen graf &mdash; et tak som mangler sin største post er ikke gammelt, det er feil.</div>');
+  }
+
+  // State: no purchase price in the stored policy. This card is a diagnosis of
+  // WHICH BANK RULE stops the purchase, and both rules are measured against the
+  // price: without one there is no requirement, no ceiling and no denominator,
+  // so there is nothing here to diagnose. The Worker says so in targetEvaluable
+  // and withholds the four target fields; the price and the finite tests stand
+  // beside the flag because nwLoanNum turns a withheld field into 0, and
+  // 0 >= 0 is the verdict "På vei mot målet" printed over no data at all.
+  var priced = n.targetEvaluable !== false && t.targetEvaluable !== false &&
+    nwLoanNum(t.nextPrice) > 0 &&
+    Number.isFinite(t.equityNeeded) && Number.isFinite(t.equitySupply) &&
+    Number.isFinite(n.equityNeeded) && Number.isFinite(n.equitySupply);
+  if (!priced) {
+    return refuse(placeholder +
+      '<div class="nwl-refuse">Kjøpesum mangler</div>' +
+      '<div class="nwl-refuse-d">Både gjeldsgraden og pantregelen måles mot kjøpesummen. ' +
+      'Uten den finnes verken krav, lånetak eller nevner å tegne søylen mot, ' +
+      'og kortet har ingen bankregel å peke på. Sett kjøpesummen under Rediger.</div>');
   }
 
   // Which Eval feeds the bar and the levers.
@@ -9338,11 +10090,16 @@ function renderNwLoan(data, opts) {
 
   /* ── 2. time selector ────────────────────────────────────────────────── */
   // Only offered when there are genuinely two different months to compare.
+  // The two ids are not style hooks and nothing here reads them. Pressing
+  // either re-renders the whole card, which destroys the button the keypress
+  // came from: focus would fall to <body>, and the next arrow or Enter would go
+  // to the page rather than to the control the reader was operating. The host
+  // restores focus by id after the swap.
   if (monthNow && monthTarget && monthsLeft !== null && monthsLeft !== 0) {
     H.push('<div class="nwl-when" role="group" aria-label="Velg tidspunkt">' +
-      '<button type="button" class="nwl-seg' + (when === 'now' ? ' nwl-is-on' : '') +
+      '<button type="button" id="nwl-seg-now" class="nwl-seg' + (when === 'now' ? ' nwl-is-on' : '') +
       '" aria-pressed="' + (when === 'now') + '" onclick="nwLoanSetWhen(\'now\')">I dag</button>' +
-      '<button type="button" class="nwl-seg' + (when === 'target' ? ' nwl-is-on' : '') +
+      '<button type="button" id="nwl-seg-target" class="nwl-seg' + (when === 'target' ? ' nwl-is-on' : '') +
       '" aria-pressed="' + (when === 'target') + '" onclick="nwLoanSetWhen(\'target\')">' +
       monthTarget + '</button></div>');
   }
@@ -9555,14 +10312,24 @@ function renderNwLoan(data, opts) {
 
   /* ── 9. foot: provenance chips + the one reveal control ──────────────── */
   var chips = [];
-  var idx = nwLoanNum(n.housingIndex, NaN);
-  if (isFinite(idx)) {
+  // nwLoanNum maps a withheld field to 0, and 0 is finite — so a null index
+  // printed as the published figure "Boligindeks 0,0", with nothing beside it
+  // to contradict it. The index is a level, never zero: absent is absent.
+  var idx = typeof n.housingIndex === 'number' && isFinite(n.housingIndex) &&
+    n.housingIndex > 0 ? n.housingIndex : null;
+  if (idx !== null) {
     // One decimal always: the index is a published national figure, and "176"
     // vs "176,0" is the difference between a rounded impression and the number
     // the Worker actually used.
     chips.push('Boligindeks ' +
       idx.toLocaleString('nb-NO', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) +
       (n.housingSource ? ' (' + escapeHtml(String(n.housingSource)) + ')' : ''));
+  } else if (data.housingError) {
+    // This portfolio prices without the index, so the card draws rather than
+    // refuses — but SSB being down still has to be on screen somewhere. Without
+    // this the outage was invisible on a card that had just dropped its only
+    // provenance line.
+    chips.push('<span class="nwl-is-neg">boligindeks utilgjengelig</span>');
   }
   var sr = nwLoanNum(e.stressRatePct, NaN);
   if (isFinite(sr) && sr > 0) {
@@ -9573,10 +10340,11 @@ function renderNwLoan(data, opts) {
   // The earmarked pot is excluded from equitySupply. That must be said, not
   // implied — its existence is not a level, and its absence from the bar is.
   if (nwLoanNum(n.restrictedMine) > 0) chips.push('båndlagt pott utenfor');
-  if (data.housingError) chips.push('<span class="nwl-err">indeks utilgjengelig</span>');
 
   H.push('<div class="nwl-foot"><div class="nwl-chips">' + chips.join(' &middot; ') + '</div>' +
-    '<button type="button" class="nwl-btn nwl-reveal-btn" aria-expanded="' + revealed +
+    // Same id contract as the two time buttons: this control destroys itself on
+    // activation, and without an anchor the keyboard reader loses the card.
+    '<button type="button" id="nwl-reveal-btn" class="nwl-btn nwl-reveal-btn" aria-expanded="' + revealed +
     '" aria-controls="nwl-amounts-' + seq + '" onclick="nwLoanToggleReveal()">' +
     (revealed ? 'Skjul beløp' : 'Vis beløp') +
     // The drain is a fresh node on every render, so the CSS animation restarts
@@ -9658,14 +10426,50 @@ function renderNwLoan(data, opts) {
   function lerp(a, b, t) { return a + (b - a) * t; }
   function esc(s) { return escapeHtml(s); }   // host global; do not reinvent
 
+  /* The shape check alone is not enough: "2030-13" matches it and then rolls a
+     year forward, which would put the target band in a month nobody named. Out
+     of range is no month at all, as everywhere else that parses a ym. */
   function monthIndex(ym) {
     var m = /^(\d{4})-(\d{1,2})$/.exec(String(ym || ''));
-    return m ? Number(m[1]) * 12 + (Number(m[2]) - 1) : null;
+    if (!m) return null;
+    var mon = Number(m[2]);
+    if (mon < 1 || mon > 12) return null;
+    return Number(m[1]) * 12 + (mon - 1);
   }
   function monthsBetween(a, b) {
     var x = monthIndex(a), y = monthIndex(b);
     return (x === null || y === null) ? null : y - x;
   }
+
+  /* Did the housing index feed anything in THIS payload? It prices assets of
+     kind "property" and nothing else the evaluation returns, so a stack of
+     funds and cash is complete and correct while SSB is down — refusing there
+     blames an index no band of this stack was drawn from.
+
+     The index's other consumer, policy.indexNextPurchase scaling the purchase
+     price, is not in the payload and so cannot be tested here; a property-free
+     config with that flag on draws an un-indexed target price during an
+     outage. Terskelen and Lånevegg run the same test, and the three have to
+     agree or one card refuses beside two that do not. */
+  function indexUsed(d) {
+    var evs = [(d && d.now) || {}, (d && d.target) || {}];
+    for (var i = 0; i < evs.length; i++) {
+      var as = evs[i].assets || [];
+      for (var j = 0; j < as.length; j++) {
+        if (as[j] && as[j].kind === 'property') return true;
+      }
+    }
+    return false;
+  }
+
+  /* Every refusal below leaves through here. The host stamps this card's
+     freshness from the markup it gets back, so "this is a refusal" has to be
+     legible in that markup — the host used to decide it by listing the payload
+     shapes it knew about, fell a branch behind, and left the card sitting under
+     a freshly stamped "Updated" while showing a red refusal.
+     The marker carries quotes so a holding LABELLED after it cannot forge one:
+     esc() turns a user's " into &quot;, and the host matches verbatim. */
+  function refuse(body) { return '<div class="nws" data-nw-refused="1">' + body + '</div>'; }
   function ymPlus(ym, n) {
     var i = monthIndex(ym);
     if (i === null || !fin(n)) return null;
@@ -9850,7 +10654,16 @@ function renderNwLoan(data, opts) {
     lastOpts.view = view;
 
     if (!data || typeof data !== 'object') {
-      return '<div class="nws"><p class="nws-msg">Ingen formuesdata.</p></div>';
+      return refuse('<p class="nws-msg">Ingen formuesdata.</p>');
+    }
+
+    /* STATE: the stored document could not be evaluated. now and target are
+       null, so every band and every share below would describe a configuration
+       that was never read. The raw reason belongs in the host's status tooltip,
+       not on the card. */
+    if (data.error) {
+      return refuse('<p class="nws-msg nws-msg-bad">Lagret oppsett kunne ikke leses. ' +
+        'Ingen tall vises før det er rettet under Rediger.</p>');
     }
 
     var n = data.now || {}, t = data.target || {};
@@ -9858,10 +10671,46 @@ function renderNwLoan(data, opts) {
       ? '<p class="nws-placeholder">Eksempeltall &mdash; trykk Rediger for å legge inn dine egne</p>'
       : '';
 
+    /* STATE: the housing index is down AND this stack was built from it. Ahead
+       of the incomplete branch below, and for the reason the host gives there:
+       with no index every property values at null and lands in `missing`, so an
+       incomplete diagnosis would be a true symptom of the wrong cause. Ahead of
+       the month and price branches too — a stack that cannot price its tallest
+       band has nothing left for either of them to say. */
+    if (data.housingError && indexUsed(data)) {
+      return refuse(banner +
+        '<p class="nws-msg nws-msg-bad">Boligindeksen er utilgjengelig &mdash; boligverdiene ' +
+        'kan ikke prises, så stabelen mangler sin største høyde. ' +
+        'Ingen tall vises før SSB-indeksen er tilbake.</p>');
+    }
+
+    /* STATE: a month that does not exist. "2030-13" passes a shape check and
+       then rolls forward into January 2031, so the stack would draw a horizon
+       reaching a deadline nobody set — and monthIndex below would place every
+       axis label along it without complaint. */
+    if (monthIndex(n.ym) === null || monthIndex(t.ym) === null) {
+      return refuse(banner +
+        '<p class="nws-msg nws-msg-bad">Ugyldig målmåned &mdash; måneden i oppsettet finnes ' +
+        'ikke, og stabelen trenger en dato å nå fram til. Sett den på nytt under Rediger.</p>');
+    }
+
+    /* STATE: an untouched document. Nothing is missing, so the refusal below
+       would name a hole in a configuration nobody has started — and the stack
+       would be a legend of empty bands under a verdict about a purchase that
+       has never been described. Not an error: an unfilled form. */
+    if (n.empty || t.empty) {
+      return refuse(banner +
+        '<p class="nws-msg">Ingenting lagt inn ennå &mdash; verken eiendeler eller gjeld. ' +
+        'Stabelen tegnes når det finnes noe å stable. Legg inn oppsettet under Rediger.</p>');
+    }
+
     /* STATE: incomplete. A total missing its largest asset is not stale, it
        is wrong — so refuse every total, and refuse the percentages too: a
-       share of an incomplete stack is just as wrong as the stack. Name what
-       is missing, truncated, because a config can hold twenty assets and a
+       share of an incomplete stack is just as wrong as the stack.
+       The resting card says HOW MANY, never which: the labels are the owner's
+       own words for their holdings and disclose the portfolio's shape as
+       plainly as a figure would. They arrive with the host's reveal, and are
+       still truncated there, because a config can hold twenty assets and a
        twenty-item sentence is not a sentence. */
     if (n.incomplete || t.incomplete) {
       var miss = [].concat(n.missing || [], t.missing || []).filter(Boolean);
@@ -9869,13 +10718,31 @@ function renderNwLoan(data, opts) {
       for (var mi = 0; mi < miss.length; mi++) {
         if (!seen[miss[mi]]) { seen[miss[mi]] = 1; uniq.push(miss[mi]); }
       }
-      var shown = uniq.slice(0, 4).map(esc).join(', ');
       var rest = uniq.length - 4;
-      return '<div class="nws">' + banner +
-        '<p class="nws-msg nws-msg-bad">Ufullstendig &mdash; mangler verdi for ' +
-        (shown || 'en eller flere poster') +
-        (rest > 0 ? ' <span class="nws-more">+' + rest + ' flere</span>' : '') +
-        '. Kortet viser ingen totaler før det er rettet.</p></div>';
+      var what = revealed
+        ? (uniq.slice(0, 4).map(esc).join(', ') || 'en eller flere poster') +
+          (rest > 0 ? ' <span class="nws-more">+' + rest + ' flere</span>' : '')
+        : (uniq.length
+            ? uniq.length + (uniq.length === 1 ? ' post' : ' poster')
+            : 'en eller flere poster');
+      return refuse(banner +
+        '<p class="nws-msg nws-msg-bad">Ufullstendig &mdash; mangler verdi for ' + what +
+        '. Kortet viser ingen totaler før det er rettet.</p>');
+    }
+
+    /* STATE: no purchase price. Every line this card draws is the stack
+       measured AGAINST the requirement, and the requirement is a function of
+       the price — so without one there is no rule to draw, no crossing to find
+       and no verdict to reach. The flag is the Worker's own word for it; the
+       finite tests stand beside it because num() maps the withheld fields to 0,
+       and 0 − 0 is a gap of zero, which prints PÅ MÅL in 2 rem type directly
+       above a legend that says nothing is registered. */
+    if (n.targetEvaluable === false || t.targetEvaluable === false ||
+        !(num(t.nextPrice) > 0) ||
+        !fin(t.equitySupply) || !fin(t.equityNeeded)) {
+      return refuse(banner +
+        '<p class="nws-msg nws-msg-bad">Kjøpesum mangler &mdash; uten den finnes ikke kravet, ' +
+        'og stabelen har ingen linje å måles mot. Sett den under Rediger.</p>');
     }
 
     var dNow = decompose(n);
@@ -10302,7 +11169,9 @@ function renderNwLoan(data, opts) {
           // shares left the setup form, so mine === household and the button
           // would have been a control that changed nothing.
           '<p class="nws-acts">' +
-            '<button type="button" class="nws-btn" onclick="nwStackToggleReveal()">' +
+            // Carries an id for the same reason the plot box below does: it is
+            // destroyed by its own activation, and the host puts focus back by id.
+            '<button type="button" id="nws-reveal-btn" class="nws-btn" onclick="nwStackToggleReveal()">' +
               (revealed ? 'Skjul beløp' : 'Vis beløp') + '</button>' +
           '</p>' +
         '</div>' +
@@ -10321,9 +11190,14 @@ function renderNwLoan(data, opts) {
         (onTrack ? 'Kravet er nådd.'
                  : slip !== null ? 'Ligger ' + slip + ' måneder bak.'
                                  : 'Gapet vokser.');
+      // The id is not a style hook and nothing here reads it: it is how the
+      // host finds this node again. Activating it re-renders the whole card,
+      // which destroys the element the keypress came from — focus would fall to
+      // <body>, a second Enter would do nothing and Space would scroll the
+      // page. The host restores focus by id after the swap.
       plotHtml =
         '<div class="nws-plot-wrap">' +
-          '<div class="nws-plot-box" role="button" tabindex="0" aria-pressed="' +
+          '<div class="nws-plot-box" id="nws-plot-btn" role="button" tabindex="0" aria-pressed="' +
             (revealed ? 'true' : 'false') + '" aria-label="' + esc(aria) + '" ' +
             'onclick="nwStackToggleReveal()" onkeydown="nwStackKey(event)">' +
             '<svg class="nws-plot" viewBox="0 0 ' + VB_W + ' ' + VB_H +
@@ -10458,16 +11332,21 @@ function renderNwLoan(data, opts) {
 
     /* ── Region 6: the footer, where the caveats live ─────────────────── */
     var foot = [];
-    if (fin(n.housingIndex) && !data.housingError) {
+    if (fin(n.housingIndex) && n.housingIndex > 0) {
       // Norwegian decimal comma: a full stop reads as a thousands separator here.
       foot.push('Boligindeks ' + esc(n.housingIndex.toFixed(1).replace('.', ',')));
+    } else if (data.housingError) {
+      // The stack is priced without the index here — no property, or none that
+      // needed it — so the card draws. The outage still belongs on screen: this
+      // footer is the only place the card says where its figures came from, and
+      // silently losing that line makes an outage look like a quiet card.
+      foot.push('<span class="nws-neg">boligindeks utilgjengelig</span>');
     }
     if (hasPlot) foot.push('sammensetning interpolert mellom nå og ' + esc(labMid(t.ym)));
     if (dT.underwater) foot.push('<span class="nws-neg">boliggjeld overstiger boligverdi</span>');
     if (clamped) foot.push('<span class="nws-neg">stabelen er beskåret ved null</span>');
     if (trackDrift) foot.push('<span class="nws-neg">banen og målmåneden er ikke samstemte</span>');
     if (dT.taxBad || dNow.taxBad) foot.push('<span class="nws-neg">skatteandelen går ikke opp</span>');
-    if (data.housingError) foot.push('<span class="nws-neg">indeks utilgjengelig</span>');
     if (num(t.nextPrice) <= 0) foot.push('<span class="nws-neg">neste bolig er ikke satt</span>');
 
     var style = cssVars.length ? ' style="' + cssVars.join(';') + '"' : '';
@@ -10516,7 +11395,55 @@ function renderNwLoan(data, opts) {
     // re-render them too — otherwise an auto-hide would clear the amounts on
     // one card and leave them showing on another, which is exactly the leak
     // the hallway rule exists to prevent.
-    function nwRenderCompanions() {
+    // fromFetch says whether fresh data just arrived. Blur, visibilitychange and
+    // collapse all re-render these cards without a single network call, and an
+    // "Updated 21:14" stamped by one of those is a lie about data hours old.
+    // What a refusing companion should say, and whether it is a source that
+    // broke or a form nobody has finished — "Stale · 08:14" sends the reader
+    // hunting a dead feed, the sentence sends them to Rediger.
+    //
+    // Only the WORDING comes from this list; whether the card failed at all is
+    // read off the markup. So a branch added to a renderer and forgotten here
+    // costs a vague tooltip, never a false "Updated" — which is the failure
+    // mode that made this list the wrong place to make that decision.
+    // The order mirrors the renderers' own, so the chip names the same cause
+    // the card does. All THREE cards read it now, including Terskelen, so the
+    // one thing the three headers can no longer do is disagree about why.
+    function nwRefusalStatus(d) {
+      // The two tier-2 gates lead, in Terskelen's own words. They are the
+      // reason a companion has no payload far more often than a fault is, and
+      // the companions go blank for them with nothing on the card to explain
+      // why — "Unavailable" sent the reader hunting a dead feed when the answer
+      // was a token or a network.
+      if (!getDashboardToken()) return ['Krever eiertoken', true];
+      if (nwtHome === false) return ['Formue vises bare på hjemmenettet', true];
+      if (!d || typeof d !== 'object') return ['Ingen formuesdata', false];
+      const n = d.now || {}, t = d.target || {};
+      if (d.error) return [String(d.error), false];
+      if (d.housingError && nwtIndexUsed(d)) return ['Boligindeksen er utilgjengelig', false];
+      if (!Number.isFinite(nwtMi(n.ym)) || !Number.isFinite(nwtMi(t.ym))) return ['Ugyldig målmåned', true];
+      if (n.empty || t.empty) return ['Ingen data registrert', true];
+      if (n.incomplete || t.incomplete) return ['Ufullstendig grunnlag', true];
+      // The price test is the UNION of the three cards' own, which differ:
+      // Lånevegg needs both evaluations finite, Formuesstabelen only the
+      // target's, Terskelen reads the flag and the price. Narrower here and a
+      // card that refuses would fall through to the fallback below and be told
+      // its setup "cannot be drawn" when the answer is one empty field.
+      if (n.targetEvaluable === false || t.targetEvaluable === false ||
+          !(Number(t.nextPrice) > 0) ||
+          !Number.isFinite(t.equityNeeded) || !Number.isFinite(t.equitySupply) ||
+          !Number.isFinite(n.equityNeeded) || !Number.isFinite(n.equitySupply)) {
+        return ['Kjøpesum mangler', true];
+      }
+      // The last two are Terskelen's alone — the companions draw without an
+      // income and without a gap — so they sit after the price, matching the
+      // order the hero states them in.
+      if (!(Number(t.grossIncome) > 0)) return ['Bruttoinntekt mangler', true];
+      if (!Number.isFinite(t.gap)) return ['Kravet ved målet er ikke beregnet', true];
+      return ['Oppsettet kan ikke tegnes', true];
+    }
+
+    function nwRenderCompanions(fromFetch) {
       // PINNED to 'household'. Ownership shares left the setup form: every
       // figure in the document is now a household total, so netWorthMine and
       // netWorthHousehold are the same number and a view toggle would be a
@@ -10537,8 +11464,49 @@ function renderNwLoan(data, opts) {
       ].forEach(([id, fn]) => {
         const el = document.getElementById(id + '-content');
         if (!el || !fn) return;
-        if (!nwData) { el.innerHTML = ''; setCardStatus(id, false, 'ingen data'); return; }
-        try { el.innerHTML = fn(nwData, opts); setCardStatus(id, true); }
+        // An empty body with no explanation on it: the reason has to reach the
+        // header, and it is usually a gate rather than a fault. nwRefusalStatus
+        // leads with the two gates for exactly this arm.
+        if (!nwData) {
+          el.innerHTML = '';
+          const gate = nwRefusalStatus(null);
+          setCardStatus(id, false, gate[0], gate[1]);
+          return;
+        }
+        // Replacing a card's body destroys whatever had focus inside it, and
+        // these cards are operated from inside: Formuesstabelen's whole plot is
+        // a role="button" the keyboard reaches, so revealing with Enter dropped
+        // focus to <body> — the second Enter did nothing and Space scrolled the
+        // page instead of hiding. Terskelen never hits this because its reveal
+        // patches only the amounts node.
+        // Restoring by id only covers controls that HAVE one, so every control
+        // the keyboard can reach inside these two cards carries a stable id:
+        // the plot box, both reveal buttons and Lånevegg's two time buttons.
+        // There is nothing else focusable in either card.
+        const active = document.activeElement;
+        const refocus = active && active.id && el.contains(active) ? active.id : null;
+        try {
+          const html = fn(nwData, opts);
+          el.innerHTML = html;
+          if (refocus) {
+            const back = document.getElementById(refocus);
+            if (back && back.focus) back.focus();
+          }
+          // The stamp follows what the card ACTUALLY DREW. Both renderers mark
+          // every refusal wrapper with data-nw-refused="1", so a branch added
+          // to either of them cannot land under a freshly stamped "Updated".
+          // This used to be an enumeration of payload shapes and it fell behind
+          // the renderers twice: an SSB outage had Terskelen reading
+          // "Stale · 07:14" beside two companions showing the same red refusal
+          // under "Updated 08:14".
+          // The stamp lives here rather than in the renderers: both are pure by
+          // contract and may not write to the DOM.
+          if (html.indexOf('data-nw-refused="1"') >= 0) {
+            const why = nwRefusalStatus(nwData);
+            setCardStatus(id, false, why[0], why[1]);
+          }
+          else if (fromFetch) setCardStatus(id, true);
+        }
         catch (e) { el.innerHTML = '<div class="error">Kunne ikke tegne kortet.</div>';
                     setCardStatus(id, false, e.message); }
       });
@@ -10547,13 +11515,27 @@ function renderNwLoan(data, opts) {
     // Wrap rather than edit the generated code: every internal re-render inside
     // Terskelen resolves through this binding, so the companions follow it.
     const __nwTerskelenRender = renderNetWorth;
-    renderNetWorth = function () {
+    renderNetWorth = function (fromFetch) {
       // A throw anywhere in the render used to leave the card visibly EMPTY,
       // which is the worst possible failure: it looks like there is no data
       // rather than like something broke, so it never gets reported. Show the
       // reason instead, and keep the companions rendering regardless.
       try {
         __nwTerskelenRender();
+        // The host's stamp is derived from its markup, exactly as the
+        // companions' are. It used to be stamped by fetchNetWorth one line
+        // before the render and then corrected per branch: three branches
+        // corrected it without saying the state was a configuration gap and
+        // three more forgot entirely, so a red refusal sat under a fresh
+        // "Updated HH:MM" on the card that carries the kroner.
+        // A success needs fromFetch — blur, collapse and the auto-hide all land
+        // here with data hours old and must not restamp the clock.
+        const hostEl = document.getElementById('networth-content');
+        const hostHtml = hostEl ? hostEl.innerHTML : '';
+        if (hostHtml.indexOf('data-nw-refused="1"') >= 0) {
+          const why = nwRefusalStatus(nwData);
+          setCardStatus('networth', false, why[0], why[1]);
+        } else if (fromFetch && nwData) setCardStatus('networth', true);
       } catch (err) {
         const el = document.getElementById('networth-content');
         if (el) {
@@ -10563,7 +11545,7 @@ function renderNwLoan(data, opts) {
         setCardStatus('networth', false, err && err.message);
         if (typeof console !== 'undefined') console.error('[formue] render failed', err);
       }
-      try { nwRenderCompanions(); } catch (e2) {
+      try { nwRenderCompanions(fromFetch); } catch (e2) {
         if (typeof console !== 'undefined') console.error('[formue] companions failed', e2);
       }
     };
@@ -10594,7 +11576,15 @@ function renderNwLoan(data, opts) {
         nwtSetRevealed(ui.revealed);   // re-renders everything itself
         return;
       }
+      // Everything that reaches this line is a VIEW change, not a data refresh:
+      // "I dag"/"Ved målet", a scope switch, a companion asking to be redrawn.
+      // renderNetWorth() opens with nwtHide() because a refresh must, so
+      // without putting the state back every one of those presses was a hide —
+      // press "I dag" while the amounts are up and they vanish. Read before the
+      // render, because the render is what clears it.
+      const wasRevealed = nwtRevealed;
       renderNetWorth();
+      if (wasRevealed) nwtSetRevealed(true);
     }
     function nwReveal() { nwtToggle(); }
 
@@ -11134,14 +12124,14 @@ function renderNwLoan(data, opts) {
       // /index/* is behind the owner token, same as sensors and lights.
       if (!getDashboardToken()) {
         content.innerHTML = `<div style="color:var(--text-secondary);font-size:0.85rem;line-height:1.5;">Requires the dashboard owner token.<br>Use the lock button in the header to enter it.</div>`;
-        status.textContent = '';
+        setCardStatus('indexes', false, 'no token', true);
         return;
       }
 
       const picks = getIndexes();
       if (!picks.length) {
         content.innerHTML = `<div style="color:var(--text-secondary);font-size:0.85rem;">No indexes selected &mdash; use Edit to choose some.</div>`;
-        status.textContent = '';
+        setCardStatus('indexes', false, 'no indexes selected', true);
         return;
       }
 
@@ -11183,18 +12173,20 @@ function renderNwLoan(data, opts) {
       }).join('') + '</div>';
 
       const staleCount = results.filter(r => r.stale).length;
-      setCardStatus('indexes', true);
-      if (staleCount) status.textContent = staleCount + ' stale · ' + status.textContent;
+      setCardStatus('indexes', staleCount < results.length,
+        staleCount + ' of ' + results.length + ' sources stale');
+      if (staleCount && staleCount < results.length && status) {
+        status.textContent = staleCount + ' stale · ' + status.textContent;
+      }
     }
-    fetchIndexes();
-    setInterval(fetchIndexes, 15 * 60 * 1000);
+    scheduleWidget('indexes', fetchIndexes, 15 * 60 * 1000);
 
     // Before the location-dependent widgets settle, adopt the stored address.
     syncLocationFromWorker().then(changed => { if (changed) refreshAllWidgets(false); });
 
-    fetchNetWorth();
+    // One fetch behind three cards, so it runs while any of them is on screen.
     // Projections move slowly; hourly is plenty and keeps the wall quiet.
-    setInterval(fetchNetWorth, 60 * 60 * 1000);
+    scheduleWidget(['networth', 'nwloan', 'nwstack'], fetchNetWorth, 60 * 60 * 1000);
 
     function getIndexesSettingsHTML() {
       // The catalogue is a Worker round-trip, so fill the list in after render.
@@ -11301,13 +12293,25 @@ function renderNwLoan(data, opts) {
 
       // Widget visibility
       const hidden = cfg.hiddenWidgets || [];
+      // Hiding a card is the same gesture as collapsing one and has the same
+      // consequence: revealed kroner would go on living inside a display:none
+      // subtree for the rest of the 45 s, on a screen in a hallway.
+      // toggleCardCollapse clears the reveal for exactly this reason.
+      //
+      // Only when there IS a reveal to clear. This function also runs once at
+      // load, and nwtHide is wrapped to re-render the two companions: on the
+      // boot call nwData is still null, so both took the no-payload arm and
+      // stamped themselves before the first fetch had been issued. Nothing is
+      // revealed at that point, so the guard costs the feature nothing.
+      if (nwtRevealed && typeof nwtHide === 'function') nwtHide();
       grid.querySelectorAll('.card[data-widget]').forEach(card => {
         card.style.display = hidden.includes(card.dataset.widget) ? 'none' : '';
       });
       // Fix Leaflet map size when mobility widget becomes visible
       if (mobilityMap && !hidden.includes('mobility')) {
-        setTimeout(() => mobilityMap.invalidateSize(), 100);
+        setTimeout(mobilityResized, 100);
       }
+      syncScheduledWidgets();
     }
 
     function openLayoutSettings() {
@@ -11456,10 +12460,12 @@ function renderNwLoan(data, opts) {
       } else {
         cfg.hiddenWidgets.push(widget);
         btn.classList.remove('selected');
-        // Remove from collapsed state when hidden
-        const collapsed = safeParse(localStorage.getItem('dashboard-collapsed'), [], 'dashboard-collapsed');
-        const ci = collapsed.indexOf(widget);
-        if (ci >= 0) { collapsed.splice(ci, 1); localStorage.setItem('dashboard-collapsed', JSON.stringify(collapsed)); }
+        // A hidden card is not a collapsed one, so clear the class and let the
+        // stored list follow from the DOM. Editing the list alone left the two
+        // disagreeing, and the class is what widgetIsLive reads.
+        const card = document.querySelector(`.card[data-widget="${widget}"]`);
+        if (card) card.classList.remove('collapsed');
+        persistCollapsed();
       }
       saveLayoutConfig(cfg);
       applyLayoutConfig();
@@ -11721,7 +12727,7 @@ function renderNwLoan(data, opts) {
         });
 
         if (typeof mobilityMap !== 'undefined' && mobilityMap && !hidden.has('mobility')) {
-          setTimeout(() => mobilityMap.invalidateSize(), 60);
+          setTimeout(mobilityResized, 60);
         }
         return true;
       } catch (e) {

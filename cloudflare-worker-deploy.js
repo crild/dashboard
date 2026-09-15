@@ -18,6 +18,11 @@ var SHAREABLE_CONFIG_KEYS = [
   "mobility", "_widgetOrder", "_theme", "_layout"
 ];
 
+// One alphabet for both issuing and validating a share code. It was two, and
+// they disagreed on 'i' and 'l', so roughly a fifth of every code ever handed
+// out was refused by /config/load. Characters that read alike are left out.
+var CODE_ALPHABET = "abcdefghijkmnpqrstuvwxyz23456789";
+
 var ALLOWED = [
   "https://query1.finance.yahoo.com/",
   "https://query2.finance.yahoo.com/",
@@ -43,7 +48,7 @@ var ALLOWED = [
 // Static list plus anything the owner has added from home.
 async function allowedPrefixes() {
   var extra = [];
-  try { extra = splitList(await KV.get("proxy_hosts")); } catch (e) {}
+  try { extra = await kvProxyHosts(); } catch (e) {}
   return ALLOWED.concat(extra);
 }
 
@@ -101,6 +106,29 @@ async function consumeAuthTicket(url) {
   return true;
 }
 
+// /callback/* is reached by a provider redirect, so it can carry no header and
+// no ticket of its own. The state minted when /auth/* ran is therefore the only
+// evidence that the code being exchanged belongs to a flow the owner started:
+// without it anyone could hand the Worker their own code and have it spend the
+// house client_secret and overwrite the stored tokens. Single-use, ten minutes.
+async function issueOauthState(provider) {
+  var bytes = new Uint8Array(16);
+  crypto.getRandomValues(bytes);
+  var state = "";
+  for (var i = 0; i < bytes.length; i++) state += ("0" + bytes[i].toString(16)).slice(-2);
+  await KV.put("oauthstate_" + provider + "_" + state, "1", {expirationTtl: 600});
+  return state;
+}
+
+async function consumeOauthState(provider, url) {
+  var state = url.searchParams.get("state") || "";
+  if (!/^[0-9a-f]{32}$/.test(state)) return false;
+  var key = "oauthstate_" + provider + "_" + state;
+  if (!(await KV.get(key))) return false;
+  await KV.delete(key);
+  return true;
+}
+
 async function handleRequest(request) {
   var url = new URL(request.url);
   var path = url.pathname;
@@ -129,8 +157,8 @@ async function handleRequest(request) {
       var authDenied = requireDashboardToken(request);
       if (authDenied) return authDenied;
     }
-  } else if (path.startsWith("/hue") || path.startsWith("/location") ||
-             path.startsWith("/index/") || path.startsWith("/session")) {
+  } else if (path.startsWith("/hue") || path.startsWith("/index/") ||
+             path.startsWith("/news/") || path.startsWith("/session")) {
     var denied = requireDashboardToken(request);
     if (denied) return denied;
   }
@@ -139,10 +167,12 @@ async function handleRequest(request) {
   // leaked token on its own is not enough to read net worth or savings goals.
   // Netatmo is tier 2 alongside the money: it is a live readout of conditions
   // inside the house, and the token alone should not expose that from anywhere
-  // in the world. Hue stays tier 1 deliberately — controlling lights remotely is
-  // a feature, not a leak.
+  // in the world. So is /location, which is the street, house number, kommune
+  // and coordinates of the house — strictly more revealing than the CO2 reading
+  // this gate was built around. Hue stays tier 1 deliberately — controlling
+  // lights remotely is a feature, not a leak.
   if (path.startsWith("/private/") || path.startsWith("/brief/") ||
-      path.startsWith("/netatmo")) {
+      path.startsWith("/netatmo") || path.startsWith("/location")) {
     var homeDenied = await requireHomeNetwork(request);
     if (homeDenied) return homeDenied;
   }
@@ -168,16 +198,35 @@ async function handleRequest(request) {
 
   if (path === "/private/nw/config") {
     if (request.method === "PUT" || request.method === "POST") {
-      var incoming = await request.json().catch(function () { return null; });
-      if (!incoming || typeof incoming !== "object") {
+      var nwBody = await request.text();
+      if (nwBody.length > 64 * 1024) {
+        return jsonResponse({error: "Config too large"}, 413);
+      }
+      var incoming = null;
+      try { incoming = JSON.parse(nwBody); } catch (e) { incoming = null; }
+      if (!incoming || typeof incoming !== "object" || Array.isArray(incoming)) {
         return jsonResponse({error: "Expected a config object"}, 400);
+      }
+      // KV has no schema and no rollback: one document of the wrong shape sticks
+      // and every later projection dies on it, across reloads and restarts. So
+      // the shape is checked at the door rather than trusted downstream.
+      if (!Array.isArray(incoming.assets) || !Array.isArray(incoming.liabilities) ||
+          !incoming.policy || typeof incoming.policy !== "object" ||
+          Array.isArray(incoming.policy)) {
+        return jsonResponse({error: "Expected assets[], liabilities[] and a policy object"}, 400);
       }
       // Optimistic concurrency: KV has no compare-and-swap, so a client must
       // say which revision it edited. Two devices editing at once then collide
       // loudly instead of one silently discarding the other.
       var current = await nwLoadConfig();
       var expected = current.rev || 0;
-      if (incoming.rev !== undefined && Number(incoming.rev) !== expected) {
+      // The rev is required, not optional. Skipping the check when it was absent
+      // meant a body without one always won — and the dashboard's raw-JSON editor
+      // lets that line be deleted by hand.
+      if (typeof incoming.rev !== "number" || !isFinite(incoming.rev)) {
+        return jsonResponse({error: "Expected the rev of the config you loaded", rev: expected}, 400);
+      }
+      if (incoming.rev !== expected) {
         return jsonResponse({error: "Config changed since you loaded it", rev: expected}, 409);
       }
       incoming.rev = expected + 1;
@@ -193,19 +242,24 @@ async function handleRequest(request) {
     if (request.method === "POST") {
       var body = await request.json().catch(function() { return {}; });
       var prefix = String(body.prefix || "").trim();
+      // A comma is legal inside a URL path and used to survive into storage,
+      // where the joined list then split it back out into extra entries.
+      if (prefix.indexOf(",") >= 0) {
+        return jsonResponse({error: "One prefix per request"}, 400);
+      }
       // Must be an https origin prefix; anything looser re-opens the proxy.
       if (!/^https:\/\/[a-z0-9.-]+\/[a-zA-Z0-9._~:\/?#\[\]@!$&'()*+,;=%-]*$/i.test(prefix)) {
         return jsonResponse({error: "Expected an https:// prefix ending in a path, e.g. https://example.com/"}, 400);
       }
       var hosts = await kvProxyHosts();
       if (hosts.indexOf(prefix) < 0) hosts.push(prefix);
-      await KV.put("proxy_hosts", hosts.join(","));
+      await KV.put("proxy_hosts", JSON.stringify(hosts));
       return jsonResponse({hosts: hosts, added: prefix});
     }
     if (request.method === "DELETE") {
       var drop = url.searchParams.get("prefix") || "";
       var kept = (await kvProxyHosts()).filter(function(h) { return h !== drop; });
-      await KV.put("proxy_hosts", kept.join(","));
+      await KV.put("proxy_hosts", JSON.stringify(kept));
       return jsonResponse({hosts: kept, removed: drop});
     }
     return jsonResponse({hosts: await kvProxyHosts(), builtin: ALLOWED});
@@ -214,19 +268,20 @@ async function handleRequest(request) {
   if (path === "/private/home-networks") {
     if (request.method === "POST") {
       var body = await request.json().catch(function() { return {}; });
-      var entry = body.cidr || defaultCidrFor(clientIp(request));
-      if (!entry || !parseIp(entry.split("/")[0])) {
-        return jsonResponse({error: "Not a usable network"}, 400);
+      var entry = body.cidr ? String(body.cidr).trim() : defaultCidrFor(clientIp(request));
+      var badEntry = entry ? homeCidrError(entry) : "Not a usable network";
+      if (badEntry) {
+        return jsonResponse({error: badEntry}, 400);
       }
       var stored = await kvHomeNetworks();
       if (stored.indexOf(entry) < 0) stored.push(entry);
-      await KV.put("home_networks", stored.join(","));
+      await KV.put("home_networks", JSON.stringify(stored));
       return jsonResponse({networks: stored, added: entry});
     }
     if (request.method === "DELETE") {
       var toDrop = url.searchParams.get("cidr") || "";
       var kept = (await kvHomeNetworks()).filter(function(n) { return n !== toDrop; });
-      await KV.put("home_networks", kept.join(","));
+      await KV.put("home_networks", JSON.stringify(kept));
       return jsonResponse({networks: kept, removed: toDrop});
     }
     var allNets = await homeNetworks();
@@ -241,11 +296,15 @@ async function handleRequest(request) {
   if (path === "/auth/netatmo") {
     var clientId = typeof NETATMO_CLIENT_ID !== "undefined" ? NETATMO_CLIENT_ID : "";
     var redirect = url.origin + "/callback/netatmo";
-    var authUrl = "https://api.netatmo.com/oauth2/authorize?client_id=" + clientId + "&redirect_uri=" + encodeURIComponent(redirect) + "&scope=read_station&state=dashboard";
+    var netatmoState = await issueOauthState("netatmo");
+    var authUrl = "https://api.netatmo.com/oauth2/authorize?client_id=" + clientId + "&redirect_uri=" + encodeURIComponent(redirect) + "&scope=read_station&state=" + netatmoState;
     return Response.redirect(authUrl, 302);
   }
 
   if (path === "/callback/netatmo") {
+    if (!(await consumeOauthState("netatmo", url))) {
+      return new Response("Unrecognised authorization state. Start authorization from the dashboard.", {status: 403});
+    }
     var code = url.searchParams.get("code");
     if (!code) {
       return new Response("Missing code", {status: 400});
@@ -303,11 +362,15 @@ async function handleRequest(request) {
     var hueClientId = typeof HUE_CLIENT_ID !== "undefined" ? HUE_CLIENT_ID : "";
     var hueAppId = typeof HUE_APP_ID !== "undefined" ? HUE_APP_ID : "";
     var redirect = url.origin + "/callback/hue";
-    var authUrl = "https://api.meethue.com/v2/oauth2/authorize?client_id=" + hueClientId + "&response_type=code&state=dashboard&deviceid=" + hueAppId + "&devicename=Dashboard";
+    var hueState = await issueOauthState("hue");
+    var authUrl = "https://api.meethue.com/v2/oauth2/authorize?client_id=" + hueClientId + "&response_type=code&state=" + hueState + "&deviceid=" + hueAppId + "&devicename=Dashboard";
     return Response.redirect(authUrl, 302);
   }
 
   if (path === "/callback/hue") {
+    if (!(await consumeOauthState("hue", url))) {
+      return new Response("Unrecognised authorization state. Start authorization from the dashboard.", {status: 403});
+    }
     var code = url.searchParams.get("code");
     if (!code) {
       return new Response("Missing code", {status: 400});
@@ -436,8 +499,9 @@ async function handleRequest(request) {
     return new Response(body, {status: resp.status, headers: {"Content-Type": "application/json", "Access-Control-Allow-Origin": "*"}});
   }
 
-  // Public like the other read-only feeds: it exposes nothing personal, and a
-  // share-code recipient's news tabs should work too.
+  // Tier 2, gated above. This is the address of the house, not a preference:
+  // street, house number, kommune and coordinates. A share-code recipient sets
+  // their own location in their own browser instead.
   if (path === "/location") {
     if (request.method === "PUT" || request.method === "POST") {
       var loc = await request.json().catch(function () { return null; });
@@ -461,7 +525,7 @@ async function handleRequest(request) {
       return jsonResponse({error: "Missing or oversized query"}, 400);
     }
     var nm = Number(url.searchParams.get("months")) || 12;
-    return await newsSearch(nq, Math.max(1, Math.min(60, nm)));
+    return await newsSearch(nq, Math.max(1, Math.min(NEWS_MAX_MONTHS, nm)));
   }
 
   if (path === "/waste/calendar") {
@@ -544,7 +608,10 @@ async function handleRequest(request) {
       })});
     }
 
-    var source = INDEX_SOURCES[indexName];
+    // Own keys only. A plain lookup walks the prototype chain, so /index/toString
+    // and /index/constructor answered 200 with an unlabelled tile.
+    var source = Object.prototype.hasOwnProperty.call(INDEX_SOURCES, indexName)
+      ? INDEX_SOURCES[indexName] : null;
     if (!source) return jsonResponse({error: "Unknown index", name: indexName}, 404);
     return await serveIndex(indexName, source, url.searchParams.get("force") === "1");
   }
@@ -574,7 +641,10 @@ async function handleRequest(request) {
       var dropped = Object.keys(parsed).filter(function(key) {
         return SHAREABLE_CONFIG_KEYS.indexOf(key) < 0;
       });
-      var code = generateCode();
+      var code = await generateCode();
+      if (!code) {
+        return jsonResponse({error: "Could not allocate a share code"}, 503);
+      }
       await KV.put("config_" + code, JSON.stringify(safe), {expirationTtl: 31536000});
       return jsonResponse({code: code, dropped: dropped});
     } catch (err) {
@@ -585,7 +655,7 @@ async function handleRequest(request) {
   if (path === "/config/load") {
     var code = url.searchParams.get("code");
     // generateCode() uses this alphabet; anything else is someone probing.
-    if (code && !/^[a-hj-np-z2-9]{8}$/.test(code)) {
+    if (code && !new RegExp("^[" + CODE_ALPHABET + "]{8}$").test(code)) {
       return jsonResponse({error: "Invalid code"}, 400);
     }
     if (!code) {
@@ -598,17 +668,21 @@ async function handleRequest(request) {
     return new Response(configData, {headers: {"Content-Type": "application/json", "Access-Control-Allow-Origin": "*"}});
   }
 
+  // The proxy is two named paths, not the fallthrough. It used to be whatever
+  // handleRequest had failed to match, so /totally/made/up?url=, /config/save?url=
+  // and /hue/anything?url= were all the proxy — and any route added later would
+  // silently have become one too.
+  if (path !== "/proxy" && path !== "/") {
+    return jsonResponse({error: "Not found"}, 404);
+  }
+
   var target = url.searchParams.get("url");
   if (!target) {
     return new Response("Missing url parameter", {status: 400, headers: {"Access-Control-Allow-Origin": "*"}});
   }
 
   var prefixes = await allowedPrefixes();
-  var allowed = false;
-  for (var i = 0; i < prefixes.length; i++) {
-    if (target.indexOf(prefixes[i]) === 0) { allowed = true; break; }
-  }
-  if (!allowed) {
+  if (!prefixAllowed(target, prefixes)) {
     // Say WHY. A bare "Forbidden" made an unlisted feed look like a broken one,
     // and the settings UI happily accepted hosts this would always refuse.
     var host = "";
@@ -621,13 +695,62 @@ async function handleRequest(request) {
   }
 
   try {
-    var resp = await fetch(target, {headers: {"User-Agent": "Mozilla/5.0"}});
+    var hop = await proxyFetch(target, prefixes);
+    if (hop.error) {
+      return jsonResponse({error: hop.error, host: hop.host || ""}, 403);
+    }
+    var resp = hop.response;
     var body = await resp.text();
     var ct = resp.headers.get("Content-Type") || "text/plain";
-    return new Response(body, {status: resp.status, headers: {"Content-Type": ct, "Access-Control-Allow-Origin": "*"}});
+    var headers = {"Content-Type": ct, "Access-Control-Allow-Origin": "*"};
+    // A news feed the card re-reads on a timer is worth five minutes in the
+    // browser cache: the publishers do not move that fast, and every reload
+    // of the dashboard otherwise re-downloads the same XML.
+    if (resp.status === 200 && ct.indexOf("xml") !== -1) {
+      headers["Cache-Control"] = "public, max-age=300";
+    }
+    return new Response(body, {status: resp.status, headers: headers});
   } catch (err) {
     return new Response(err.message, {status: 500, headers: {"Access-Control-Allow-Origin": "*"}});
   }
+}
+
+function prefixAllowed(target, prefixes) {
+  for (var i = 0; i < prefixes.length; i++) {
+    if (target.indexOf(prefixes[i]) === 0) return true;
+  }
+  return false;
+}
+
+// Redirects are followed by hand so the allowlist is re-checked on every hop.
+// With the default redirect:"follow" the check only ever covered the URL the
+// caller asked for: www.dn.no is allowlisted, 302s to an auth host that is not,
+// and 833 kB of that host's response came back through the Worker wearing
+// Access-Control-Allow-Origin: *.
+var PROXY_MAX_REDIRECTS = 3;
+
+async function proxyFetch(target, prefixes) {
+  var current = target;
+  for (var i = 0; i <= PROXY_MAX_REDIRECTS; i++) {
+    var resp = await fetch(current, {
+      headers: {"User-Agent": "Mozilla/5.0"},
+      redirect: "manual"
+    });
+    if (resp.status < 300 || resp.status >= 400) return {response: resp};
+    var location = resp.headers.get("Location");
+    // A 3xx with nowhere to go is the upstream's answer; hand it back as one.
+    if (!location) return {response: resp};
+    var next = null;
+    try { next = new URL(location, current); } catch (e) {}
+    if (!next || !prefixAllowed(next.href, prefixes)) {
+      return {
+        error: "Redirected to a host the dashboard proxy does not allow",
+        host: next ? next.host : ""
+      };
+    }
+    current = next.href;
+  }
+  return {error: "Too many redirects"};
 }
 
 async function getNetatmoToken() {
@@ -685,13 +808,21 @@ async function getHueToken() {
   return null;
 }
 
-function generateCode() {
-  var chars = "abcdefghijkmnpqrstuvwxyz23456789";
-  var code = "";
-  for (var i = 0; i < 8; i++) {
-    code += chars.charAt(Math.floor(Math.random() * chars.length));
+// KV has no insert-if-absent, so a code is checked against the store before it
+// is handed out: a collision would silently overwrite someone else's config.
+// Returns null if it cannot find a free one, which the caller must report.
+async function generateCode() {
+  for (var attempt = 0; attempt < 5; attempt++) {
+    var bytes = new Uint8Array(8);
+    crypto.getRandomValues(bytes);
+    var code = "";
+    // 32 divides 256, so the modulo is unbiased across the alphabet.
+    for (var i = 0; i < 8; i++) {
+      code += CODE_ALPHABET.charAt(bytes[i] % CODE_ALPHABET.length);
+    }
+    if (!(await KV.get("config_" + code))) return code;
   }
-  return code;
+  return null;
 }
 
 // ── Vibes indexes ────────────────────────────────────────────────────────────
@@ -913,9 +1044,15 @@ function parseTextColumn(body, column) {
   return null;
 }
 
+// The dashboard abandons an index tile after twelve seconds, so a slower round
+// trip is one nobody is left waiting for. A rate-limited source will hold the
+// connection for the whole of it unless the Worker hangs up first.
+var INDEX_FETCH_TIMEOUT_MS = 5000;
+
 async function fetchIndexValue(source) {
   var resp = await fetch(source.url, {
-    headers: {"User-Agent": source.ua || "Mozilla/5.0 (compatible; dashboard/1.0)"}
+    headers: {"User-Agent": source.ua || "Mozilla/5.0 (compatible; dashboard/1.0)"},
+    signal: AbortSignal.timeout(INDEX_FETCH_TIMEOUT_MS)
   });
   if (!resp.ok) throw new Error("HTTP " + resp.status);
   var body = await resp.text();
@@ -968,11 +1105,28 @@ function decorateIndex(name, source, entry, stale) {
   };
 }
 
+// The shape of a tile that has no value to show at all — a source that has
+// never once answered, whether that was discovered now or a few minutes ago.
+function indexUnavailable(name, source, error) {
+  return {
+    name: name, label: source.label, emoji: source.emoji || "",
+    home: source.home || "", value: null, display: "—", caption: "", unit: source.unit || "",
+    scale: source.scale || null, ts: null, ttl: source.ttl || 3600,
+    stale: true, error: error
+  };
+}
+
+// How long a source that has never answered is left alone before it is tried
+// again. Long enough to stop a dead endpoint being re-dialled on every reload,
+// short enough that a source coming back is noticed within the hour.
+var INDEX_FAILURE_TTL = 900;
+
 // Fail soft by design: a broken source returns its last known value with
 // stale:true and HTTP 200, so one dead endpoint greys out a single tile
 // instead of breaking the widget.
 async function serveIndex(name, source, force) {
   var cacheKey = "index_" + name;
+  var failKey = "indexfail_" + name;
   var cached = null;
   try {
     var raw = await KV.get(cacheKey);
@@ -982,6 +1136,19 @@ async function serveIndex(name, source, force) {
   var ttlMs = (source.ttl || 3600) * 1000;
   if (!force && cached && (Date.now() - cached.ts) < ttlMs) {
     return jsonResponse(decorateIndex(name, source, cached, false));
+  }
+
+  // Only a success was ever written here, so a source with no last good value
+  // was re-fetched on every single request with no backoff at all — three
+  // consecutive requests to a rate-limited one cost about twelve seconds each.
+  // The failure is now cached too, so the retry runs on a timer.
+  if (!force && !cached) {
+    var failed = null;
+    try {
+      var rawFail = await KV.get(failKey);
+      if (rawFail) failed = JSON.parse(rawFail);
+    } catch (e) {}
+    if (failed) return jsonResponse(indexUnavailable(name, source, failed.error));
   }
 
   try {
@@ -997,12 +1164,9 @@ async function serveIndex(name, source, force) {
       out.error = err.message;
       return jsonResponse(out);
     }
-    return jsonResponse({
-      name: name, label: source.label, emoji: source.emoji || "",
-      home: source.home || "", value: null, display: "—", caption: "", unit: source.unit || "",
-      scale: source.scale || null, ts: null, ttl: source.ttl || 3600,
-      stale: true, error: err.message
-    });
+    await KV.put(failKey, JSON.stringify({error: err.message, ts: Date.now()}),
+                 {expirationTtl: INDEX_FAILURE_TTL});
+    return jsonResponse(indexUnavailable(name, source, err.message));
   }
 }
 
@@ -1128,9 +1292,56 @@ function defaultCidrFor(ip) {
   return parsed.family === 4 ? ip + "/32" : ip + "/56";
 }
 
+// The widest prefix an allowlist entry may carry. A home network is a handful
+// of addresses; anything broader is the gate being widened, and /0 would admit
+// every address on earth while still reading as an ordinary entry in the list.
+var MIN_PREFIX_V4 = 24;
+var MIN_PREFIX_V6 = 48;
+
+// Checks the entry the way ipMatches will read it — same split on the last
+// "/" — so nothing can validate as one thing and match as another. Returns null
+// when the entry is usable, otherwise the reason to hand back.
+function homeCidrError(entry) {
+  if (typeof entry !== "string") return "Not a usable network";
+  entry = entry.trim();
+  if (!entry) return "Not a usable network";
+  // Both allowlists persisted as list.join(","), which made the delimiter part
+  // of the value: one POST of "9.9.9.9/32,0.0.0.0/1,128.0.0.0/1" landed as
+  // three live entries, the last two of them the whole IPv4 internet.
+  if (entry.indexOf(",") >= 0) return "One network per request";
+  var slash = entry.lastIndexOf("/");
+  // Validate the CIDR whole. Only the part before the slash used to be looked
+  // at, so everything after it was accepted unread.
+  if (slash < 0) return "Expected a CIDR, e.g. 192.0.2.7/32";
+  var network = parseIp(entry.slice(0, slash));
+  if (!network) return "Not a usable network";
+  var bits = entry.slice(slash + 1);
+  if (!/^\d{1,3}$/.test(bits)) return "Not a usable prefix length";
+  var width = network.family === 4 ? 32 : 128;
+  var min = network.family === 4 ? MIN_PREFIX_V4 : MIN_PREFIX_V6;
+  if (Number(bits) > width) return "Not a usable prefix length";
+  if (Number(bits) < min) return "Prefix too wide: /" + min + " or narrower";
+  return null;
+}
+
 function splitList(str) {
   return (str || "").split(",").map(function(x) { return x.trim(); })
                     .filter(function(x) { return x.length > 0; });
+}
+
+// Both allowlists are stored as JSON arrays, so a value can never carry the
+// delimiter that separates entries. A legacy comma-joined string is still read,
+// so an existing list survives the change.
+function parseStoredList(raw) {
+  if (!raw) return [];
+  try {
+    var parsed = JSON.parse(raw);
+    if (Array.isArray(parsed)) {
+      return parsed.map(function(x) { return String(x).trim(); })
+                   .filter(function(x) { return x.length > 0; });
+    }
+  } catch (e) {}
+  return splitList(raw);
 }
 
 function configuredHomeNetworks() {
@@ -1138,7 +1349,7 @@ function configuredHomeNetworks() {
 }
 
 async function kvHomeNetworks() {
-  return splitList(await KV.get("home_networks"));
+  return parseStoredList(await KV.get("home_networks"));
 }
 
 // Bootstrap entries come from the HOME_NETWORKS var; anything added later
@@ -1244,7 +1455,7 @@ function splitHouseNumber(raw) {
 }
 
 async function kvProxyHosts() {
-  return splitList(await KV.get("proxy_hosts"));
+  return parseStoredList(await KV.get("proxy_hosts"));
 }
 
 // ── Net worth & 2030 equity tracker ──────────────────────────────────────────
@@ -1305,7 +1516,11 @@ var NW_PLACEHOLDER = {
 function nwMonthIndex(ym) {
   var m = String(ym || "").match(/^(\d{4})-(\d{2})$/);
   if (!m) return null;
-  return Number(m[1]) * 12 + (Number(m[2]) - 1);
+  // The shape matching is not enough: "2030-13" parses and silently rolls into
+  // the next January, so a card would state a deadline the owner never named.
+  var mon = Number(m[2]);
+  if (mon < 1 || mon > 12) return null;
+  return Number(m[1]) * 12 + (mon - 1);
 }
 
 function nwMonthsBetween(fromYm, toYm) {
@@ -1556,7 +1771,21 @@ function nwEvaluate(cfg, ym, housing) {
   var stressRate = Math.max(loanRate + (Number(pol.stressTestPp) || 3),
                             Number(pol.stressTestFloorPct) || 7) / 100;
 
-  return {
+  // With nothing to buy, or nothing to buy it with, both sides of the target
+  // collapse to zero and `equitySupply >= equityNeeded` reads 0 >= 0, i.e.
+  // TRUE — the 2030 meter would fill on absent data, the one failure a wall
+  // display must never have. `false` is no better: it asserts "behind plan" on
+  // the same absent data. Neither case is an unpriced asset, so neither is a
+  // `missing` entry; the answer is that there is no answer, and null says so
+  // without leaving a zero a card could draw a bar from.
+  // Without a purchase price the target arithmetic is not wrong, it is absent:
+  // maxLoanByLtv collapses to 0 and equityNeeded to the fixed fees, so a
+  // naive supply >= needed reads "on plan" for a document that names no plan.
+  // An empty asset list is a different thing entirely — the shortfall it
+  // implies is real and worth stating, so it is evaluated as normal.
+  var evaluable = Number(pol.nextPurchasePriceNok) > 0;
+
+  var out = {
     ym: ym, incomplete: false, assets: assets, liabilities: liabilities,
     netWorthMine: netWorthMine, netWorthHousehold: netWorthHousehold,
     homeEquityMine: homeEquityMine, liquidMine: liquidMine,
@@ -1571,11 +1800,20 @@ function nwEvaluate(cfg, ym, housing) {
     maxLoanByIncomeExBonus: baseIncome * (Number(pol.gjeldsgradMax) || 5),
     maxLoanByLtv: maxLoanByLtv, maxLoanByIncome: maxLoanByIncome,
     maxLoan: maxLoan, binding: binding, costs: costs,
-    equityNeeded: equityNeeded, equitySupply: equitySupply,
-    gap: equitySupply - equityNeeded, onTrack: equitySupply >= equityNeeded,
+    equityNeeded: evaluable ? equityNeeded : null,
+    equitySupply: evaluable ? equitySupply : null,
+    gap: evaluable ? equitySupply - equityNeeded : null,
+    onTrack: evaluable ? equitySupply >= equityNeeded : null,
+    targetEvaluable: evaluable,
     stressAnnual: maxLoan * stressRate, stressRatePct: stressRate * 100,
     housingIndex: idxAt, housingSource: housing && housing.source
   };
+
+  // An untouched document is a different state from a hole in a filled-in one,
+  // and a card that knows which one it has can say "nothing entered yet"
+  // instead of diagnosing assets that do not exist.
+  if (!assets.length && !liabilities.length) out.empty = true;
+  return out;
 }
 
 async function nwLoadConfig() {
@@ -1585,6 +1823,13 @@ async function nwLoadConfig() {
     var cfg = JSON.parse(raw);
     return (cfg && typeof cfg === "object") ? cfg : NW_PLACEHOLDER;
   } catch (e) { return NW_PLACEHOLDER; }
+}
+
+// A figure the evaluation withheld stays withheld through the track:
+// Math.round(null) is 0, which would put a fabricated point on the chart at
+// exactly the height that reads as "on plan".
+function nwRound(v) {
+  return typeof v === "number" && isFinite(v) ? Math.round(v) : null;
 }
 
 function nwThisMonth(now) {
@@ -1600,40 +1845,55 @@ async function nwProjection(request) {
 
   var nowYm = nwThisMonth(Date.now());
   var targetYm = (cfg.policy && cfg.policy.targetMonth) || "2030-06";
-  var now = nwEvaluate(cfg, nowYm, housing);
-  var target = nwEvaluate(cfg, targetYm, housing);
-
-  // Monthly track, so the card can draw the actual trajectory rather than a
-  // handful of year-end dots. Capped at ~54 points, which covers the horizon
-  // at monthly resolution and keeps the payload small.
+  var now, target;
   var track = [];
-  var startIdx = nwMonthIndex(nowYm);
-  var endIdx = nwMonthIndex(targetYm);
-  if (startIdx !== null && endIdx !== null && endIdx > startIdx) {
-    var span = endIdx - startIdx;
-    var step = Math.max(1, Math.ceil(span / 54));
-    for (var mi = startIdx; mi <= endIdx; mi += step) {
-      var ym2 = Math.floor(mi / 12) + "-" + ("0" + (mi % 12 + 1)).slice(-2);
-      var e = nwEvaluate(cfg, ym2, housing);
-      track.push({
-        ym: ym2,
-        netWorthMine: e.incomplete ? null : Math.round(e.netWorthMine),
-        netWorthHousehold: e.incomplete ? null : Math.round(e.netWorthHousehold),
-        equitySupply: e.incomplete ? null : Math.round(e.equitySupply),
-        equityNeeded: e.incomplete ? null : Math.round(e.equityNeeded)
-      });
+  try {
+    now = nwEvaluate(cfg, nowYm, housing);
+    target = nwEvaluate(cfg, targetYm, housing);
+
+    // Monthly track, so the card can draw the actual trajectory rather than a
+    // handful of year-end dots. Capped at ~54 points, which covers the horizon
+    // at monthly resolution and keeps the payload small.
+    var startIdx = nwMonthIndex(nowYm);
+    var endIdx = nwMonthIndex(targetYm);
+    if (startIdx !== null && endIdx !== null && endIdx > startIdx) {
+      var span = endIdx - startIdx;
+      var step = Math.max(1, Math.ceil(span / 54));
+      for (var mi = startIdx; mi <= endIdx; mi += step) {
+        var ym2 = Math.floor(mi / 12) + "-" + ("0" + (mi % 12 + 1)).slice(-2);
+        var e = nwEvaluate(cfg, ym2, housing);
+        track.push({
+          ym: ym2,
+          netWorthMine: e.incomplete ? null : nwRound(e.netWorthMine),
+          netWorthHousehold: e.incomplete ? null : nwRound(e.netWorthHousehold),
+          equitySupply: e.incomplete ? null : nwRound(e.equitySupply),
+          equityNeeded: e.incomplete ? null : nwRound(e.equityNeeded)
+        });
+      }
+      // Always land exactly on the target month, whatever the step did.
+      if (track.length && track[track.length - 1].ym !== targetYm) {
+        var te = nwEvaluate(cfg, targetYm, housing);
+        track.push({
+          ym: targetYm,
+          netWorthMine: te.incomplete ? null : nwRound(te.netWorthMine),
+          netWorthHousehold: te.incomplete ? null : nwRound(te.netWorthHousehold),
+          equitySupply: te.incomplete ? null : nwRound(te.equitySupply),
+          equityNeeded: te.incomplete ? null : nwRound(te.equityNeeded)
+        });
+      }
     }
-    // Always land exactly on the target month, whatever the step did.
-    if (track.length && track[track.length - 1].ym !== targetYm) {
-      var te = nwEvaluate(cfg, targetYm, housing);
-      track.push({
-        ym: targetYm,
-        netWorthMine: te.incomplete ? null : Math.round(te.netWorthMine),
-        netWorthHousehold: te.incomplete ? null : Math.round(te.netWorthHousehold),
-        equitySupply: te.incomplete ? null : Math.round(te.equitySupply),
-        equityNeeded: te.incomplete ? null : Math.round(te.equityNeeded)
-      });
-    }
+  } catch (evalErr) {
+    // A document written before the shape was checked at the door still lives
+    // in KV. Answering with a structured refusal beats a 500: the card can
+    // render "cannot be read", but only if the fetch completes.
+    return jsonResponse({
+      placeholder: !!cfg.placeholder,
+      rev: cfg.rev || 0,
+      error: "Stored config could not be evaluated: " + evalErr.message,
+      now: null, target: null, track: [],
+      housingError: housingError,
+      generatedAt: Date.now()
+    });
   }
 
   return jsonResponse({
@@ -1746,20 +2006,56 @@ function newsKey(item) {
     .trim().split(" ").slice(0, 12).join(" ");
 }
 
+// The widest span the route will serve, and the ceiling on what one entry may
+// hold. The merge below folds the previous entry back in, so without a cap a
+// long-lived query only ever grows — one had reached 201 items and 80 kB.
+var NEWS_MAX_MONTHS = 60;
+var NEWS_MAX_ITEMS = 200;
+var NEWS_EMPTY_TTL = 600;
+
+function newsCutoff(months) {
+  return Date.now() - months * 30.44 * 86400000;
+}
+
+function newsWindow(items, months) {
+  var cutoff = newsCutoff(months);
+  return (items || []).filter(function (it) {
+    return it && typeof it.ts === "number" && it.ts >= cutoff;
+  });
+}
+
+// A digest of the query exactly as it was asked. The key used to normalise
+// [^a-z0-9]+ to "_" while the upstream search used the raw string, so
+// "hawk infinity", "hawk-infinity" and "hawk/infinity" shared one entry that
+// only one of them had actually produced — anyone could seed what the owner saw.
+async function newsCacheKey(query) {
+  var digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(query));
+  var bytes = new Uint8Array(digest);
+  var hex = "";
+  for (var i = 0; i < bytes.length; i++) hex += ("0" + bytes[i].toString(16)).slice(-2);
+  return "news_" + hex;
+}
+
 async function newsSearch(query, months) {
-  var windowMs = (months || 12) * 30.44 * 86400000;
-  var cacheKey = "news_" + months + "_" + query.toLowerCase().replace(/[^a-z0-9]+/g, "_").slice(0, 60);
+  // months is not part of the key: one superset is stored per query, holding
+  // everything inside the widest window the route allows, and each request
+  // windows that down. Keying on it meant the same query re-fanned to five
+  // upstreams the moment a tab asked for a different span.
+  var cacheKey = await newsCacheKey(query);
 
   var cached = null;
   try {
     var raw = await KV.get(cacheKey);
     if (raw) cached = JSON.parse(raw);
   } catch (e) {}
-  // Only serve a cached answer that actually has something in it. Caching an
-  // empty result would make one transient failure stick for the full TTL.
-  if (cached && cached.items && cached.items.length && (Date.now() - cached.ts) < 30 * 60000) {
-    return jsonResponse({query: query, items: cached.items, sources: cached.sources,
-                         cached: true, ts: cached.ts});
+  // An entry that found nothing is served for as long as KV keeps it — its own
+  // expiry is short, and that is the backoff. A query nobody can answer used to
+  // re-fan to five upstreams on every reload. A non-empty entry is refreshed
+  // after half an hour as before.
+  if (cached && cached.items &&
+      (cached.items.length === 0 || (Date.now() - cached.ts) < 30 * 60000)) {
+    return jsonResponse({query: query, items: newsWindow(cached.items, months),
+                         sources: cached.sources, cached: true, ts: cached.ts});
   }
 
   var sources = newsSearchSources(query);
@@ -1792,11 +2088,16 @@ async function newsSearch(query, months) {
       }
       return {id: s.id, ok: true, items: newsParseRss(text, s.id)};
     } catch (err) {
-      return {id: s.id, ok: false, reason: err.message, items: []};
+      // Never the thrown message. This runtime interpolates the request URL
+      // into some of them, and the NewsData URL carries the API key in its
+      // query string — the reason field is handed straight back to the client.
+      return {id: s.id, ok: false, reason: "fetch failed", items: []};
     }
   }));
 
-  var cutoff = Date.now() - windowMs;
+  // Merged against the widest window, not the requested one, because what is
+  // stored is a superset every span is then filtered out of.
+  var cutoff = newsCutoff(NEWS_MAX_MONTHS);
   var seen = {};
   var merged = [];
   // Accumulate rather than replace. Google blocks Cloudflare's egress
@@ -1821,16 +2122,17 @@ async function newsSearch(query, months) {
     }
   }
   merged.sort(function (a, b) { return b.ts - a.ts; });   // newest first
+  merged = merged.slice(0, NEWS_MAX_ITEMS);
 
   var sourceReport = results.map(function (r) {
     return {id: r.id, ok: r.ok, count: r.items.length, reason: r.reason || null};
   });
 
-  // Likewise, never store an empty answer: the next request should retry the
-  // engines rather than inherit a bad minute.
-  if (merged.length) {
-    await KV.put(cacheKey, JSON.stringify({items: merged, sources: sourceReport, ts: Date.now()}),
-                 {expirationTtl: 7 * 86400});
-  }
-  return jsonResponse({query: query, items: merged, sources: sourceReport, ts: Date.now()});
+  // An empty answer is stored as well, but only for minutes: long enough that a
+  // reload is answered from KV instead of dialling five engines again, short
+  // enough that a source coming back is picked up while the tab is still open.
+  await KV.put(cacheKey, JSON.stringify({items: merged, sources: sourceReport, ts: Date.now()}),
+               {expirationTtl: merged.length ? 7 * 86400 : NEWS_EMPTY_TTL});
+  return jsonResponse({query: query, items: newsWindow(merged, months),
+                       sources: sourceReport, ts: Date.now()});
 }

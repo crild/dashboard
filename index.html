@@ -19,6 +19,58 @@
       --shadow: 0 1px 3px rgba(0,0,0,0.08);
       --radius: 16px;
       --hover: rgba(0,0,0,0.045);
+
+      /* Type. The hallway tablet is read from about two metres, so 13px is a
+         hard floor on every surface — phone and desktop included, because one
+         scale is cheaper to hold in your head than three. Six sizes cover every
+         card; anything that fits none of them is a card inventing its own ramp. */
+      --fs-1: 0.8125rem;  /* 13px — labels, ticks, timestamps, chips, footnotes, card-status */
+      --fs-2: 0.9375rem;  /* 15px — list rows, descriptions, body */
+      --fs-3: 1.125rem;   /* 18px — item titles, secondary values */
+      --fs-4: 1.5rem;     /* 24px — card secondary number */
+      --fs-5: 2.25rem;    /* 36px — card headline number */
+      --fs-6: clamp(2.25rem, 9cqw, 3.25rem); /* hero, only on a card spanning >= 2 columns */
+      --fs-input: 1rem;   /* 16px — every input/select/textarea; below this iOS Safari zooms the page on focus */
+
+      /* Weight. Segoe UI snaps 620/650/660 to the same face as 700, so that
+         precision was never on screen; 300 is too thin to survive a 2 m read. */
+      --fw-regular: 400;
+      --fw-semi: 600;
+      --fw-bold: 700;
+
+      /* Leading. Set once on .card so cards stop inheriting the browser's
+         `normal`, with two deliberate departures from the default. */
+      --lh-tight: 1.1;    /* >= 24px, where `normal` opens a visible gap under the number */
+      --lh-ui: 1.35;      /* default */
+      --lh-prose: 1.5;    /* runs that wrap to several lines */
+
+      /* Tracking. Only two jobs earn it: closing up large numerals, and opening
+         up uppercase micro-labels. Everything else reads better at 0. */
+      --ls-display: -0.02em;
+      --ls-caps: 0.06em;
+
+      /* Space. A 4px grid; every internal gap rounds to one of these five. */
+      --sp-1: 4px;
+      --sp-2: 8px;
+      --sp-3: 12px;
+      --sp-4: 16px;
+      --sp-5: 24px;
+      --tap: 44px;        /* minimum control size for a finger on the wall tablet */
+      --card-pad: 16px;   /* one knob for card padding, so density presets need not
+                             override .card and break layouts that assumed 32px of it */
+
+      /* Fade. Two values, two meanings, never nested: out of date, or out of reach. */
+      --fade-stale: 0.55;
+      --fade-disabled: 0.35;
+
+      /* Semantic colour, one job per token. --warning is the middle-urgency
+         tier everywhere; --data-primary fills charts of what the household
+         owns; --debt marks liabilities and consumed capacity, so a chart never
+         says "we own this" in the colour of what we owe. Each gets a value in
+         both themes, because a colour declared only here leaks into dark. */
+      --warning: #b45309;
+      --data-primary: #0071e3;
+      --debt: var(--text-secondary);
     }
 
     [data-theme="dark"] {
@@ -29,6 +81,17 @@
       --border: #2c2c2e;
       --shadow: 0 1px 3px rgba(0,0,0,0.3);
       --hover: rgba(255,255,255,0.07);
+
+      /* Dark carries its own semantic colours. A colour set only on :root keeps
+         its light-theme value here and loses its contrast margin against the
+         dark card ground — which is how the verdict tokens ended up failing
+         AA in one theme or the other. --negative is already at its floor here:
+         a later retune may lighten it, never darken it. */
+      --positive: #34c759;
+      --negative: #ff3b30;
+      --warning: #f5a623;
+      --data-primary: #4a9eff;
+      --debt: var(--text-secondary);
     }
 
     * { margin: 0; padding: 0; box-sizing: border-box; }

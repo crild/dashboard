@@ -109,3 +109,41 @@ Rules for any throwaway server started while testing:
 
 `wrangler dev` watches `cloudflare-worker-deploy.js` and restarts on every write,
 so it should not be left running through a long editing session.
+
+## 8. Design system — in progress
+
+`:root` now carries a type/weight/leading/tracking/space/tap/fade vocabulary and
+three new semantic colour names. **Nothing references them yet**, so the page
+renders exactly as it did before. That was deliberate: the token block ships on
+its own so every later step is a pure substitution that can be done card by card.
+
+Why it exists: before this, `:root` held 11 properties, all colour, shadow and
+radius. A grep for a typographic `var()` returned zero across the whole file, so
+each card author invented a ramp — 199 font-size declarations across 51 distinct
+literals from 8.8px to 54.4px, 67 weights across 8 values, 49 opacities across 27.
+The three wealth cards, built as competing designs, each invented a complete
+parallel scale; at one identical width their headline numbers differ by 2.21x.
+
+Remaining steps, in this order (later ones assume earlier ones landed):
+
+1. **Type floor + rhythm.** Map every font-size literal onto `--fs-1`..`--fs-6`.
+   The owner has decided the **13px floor applies on every surface** — the wall
+   tablet is read from about two metres and today's smallest text is 8.8px.
+   Then: leading on `.card`, three weights instead of eight, one `.caps` class,
+   one `.card-foot`, `tabular-nums` on `.card`.
+2. **Colour per theme.** Includes the three values step 1 of this pass could not
+   ship without repainting: `:root --positive: #176e31`, `:root --negative:
+   #b3201a`, and `--accent: #4a9eff` in the dark block, which has none today.
+   Coloured text on a tinted badge must clear 4.5:1 against the BADGE.
+3. **State.** Opacity down to `--fade-stale` / `--fade-disabled`; stop the stale
+   fade dimming the badge that explains the staleness; one coarse-pointer sizing
+   rule; 16px form fields so iOS Safari stops zooming on focus.
+4. **The three wealth cards, last**, because it converts selectors the earlier
+   steps tokenise. One container-relative strategy for all three — and every
+   container-relative size is floored explicitly as `max(var(--fs-1), Xem)`.
+   A bare `0.68em` against a clamp that bottoms out at 13px computes to 8.8px,
+   which is the exact defect step 1 exists to remove.
+
+Growth is expected; overflow is not. Collapsing the 0.55-0.72rem band to 13px
+makes dense cards taller — fix any overflow with layout, never by going back
+under the floor.
